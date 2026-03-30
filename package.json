@@ -1,40 +1,7 @@
 {
   "name": "buddy-client",
-  "version": "0.1.0",
-  "description": "学伴精灵 - 客户端应用",
-  "author": "TA-OpenClaw",
-  "license": "MIT",
-  "main": "index.js",
-  "scripts": {
-    "dev": "cocos run --project .",
-    "build": "cocos build --project .",
-    "clean": "rm -rf build dist",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
-    "education",
-    "game",
-    "companion",
-    "cocos-creator",
-    "typescript"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/buddy-client.git"
-  },
-  "bugs": {
-    "url": "https://github.com/your-org/buddy-client/issues"
-  },
-  "homepage": "https://github.com/your-org/buddy-client#readme",
-  "engines": {
-    "node": ">=18.0.0",
-    "cocos-creator": "3.8.7"
-  },
-  "dependencies": {
-    "cocos-creator": "3.8.7"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0"
+  "uuid": "859dbe97-9672-4d96-9aee-d4b9805bd1ad",
+  "creator": {
+    "version": "3.8.7"
   }
 }
