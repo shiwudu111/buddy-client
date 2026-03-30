@@ -1,0 +1,66 @@
+
+-------------------------------------------------------------------------------
+   ROBOCOPY     ::     Windows 的可靠文件复制                              
+-------------------------------------------------------------------------------
+
+  开始时间: 2026年3月30日 13:46:49
+        源= \\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\
+      目标: E:\buddy-client\
+
+      文件: *.*
+	    
+  执行目录: .git
+	    node_modules
+	    dist
+	    build
+	    .next
+	    .turbo
+	    .vite
+	    .nuxt
+	    coverage
+	    .expo
+	    
+      选项: *.* /FFT /TEE /S /E /DCOPY:DA /COPY:DAT /Z /NP /XO /R:2 /W:2 
+
+------------------------------------------------------------------------------
+
+	                   9	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\
+	*多余目录         -1	E:\buddy-client\tools\
+	    新文件    		     286	.env
+	    新文件    		   16438	api-test.html
+	    新文件    		    4927	DEV_STATUS.md
+	    新文件    		     918	package.json
+	    新文件    		     652	project.json
+	    新文件    		    1058	README.md
+	    新文件    		   15701	test-api.html
+	    新文件    		   14965	test.html
+	    新文件    		     805	tsconfig.json
+	  新目录           0	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\assets\
+	  新目录           0	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\assets\prefabs\
+	  新目录           0	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\assets\scenes\
+	  新目录           2	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\assets\scripts\
+	    新文件    		    7046	ApiClient.ts
+	    新文件    		    7019	LoginController.ts
+	  新目录           0	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\assets\textures\
+	  新目录           6	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\scripts\
+	    新文件    		    8093	ApiClient-Original.ts
+	    新文件    		    6648	ApiClient.ts
+	    新文件    		    8671	DebugPage.ts
+	    新文件    		    7098	HomeworkPage.ts
+	    新文件    		   11760	LoginPage.ts
+	    新文件    		   13983	MainLayout.ts
+	  新目录           0	\\wsl.localhost\Ubuntu-24.04\home\openclaw\.openclaw\workspace-main\buddy-client\settings\
+
+------------------------------------------------------------------------------
+
+                  总数        复制        跳过       不匹配        失败        其他
+       目录:         9         7         2         0         0         1
+       文件:        17        17         0         0         0         0
+       字节:   123.1 k   123.1 k         0         0         0         0
+       时间:   0:00:00   0:00:00                       0:00:00   0:00:00
+
+
+       速度:           1,189,320 字节/秒。
+       速度:              68.053 MB/分钟。
+   已结束: 2026年3月30日 13:46:49
+
