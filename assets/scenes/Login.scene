@@ -1330,7 +1330,7 @@
       "b": 187,
       "a": 255
     },
-    "_string": "登录",
+    "_string": "\u767b\u5f55",
     "_horizontalAlign": 0,
     "_verticalAlign": 1,
     "_actualFontSize": 20,
@@ -2160,7 +2160,7 @@
       "b": 187,
       "a": 255
     },
-    "_string": "登录中",
+    "_string": "\u767b\u5f55\u4e2d",
     "_horizontalAlign": 0,
     "_verticalAlign": 1,
     "_actualFontSize": 20,
@@ -2364,7 +2364,7 @@
     "_id": "c5V1EV8IpMtrIvY1OE9t2u"
   },
   {
-    "__type__": "f39b64Rv/xCUKRMtiq/bUhs",
+    "__type__": "cc.LoginController",
     "_name": "",
     "_objFlags": 0,
     "__editorExtras__": {},
@@ -2373,14 +2373,6 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "usernameInput": {
-      "__id__": 14
-    },
-    "passwordInput": {
-      "__id__": 24
-    },
-    "statusLabel": null,
-    "loadingNode": null,
     "_id": "727TPhXH9C4Ku1wTn8W7f7"
   },
   {
