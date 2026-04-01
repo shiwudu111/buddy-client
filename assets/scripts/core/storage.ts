@@ -4,6 +4,7 @@ export const STORAGE_KEYS = {
   token: "buddy.auth.token",
   user: "buddy.auth.user",
   petId: "buddy.pet.id",
+  activeTab: "buddy.main.activeTab",
 } as const;
 
 export const storage = {
@@ -17,5 +18,23 @@ export const storage = {
 
   remove(key: string): void {
     sys.localStorage.removeItem(key);
+  },
+
+  getJson<T>(key: string): T | null {
+    const raw = this.get(key);
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      this.remove(key);
+      return null;
+    }
+  },
+
+  setJson(key: string, value: unknown): void {
+    this.set(key, JSON.stringify(value));
   },
 };

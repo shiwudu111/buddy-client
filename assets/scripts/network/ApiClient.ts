@@ -6,8 +6,11 @@ import type {
   AuthUser,
   ChildPetPayload,
   HomeworkHistoryPayload,
+  HomeworkTodayStatus,
+  ParentBindPayload,
   PetResourcesPayload,
   PetStatus,
+  WeeklyReportPayload,
 } from "../types/api";
 
 type RequestOptions = RequestInit & {
@@ -39,30 +42,44 @@ class ApiClient {
     path: string,
     options: RequestOptions = {}
   ): Promise<ApiResponse<T>> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(options.headers as Record<string, string> | undefined),
-    };
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(options.headers as Record<string, string> | undefined),
+      };
 
-    if (!options.skipAuth && this.token) {
-      headers.Authorization = `Bearer ${this.token}`;
-    }
+      if (!options.skipAuth && this.token) {
+        headers.Authorization = `Bearer ${this.token}`;
+      }
 
-    const response = await fetch(`${API_CONFIG.baseUrl}${path}`, {
-      ...options,
-      headers,
-    });
+      const response = await fetch(`${API_CONFIG.baseUrl}${path}`, {
+        ...options,
+        headers,
+      });
 
-    const payload = (await response.json()) as ApiResponse<T>;
+      const raw = await response.text();
+      const payload = raw
+        ? (JSON.parse(raw) as ApiResponse<T>)
+        : ({ success: response.ok } as ApiResponse<T>);
 
-    if (!response.ok) {
+      if (!response.ok) {
+        if (response.status === 401 && !options.skipAuth) {
+          this.clearToken();
+        }
+        return {
+          success: false,
+          message: payload.message ?? `HTTP ${response.status}`,
+          data: payload.data,
+        };
+      }
+
+      return payload;
+    } catch (error) {
       return {
         success: false,
-        message: payload.message ?? `HTTP ${response.status}`,
+        message: error instanceof Error ? error.message : "请求失败",
       };
     }
-
-    return payload;
   }
 
   async register(input: {
@@ -79,7 +96,7 @@ class ApiClient {
 
     if (result.success && result.data?.token) {
       this.setToken(result.data.token);
-      storage.set(STORAGE_KEYS.user, JSON.stringify(result.data.user));
+      storage.setJson(STORAGE_KEYS.user, result.data.user);
     }
 
     return result;
@@ -97,7 +114,7 @@ class ApiClient {
 
     if (result.success && result.data?.token) {
       this.setToken(result.data.token);
-      storage.set(STORAGE_KEYS.user, JSON.stringify(result.data.user));
+      storage.setJson(STORAGE_KEYS.user, result.data.user);
     }
 
     return result;
@@ -156,10 +173,35 @@ class ApiClient {
     );
   }
 
+  async getHomeworkStatus(): Promise<ApiResponse<HomeworkTodayStatus>> {
+    return this.request<HomeworkTodayStatus>("/homeworks/status");
+  }
+
+  async bindChild(
+    childIdentifier: string
+  ): Promise<ApiResponse<ParentBindPayload>> {
+    return this.request<ParentBindPayload>("/parent/bind", {
+      method: "POST",
+      body: JSON.stringify({
+        child_phone: childIdentifier,
+        child_id: childIdentifier,
+        child_username: childIdentifier,
+      }),
+    });
+  }
+
   async getChildPetStatus(
     childId: string
   ): Promise<ApiResponse<ChildPetPayload>> {
     return this.request<ChildPetPayload>(`/parent/pet/${childId}`);
+  }
+
+  async getWeeklyReport(
+    childId: string
+  ): Promise<ApiResponse<WeeklyReportPayload>> {
+    return this.request<WeeklyReportPayload>(
+      `/parent/report/weekly?child_id=${encodeURIComponent(childId)}`
+    );
   }
 }
 

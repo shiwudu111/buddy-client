@@ -5,13 +5,16 @@ export interface ApiResponse<T = unknown> {
 }
 
 export type UserRole = "CHILD" | "PARENT";
+export type HomeworkSubject = "chinese" | "math" | "english";
 
 export interface AuthUser {
   id: string;
   username: string;
   email?: string | null;
   role: UserRole;
+  childId?: string | null;
   parentId?: string | null;
+  nickname?: string | null;
 }
 
 export interface AuthPayload {
@@ -41,7 +44,7 @@ export interface PetResourcesPayload {
 
 export interface HomeworkItem {
   id: string;
-  subject: string;
+  subject: HomeworkSubject;
   content: string;
   imageUrl?: string | null;
   score?: number | null;
@@ -57,6 +60,18 @@ export interface HomeworkHistoryPayload {
   limit: number;
 }
 
+export interface HomeworkSubmitPayload {
+  subject: HomeworkSubject;
+  content: string;
+  imageUrl?: string;
+}
+
+export interface HomeworkTodayStatus {
+  chinese: { submitted: boolean; score?: number | null };
+  math: { submitted: boolean; score?: number | null };
+  english: { submitted: boolean; score?: number | null };
+}
+
 export interface ChildPetPayload {
   pet: {
     name: string;
@@ -66,4 +81,19 @@ export interface ChildPetPayload {
     mood: number;
   };
   today_homework: Record<string, { score: number | null } | null>;
+}
+
+export interface ParentBindPayload {
+  childId?: string;
+  child_id?: string;
+  childNickname?: string;
+  child_nickname?: string;
+}
+
+export interface WeeklyReportPayload {
+  week: string;
+  total_homework: number;
+  average_score: number;
+  subject_breakdown?: Record<string, { count: number; avg: number }>;
+  pet_status_summary?: Record<string, number>;
 }
