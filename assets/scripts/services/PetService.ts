@@ -16,7 +16,13 @@ class PetService {
     if (result.success && result.data) {
       appState.setPetId(result.data.pet_id);
       appState.setCurrentPet(result.data);
+      return result;
     }
+
+    if (result.statusCode === 404) {
+      appState.clearPetState();
+    }
+
     return result;
   }
 

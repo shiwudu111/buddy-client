@@ -2,6 +2,7 @@ export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   message?: string;
+  statusCode?: number;
 }
 
 export type UserRole = "CHILD" | "PARENT";

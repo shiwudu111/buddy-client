@@ -59,6 +59,8 @@ export class LoginController extends Component {
       this.onRegisterClick,
       this
     );
+
+    this.configureInputs();
   }
 
   async start(): Promise<void> {
@@ -177,6 +179,16 @@ export class LoginController extends Component {
       fontSize: 20,
     });
     return button.node;
+  }
+
+  private configureInputs(): void {
+    if (this.usernameInput) {
+      this.usernameInput.maxLength = 64;
+    }
+
+    if (this.passwordInput) {
+      this.passwordInput.maxLength = 64;
+    }
   }
 
   private setStatus(message: string): void {

@@ -16,22 +16,26 @@ export function formatPetSummary(pet: PetStatus | null): string[] {
   return [
     `宠物名：${pet.name}`,
     `等级：Lv.${pet.level}`,
-    `饱食度：${pet.hunger}%`,
+    `饥饿度：${pet.hunger}%`,
     `心情值：${pet.mood}%`,
-    `成长值：${pet.experience}`,
+    `经验值：${pet.experience}`,
     `状态：${statusText}`,
   ];
 }
 
-export function formatHomeworkHistory(history: HomeworkHistoryPayload | null): string {
+export function formatHomeworkHistory(
+  history: HomeworkHistoryPayload | null,
+  options: { limit?: number } = {}
+): string {
   if (!history || history.list.length === 0) {
     return "暂无作业记录";
   }
 
-  return history.list
-    .slice(0, 5)
+  const list = typeof options.limit === "number" ? history.list.slice(0, options.limit) : history.list;
+
+  return list
     .map((item, index) => formatHomeworkHistoryItem(item, index + 1))
-    .join("\n");
+    .join("\n\n");
 }
 
 export function formatHomeworkHistoryItem(
@@ -41,8 +45,16 @@ export function formatHomeworkHistoryItem(
   const prefix = index ? `${index}. ` : "";
   const scoreText =
     item.score === null || item.score === undefined ? "待评分" : `${item.score}分`;
-  const feedback = item.feedback ? ` / ${item.feedback}` : "";
-  return `${prefix}${mapSubjectLabel(item.subject)} - ${scoreText}${feedback}`;
+  const feedback = item.feedback?.trim() ? item.feedback.trim() : "暂无老师反馈";
+  const content = item.content?.trim() ? item.content.trim() : "未填写作业内容";
+  const submittedAt = formatHistoryTimestamp(item.createdAt ?? item.submittedAt);
+
+  return [
+    `${prefix}${mapSubjectLabel(item.subject)} | ${scoreText}`,
+    `内容：${content}`,
+    `反馈：${feedback}`,
+    `时间：${submittedAt}`,
+  ].join("\n");
 }
 
 export function mapSubjectLabel(subject: string): string {
@@ -55,4 +67,23 @@ export function normalizeMultilineText(raw: string): string {
     .map((line) => line.trim())
     .filter(Boolean)
     .join("\n");
+}
+
+function formatHistoryTimestamp(raw?: string | null): string {
+  if (!raw) {
+    return "未知";
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+}
+
+function pad(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
 }

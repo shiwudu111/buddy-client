@@ -7,11 +7,11 @@ import {
   type HomeworkSubject,
 } from "../../domain/models/app";
 import { sceneRouter } from "../../navigation/SceneRouter";
+import { STORAGE_KEYS, storage } from "../../core/storage";
 import { authService } from "../../services/AuthService";
 import { homeworkService } from "../../services/HomeworkService";
 import { parentService } from "../../services/ParentService";
 import { petService } from "../../services/PetService";
-import { STORAGE_KEYS, storage } from "../../core/storage";
 import { formatHomeworkHistory, formatPetSummary } from "../../utils/format";
 import { ScreenController } from "../common/base/ScreenController";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
@@ -25,7 +25,11 @@ export class MainController extends ScreenController {
   private pageMessage = "";
   private homeworkInput: EditBox | null = null;
   private bindChildInput: EditBox | null = null;
-  private homeworkDraft = "";
+  private homeworkDrafts: Record<HomeworkSubject, string> = {
+    chinese: "",
+    math: "",
+    english: "",
+  };
   private bindChildDraft = "";
 
   onLoad(): void {
@@ -47,7 +51,9 @@ export class MainController extends ScreenController {
     }
 
     if (user.role === "CHILD") {
-      if (appState.getPetId()) {
+      const petId = appState.getPetId();
+      if (petId) {
+        appState.setPetId(petId);
         await petService.refreshCurrentPet();
       }
       await homeworkService.refreshHistory();
@@ -58,7 +64,7 @@ export class MainController extends ScreenController {
   }
 
   private async render(): Promise<void> {
-    this.homeworkDraft = this.homeworkInput?.string ?? this.homeworkDraft;
+    this.persistHomeworkDraft();
     this.bindChildDraft = this.bindChildInput?.string ?? this.bindChildDraft;
 
     const root = this.ensureManagedRoot("MainRoot");
@@ -237,6 +243,7 @@ export class MainController extends ScreenController {
     });
 
     const pet = appState.getCurrentPet();
+    const knownPetId = appState.getPetId();
     const petSummary = formatPetSummary(pet).join("\n");
     RuntimeUI.createLabel(petCard, {
       name: "PetSummary",
@@ -249,7 +256,7 @@ export class MainController extends ScreenController {
       color: new Color(221, 229, 238, 255),
     });
 
-    if (!pet) {
+    if (!pet && !knownPetId) {
       const createButton = RuntimeUI.createButton(petCard, {
         name: "CreatePetButton",
         text: "创建默认宠物",
@@ -264,6 +271,17 @@ export class MainController extends ScreenController {
         () => void this.handleCreatePet(),
         this
       );
+    } else if (!pet && knownPetId) {
+      RuntimeUI.createLabel(petCard, {
+        name: "PetSyncHint",
+        text: "已检测到宠物关联，正在等待刷新宠物状态",
+        x: 0,
+        y: -120,
+        width: 320,
+        height: 60,
+        fontSize: 18,
+        color: new Color(255, 194, 107, 255),
+      });
     } else {
       const feedButton = RuntimeUI.createButton(petCard, {
         name: "FeedPetButton",
@@ -312,9 +330,9 @@ export class MainController extends ScreenController {
 
     const today = appState.getTodayHomeworkStatus();
     const todaySummary = [
-      `语文：${today?.chinese?.submitted ? `已提交 (${today.chinese.score ?? "-"})` : "未提交"}`,
-      `数学：${today?.math?.submitted ? `已提交 (${today.math.score ?? "-"})` : "未提交"}`,
-      `英语：${today?.english?.submitted ? `已提交 (${today.english.score ?? "-"})` : "未提交"}`,
+      `语文：${today?.chinese?.submitted ? `已提交(${today.chinese.score ?? "-"})` : "未提交"}`,
+      `数学：${today?.math?.submitted ? `已提交(${today.math.score ?? "-"})` : "未提交"}`,
+      `英语：${today?.english?.submitted ? `已提交(${today.english.score ?? "-"})` : "未提交"}`,
     ].join("\n");
     RuntimeUI.createLabel(sideCard, {
       name: "TodaySummary",
@@ -339,11 +357,11 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(sideCard, {
       name: "HistorySummary",
-      text: formatHomeworkHistory(appState.getHomeworkHistory()),
+      text: formatHomeworkHistory(appState.getHomeworkHistory(), { limit: 5 }),
       x: 0,
       y: -120,
       width: 430,
-      height: 200,
+      height: 220,
       fontSize: 18,
       color: new Color(171, 183, 200, 255),
     });
@@ -396,6 +414,7 @@ export class MainController extends ScreenController {
       button.button.node.on(
         Button.EventType.CLICK,
         () => {
+          this.persistHomeworkDraft();
           this.selectedSubject = subject;
           void this.render();
         },
@@ -410,7 +429,7 @@ export class MainController extends ScreenController {
       y: 10,
       width: 460,
       height: 150,
-      defaultValue: this.homeworkDraft,
+      defaultValue: this.homeworkDrafts[this.selectedSubject],
       maxLength: 200,
     }).editBox;
 
@@ -443,6 +462,7 @@ export class MainController extends ScreenController {
     backButton.button.node.on(
       Button.EventType.CLICK,
       () => {
+        this.persistHomeworkDraft();
         this.activeTab = "overview";
         storage.set(STORAGE_KEYS.activeTab, this.activeTab);
         void this.render();
@@ -479,9 +499,9 @@ export class MainController extends ScreenController {
       name: "HistoryCardContent",
       text: formatHomeworkHistory(appState.getHomeworkHistory()),
       x: 0,
-      y: 10,
-      width: 360,
-      height: 280,
+      y: 0,
+      width: 380,
+      height: 300,
       fontSize: 18,
       color: new Color(210, 219, 230, 255),
     });
@@ -517,7 +537,7 @@ export class MainController extends ScreenController {
 
     this.bindChildInput = RuntimeUI.createEditBox(bindCard, {
       name: "ChildBindInput",
-      placeholder: "输入 child_id / 账号 / 手机号（由后端兼容）",
+      placeholder: "输入 child_id 或孩子账号",
       x: 0,
       y: 95,
       width: 360,
@@ -557,15 +577,16 @@ export class MainController extends ScreenController {
     const overviewResult = await parentService.getChildOverview();
     const weeklyResult = await parentService.getWeeklyReport();
 
-    const overviewText = overviewResult.success && overviewResult.data
-      ? [
-          `宠物：${overviewResult.data.pet.name}`,
-          `等级：Lv.${overviewResult.data.pet.level}`,
-          `饱食度：${overviewResult.data.pet.hunger}%`,
-          `心情值：${overviewResult.data.pet.mood}%`,
-          `今日作业：${JSON.stringify(overviewResult.data.today_homework)}`,
-        ].join("\n")
-      : overviewResult.message ?? "等待绑定后获取孩子状态";
+    const overviewText =
+      overviewResult.success && overviewResult.data
+        ? [
+            `宠物：${overviewResult.data.pet.name}`,
+            `等级：Lv.${overviewResult.data.pet.level}`,
+            `饥饿度：${overviewResult.data.pet.hunger}%`,
+            `心情值：${overviewResult.data.pet.mood}%`,
+            `今日作业：${JSON.stringify(overviewResult.data.today_homework)}`,
+          ].join("\n")
+        : overviewResult.message ?? "等待绑定后获取孩子状态";
 
     RuntimeUI.createLabel(reportCard, {
       name: "ReportCardTitle",
@@ -611,7 +632,29 @@ export class MainController extends ScreenController {
 
   private async handleRefresh(): Promise<void> {
     this.pageMessage = "正在刷新最新数据...";
-    await this.bootstrapAndRender();
+    await this.render();
+
+    const result = await this.refreshDashboardData();
+    if (!result.sessionReady) {
+      return;
+    }
+
+    if (result.failedTasks.length === 0 && result.pendingTasks.length === 0) {
+      this.pageMessage = "最新数据已刷新";
+    } else if (
+      result.failedTasks.length === 0 &&
+      result.pendingTasks.length === 1 &&
+      result.pendingTasks[0] === "未检测到宠物映射"
+    ) {
+      this.pageMessage = "未检测到宠物映射，请先创建宠物";
+    } else if (result.successTasks.length === 0) {
+      const blockers = [...result.failedTasks, ...result.pendingTasks];
+      this.pageMessage = `刷新失败：${blockers.join("、")}`;
+    } else {
+      const issues = [...result.failedTasks, ...result.pendingTasks];
+      this.pageMessage = `部分刷新成功，待处理项：${issues.join("、")}`;
+    }
+    await this.render();
   }
 
   private handleLogout(): void {
@@ -624,6 +667,11 @@ export class MainController extends ScreenController {
     this.pageMessage = result.success
       ? "宠物已创建，可以开始互动与做作业了"
       : result.message ?? "宠物创建失败";
+
+    if (!result.success && appState.getPetId()) {
+      await petService.refreshCurrentPet();
+    }
+
     await this.render();
   }
 
@@ -637,7 +685,7 @@ export class MainController extends ScreenController {
 
   private async handleSubmitHomework(): Promise<void> {
     const content = this.homeworkInput?.string.trim() ?? "";
-    this.homeworkDraft = content;
+    this.homeworkDrafts[this.selectedSubject] = content;
     if (!content) {
       this.pageMessage = "请先输入作业内容";
       await this.render();
@@ -653,7 +701,7 @@ export class MainController extends ScreenController {
       ? "作业提交成功，已尝试刷新记录"
       : result.message ?? "作业提交失败";
     if (result.success) {
-      this.homeworkDraft = "";
+      this.homeworkDrafts[this.selectedSubject] = "";
     }
 
     if (appState.getPetId()) {
@@ -679,5 +727,68 @@ export class MainController extends ScreenController {
       this.bindChildDraft = "";
     }
     await this.render();
+  }
+
+  private persistHomeworkDraft(): void {
+    if (this.homeworkInput) {
+      this.homeworkDrafts[this.selectedSubject] = this.homeworkInput.string;
+    }
+  }
+
+  private async refreshDashboardData(): Promise<{
+    sessionReady: boolean;
+    successTasks: string[];
+    failedTasks: string[];
+    pendingTasks: string[];
+  }> {
+    const user = appState.getCurrentUser() ?? (await authService.bootstrapSession());
+    if (!user) {
+      sceneRouter.goToLogin();
+      return {
+        sessionReady: false,
+        successTasks: [],
+        failedTasks: ["登录态恢复"],
+        pendingTasks: [],
+      };
+    }
+
+    const successTasks: string[] = [];
+    const failedTasks: string[] = [];
+    const pendingTasks: string[] = [];
+
+    if (user.role === "CHILD") {
+      const petId = appState.getPetId();
+      if (petId) {
+        const petResult = await petService.refreshCurrentPet();
+        if (petResult.success) {
+          successTasks.push("宠物状态");
+        } else {
+          failedTasks.push("宠物状态");
+        }
+      } else if (!appState.getCurrentPet()) {
+        pendingTasks.push("未检测到宠物映射");
+      }
+
+      const historyResult = await homeworkService.refreshHistory();
+      if (historyResult.success) {
+        successTasks.push("作业历史");
+      } else {
+        failedTasks.push("作业历史");
+      }
+
+      const statusResult = await homeworkService.refreshTodayStatus();
+      if (statusResult.success) {
+        successTasks.push("今日状态");
+      } else {
+        failedTasks.push("今日状态");
+      }
+    }
+
+    return {
+      sessionReady: true,
+      successTasks,
+      failedTasks,
+      pendingTasks,
+    };
   }
 }

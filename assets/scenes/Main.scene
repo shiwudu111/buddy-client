@@ -274,15 +274,16 @@
     "_id": "c5V1EV8IpMtrIvY1OE9t2u"
   },
   {
-    "__type__": "f39b64Rv/xCUKRMtiq/bUhs",
+    "__type__": "4210f8ZyhNKq77Dv4OyfmnB",
     "_name": "",
     "_objFlags": 0,
+    "__editorExtras__": {},
     "node": {
       "__id__": 2
     },
     "_enabled": true,
     "__prefab": null,
-    "_id": "9aJmtJWLhMtZlp+BS8QpmC"
+    "_id": "eaYhjpIKxK95GxHCURt4hA"
   },
   {
     "__type__": "cc.SceneGlobals",

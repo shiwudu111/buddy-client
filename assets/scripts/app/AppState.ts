@@ -38,11 +38,35 @@ class AppState {
   }
 
   getPetId(): string | null {
-    return storage.get(STORAGE_KEYS.petId);
+    const mappedPetId = this.getStoredPetIdForCurrentUser();
+    if (mappedPetId) {
+      return mappedPetId;
+    }
+
+    return this.migrateLegacyPetIdForCurrentUser();
   }
 
   setPetId(petId: string): void {
-    storage.set(STORAGE_KEYS.petId, petId);
+    storage.remove(STORAGE_KEYS.petId);
+    this.persistPetIdForCurrentUser(petId);
+  }
+
+  clearPetState(): void {
+    this.currentPet = null;
+    storage.remove(STORAGE_KEYS.petId);
+
+    const ownerKey = this.getCurrentUserKey();
+    if (!ownerKey) {
+      return;
+    }
+
+    const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
+    if (!(ownerKey in petIdMap)) {
+      return;
+    }
+
+    delete petIdMap[ownerKey];
+    storage.setJson(STORAGE_KEYS.petIdMap, petIdMap);
   }
 
   getCurrentPet(): PetStatus | null {
@@ -78,6 +102,51 @@ class AppState {
     storage.remove(STORAGE_KEYS.token);
     storage.remove(STORAGE_KEYS.petId);
     storage.remove(STORAGE_KEYS.activeTab);
+  }
+
+  private getStoredPetIdForCurrentUser(): string | null {
+    const ownerKey = this.getCurrentUserKey();
+    if (!ownerKey) {
+      return null;
+    }
+
+    const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
+    return petIdMap[ownerKey] ?? null;
+  }
+
+  private getCurrentUserKey(): string | null {
+    const user = this.currentUser;
+    if (!user) {
+      return null;
+    }
+
+    return user.id || user.username || null;
+  }
+
+  private persistPetIdForCurrentUser(petId: string): void {
+    const ownerKey = this.getCurrentUserKey();
+    if (!ownerKey) {
+      return;
+    }
+
+    const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
+    petIdMap[ownerKey] = petId;
+    storage.setJson(STORAGE_KEYS.petIdMap, petIdMap);
+  }
+
+  private migrateLegacyPetIdForCurrentUser(): string | null {
+    const legacyPetId = storage.get(STORAGE_KEYS.petId);
+    if (!legacyPetId) {
+      return null;
+    }
+
+    if (!this.getCurrentUserKey()) {
+      return legacyPetId;
+    }
+
+    this.persistPetIdForCurrentUser(legacyPetId);
+    storage.remove(STORAGE_KEYS.petId);
+    return legacyPetId;
   }
 }
 

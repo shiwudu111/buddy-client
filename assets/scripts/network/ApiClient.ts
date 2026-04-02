@@ -58,9 +58,17 @@ class ApiClient {
       });
 
       const raw = await response.text();
-      const payload = raw
-        ? (JSON.parse(raw) as ApiResponse<T>)
-        : ({ success: response.ok } as ApiResponse<T>);
+      let payload: ApiResponse<T> = { success: response.ok };
+      if (raw) {
+        try {
+          payload = JSON.parse(raw) as ApiResponse<T>;
+        } catch {
+          payload = {
+            success: response.ok,
+            message: response.ok ? undefined : `HTTP ${response.status}`,
+          };
+        }
+      }
 
       if (!response.ok) {
         if (response.status === 401 && !options.skipAuth) {
@@ -70,10 +78,14 @@ class ApiClient {
           success: false,
           message: payload.message ?? `HTTP ${response.status}`,
           data: payload.data,
+          statusCode: response.status,
         };
       }
 
-      return payload;
+      return {
+        ...payload,
+        statusCode: response.status,
+      };
     } catch (error) {
       return {
         success: false,
