@@ -12,9 +12,15 @@ import { authService } from "../../services/AuthService";
 import { homeworkService } from "../../services/HomeworkService";
 import { parentService } from "../../services/ParentService";
 import { petService } from "../../services/PetService";
-import { formatHomeworkHistory, formatPetSummary } from "../../utils/format";
+import {
+  formatHomeworkHistory,
+  formatParentOverview,
+  formatPetSummary,
+  formatWeeklyReportSummary,
+} from "../../utils/format";
 import { ScreenController } from "../common/base/ScreenController";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
+import type { ChildPetPayload, WeeklyReportPayload } from "../../types/api";
 
 const { ccclass } = _decorator;
 
@@ -31,6 +37,10 @@ export class MainController extends ScreenController {
     english: "",
   };
   private bindChildDraft = "";
+  private parentOverview: ChildPetPayload | null = null;
+  private parentWeeklyReport: WeeklyReportPayload | null = null;
+  private parentOverviewError = "";
+  private parentWeeklyError = "";
 
   onLoad(): void {
     const savedTab = storage.get(STORAGE_KEYS.activeTab);
@@ -58,6 +68,8 @@ export class MainController extends ScreenController {
       }
       await homeworkService.refreshHistory();
       await homeworkService.refreshTodayStatus();
+    } else {
+      await this.loadParentDashboardData();
     }
 
     await this.render();
@@ -510,18 +522,26 @@ export class MainController extends ScreenController {
   private async renderParentDashboard(root: Node): Promise<void> {
     const bindCard = RuntimeUI.createBox(root, {
       name: "ParentBindCard",
-      x: -260,
+      x: -310,
       y: -5,
-      width: 440,
-      height: 430,
+      width: 400,
+      height: 400,
+      color: new Color(28, 35, 48, 255),
+    });
+    const statusCard = RuntimeUI.createBox(root, {
+      name: "ParentStatusCard",
+      x: 250,
+      y: 105,
+      width: 530,
+      height: 250,
       color: new Color(28, 35, 48, 255),
     });
     const reportCard = RuntimeUI.createBox(root, {
       name: "ParentReportCard",
-      x: 255,
-      y: -5,
+      x: 250,
+      y: -150,
       width: 530,
-      height: 430,
+      height: 200,
       color: new Color(28, 35, 48, 255),
     });
 
@@ -529,18 +549,18 @@ export class MainController extends ScreenController {
       name: "BindCardTitle",
       text: "家长绑定与孩子状态",
       x: 0,
-      y: 175,
-      width: 330,
+      y: 155,
+      width: 320,
       height: 36,
-      fontSize: 24,
+      fontSize: 22,
     });
 
     this.bindChildInput = RuntimeUI.createEditBox(bindCard, {
       name: "ChildBindInput",
       placeholder: "输入 child_id 或孩子账号",
       x: 0,
-      y: 95,
-      width: 360,
+      y: 90,
+      width: 320,
       height: 60,
       defaultValue: this.bindChildDraft,
       maxLength: 64,
@@ -563,70 +583,79 @@ export class MainController extends ScreenController {
     );
 
     const childId = appState.getLinkedChildId();
+    const childDisplayName =
+      this.parentOverview?.childNickname ??
+      appState.getCurrentUser()?.childNickname ??
+      null;
     RuntimeUI.createLabel(bindCard, {
       name: "ChildIdLabel",
-      text: childId ? `当前已绑定孩子：${childId}` : "当前尚未绑定孩子",
+      text: childId
+        ? childDisplayName
+          ? `当前已绑定孩子：${childDisplayName}`
+          : "当前已绑定孩子"
+        : "当前尚未绑定孩子",
       x: 0,
       y: -35,
-      width: 340,
-      height: 40,
-      fontSize: 18,
+      width: 300,
+      height: 90,
+      fontSize: 16,
       color: new Color(171, 183, 200, 255),
+      horizontalAlign: 0,
+      verticalAlign: 1,
     });
 
-    const overviewResult = await parentService.getChildOverview();
-    const weeklyResult = await parentService.getWeeklyReport();
+    const overviewText = this.parentOverview
+      ? formatParentOverview(this.parentOverview)
+      : this.parentOverviewError || "等待绑定后获取孩子状态";
 
-    const overviewText =
-      overviewResult.success && overviewResult.data
-        ? [
-            `宠物：${overviewResult.data.pet.name}`,
-            `等级：Lv.${overviewResult.data.pet.level}`,
-            `饥饿度：${overviewResult.data.pet.hunger}%`,
-            `心情值：${overviewResult.data.pet.mood}%`,
-            `今日作业：${JSON.stringify(overviewResult.data.today_homework)}`,
-          ].join("\n")
-        : overviewResult.message ?? "等待绑定后获取孩子状态";
-
-    RuntimeUI.createLabel(reportCard, {
-      name: "ReportCardTitle",
-      text: "孩子总览 / 周报留壳",
+    RuntimeUI.createLabel(statusCard, {
+      name: "StatusCardTitle",
+      text: "孩子状态与今日作业",
       x: 0,
-      y: 175,
+      y: 95,
       width: 360,
       height: 36,
-      fontSize: 24,
+      fontSize: 22,
     });
 
-    RuntimeUI.createLabel(reportCard, {
+    RuntimeUI.createScrollText(statusCard, {
       name: "ParentOverview",
       text: overviewText,
       x: 0,
-      y: 50,
-      width: 420,
-      height: 180,
-      fontSize: 19,
+      y: -8,
+      width: 460,
+      height: 185,
+      fontSize: 15,
       color: new Color(219, 226, 236, 255),
+      backgroundColor: new Color(23, 29, 40, 255),
+      padding: 16,
     });
 
-    const weeklyText =
-      weeklyResult.success && weeklyResult.data
-        ? [
-            `时间范围：${weeklyResult.data.week}`,
-            `总作业数：${weeklyResult.data.total_homework}`,
-            `平均分：${weeklyResult.data.average_score}`,
-          ].join("\n")
-        : weeklyResult.message ?? "周报接口尚未完成";
-
     RuntimeUI.createLabel(reportCard, {
+      name: "WeeklyTitle",
+      text: "本周周报",
+      x: 0,
+      y: 78,
+      width: 360,
+      height: 30,
+      fontSize: 22,
+    });
+
+    const weeklyText = this.parentWeeklyReport
+      ? formatWeeklyReportSummary(this.parentWeeklyReport)
+      : this.parentWeeklyError || "周报接口尚未完成";
+
+    RuntimeUI.createScrollText(reportCard, {
       name: "WeeklySummary",
       text: weeklyText,
       x: 0,
-      y: -120,
-      width: 420,
-      height: 120,
-      fontSize: 18,
+      y: -12,
+      width: 460,
+      height: 135,
+      fontSize: 14,
       color: new Color(171, 183, 200, 255),
+      backgroundColor: new Color(23, 29, 40, 255),
+      padding: 16,
     });
   }
 
@@ -647,6 +676,12 @@ export class MainController extends ScreenController {
       result.pendingTasks[0] === "未检测到宠物映射"
     ) {
       this.pageMessage = "未检测到宠物映射，请先创建宠物";
+    } else if (
+      result.failedTasks.length === 0 &&
+      result.pendingTasks.length === 1 &&
+      result.pendingTasks[0] === "当前尚未绑定孩子"
+    ) {
+      this.pageMessage = "当前尚未绑定孩子，请先绑定后再刷新";
     } else if (result.successTasks.length === 0) {
       const blockers = [...result.failedTasks, ...result.pendingTasks];
       this.pageMessage = `刷新失败：${blockers.join("、")}`;
@@ -721,10 +756,11 @@ export class MainController extends ScreenController {
 
     const result = await parentService.bindChild(identifier);
     this.pageMessage = result.success
-      ? "绑定请求已提交，请刷新查看结果"
+      ? "绑定成功，已加载孩子状态"
       : result.message ?? "绑定失败";
     if (result.success) {
       this.bindChildDraft = "";
+      await this.loadParentDashboardData();
     }
     await this.render();
   }
@@ -782,6 +818,51 @@ export class MainController extends ScreenController {
       } else {
         failedTasks.push("今日状态");
       }
+    } else {
+      const linkedChildId = appState.getLinkedChildId();
+      if (!linkedChildId) {
+        appState.patchCurrentUser({
+          childNickname: null,
+        });
+        this.parentOverview = null;
+        this.parentWeeklyReport = null;
+        this.parentOverviewError = "当前尚未绑定孩子";
+        this.parentWeeklyError = "请先绑定孩子后查看周报";
+        pendingTasks.push("当前尚未绑定孩子");
+        return {
+          sessionReady: true,
+          successTasks,
+          failedTasks,
+          pendingTasks,
+        };
+      }
+
+      const overviewResult = await parentService.getChildOverview();
+      if (overviewResult.success && overviewResult.data) {
+        this.parentOverview = overviewResult.data;
+        this.parentOverviewError = "";
+        if (overviewResult.data.childNickname) {
+          appState.patchCurrentUser({
+            childNickname: overviewResult.data.childNickname,
+          });
+        }
+        successTasks.push("孩子状态");
+      } else {
+        this.parentOverview = null;
+        this.parentOverviewError = overviewResult.message ?? "孩子状态加载失败";
+        failedTasks.push("孩子状态");
+      }
+
+      const weeklyResult = await parentService.getWeeklyReport();
+      if (weeklyResult.success && weeklyResult.data) {
+        this.parentWeeklyReport = weeklyResult.data;
+        this.parentWeeklyError = "";
+        successTasks.push("周报");
+      } else {
+        this.parentWeeklyReport = null;
+        this.parentWeeklyError = weeklyResult.message ?? "周报加载失败";
+        failedTasks.push("周报");
+      }
     }
 
     return {
@@ -790,5 +871,42 @@ export class MainController extends ScreenController {
       failedTasks,
       pendingTasks,
     };
+  }
+
+  private async loadParentDashboardData(): Promise<void> {
+    const linkedChildId = appState.getLinkedChildId();
+    if (!linkedChildId) {
+      appState.patchCurrentUser({
+        childNickname: null,
+      });
+      this.parentOverview = null;
+      this.parentWeeklyReport = null;
+      this.parentOverviewError = "当前尚未绑定孩子";
+      this.parentWeeklyError = "请先绑定孩子后查看周报";
+      return;
+    }
+
+    const overviewResult = await parentService.getChildOverview();
+    if (overviewResult.success && overviewResult.data) {
+      this.parentOverview = overviewResult.data;
+      this.parentOverviewError = "";
+      if (overviewResult.data.childNickname) {
+        appState.patchCurrentUser({
+          childNickname: overviewResult.data.childNickname,
+        });
+      }
+    } else {
+      this.parentOverview = null;
+      this.parentOverviewError = overviewResult.message ?? "等待绑定后获取孩子状态";
+    }
+
+    const weeklyResult = await parentService.getWeeklyReport();
+    if (weeklyResult.success && weeklyResult.data) {
+      this.parentWeeklyReport = weeklyResult.data;
+      this.parentWeeklyError = "";
+    } else {
+      this.parentWeeklyReport = null;
+      this.parentWeeklyError = weeklyResult.message ?? "周报接口尚未完成";
+    }
   }
 }

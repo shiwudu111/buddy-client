@@ -1,4 +1,10 @@
-import type { HomeworkHistoryPayload, HomeworkItem, PetStatus } from "../types/api";
+import type {
+  ChildPetPayload,
+  HomeworkHistoryPayload,
+  HomeworkItem,
+  PetStatus,
+  WeeklyReportPayload,
+} from "../types/api";
 import { HOMEWORK_SUBJECT_LABELS, type HomeworkSubject } from "../domain/models/app";
 
 export function formatPetSummary(pet: PetStatus | null): string[] {
@@ -69,6 +75,41 @@ export function normalizeMultilineText(raw: string): string {
     .join("\n");
 }
 
+export function formatParentOverview(data: ChildPetPayload): string {
+  const homework = data.today_homework ?? {};
+  return [
+    `孩子：${data.childNickname ?? data.childId ?? "未命名"}`,
+    `宠物：${data.pet.name}  Lv.${data.pet.level}`,
+    `状态：${data.pet.status ? "正常" : "异常"} | 饥饿 ${data.pet.hunger}% | 心情 ${data.pet.mood}%`,
+    `经验值：${data.pet.experience ?? "-"}`,
+    "今日作业状态：",
+    `语文：${formatTodayHomeworkScore(homework.chinese)}`,
+    `数学：${formatTodayHomeworkScore(homework.math)}`,
+    `英语：${formatTodayHomeworkScore(homework.english)}`,
+  ].join("\n");
+}
+
+export function formatWeeklyReportSummary(data: WeeklyReportPayload): string {
+  const petSummary = data.pet_status_summary;
+  const subjectBreakdown = data.subject_breakdown
+    ? Object.entries(data.subject_breakdown)
+        .map(([subject, item]) => `${mapSubjectLabel(subject)} ${item.count}次 / 均分${item.avg}`)
+        .join("\n")
+    : "暂无学科统计";
+
+  const petStatusText = petSummary
+    ? `宠物：${petSummary.alive === false ? "异常" : "正常"} | 饥饿 ${petSummary.hunger ?? "-"} | 心情 ${petSummary.mood ?? "-"}`
+    : "宠物：暂无周报数据";
+
+  return [
+    `周范围：${data.week}`,
+    `孩子：${data.childNickname ?? data.childId ?? "未命名"} | 总作业 ${data.total_homework} | 平均分 ${data.average_score}`,
+    "学科统计：",
+    subjectBreakdown,
+    petStatusText,
+  ].join("\n");
+}
+
 function formatHistoryTimestamp(raw?: string | null): string {
   if (!raw) {
     return "未知";
@@ -86,4 +127,12 @@ function formatHistoryTimestamp(raw?: string | null): string {
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
+}
+
+function formatTodayHomeworkScore(item: { score: number | null } | null | undefined): string {
+  if (!item) {
+    return "未提交";
+  }
+
+  return item.score === null || item.score === undefined ? "已提交 / 待评分" : `已提交 / ${item.score}分`;
 }

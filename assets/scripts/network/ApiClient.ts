@@ -17,6 +17,12 @@ type RequestOptions = RequestInit & {
   skipAuth?: boolean;
 };
 
+function looksLikeChildId(identifier: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    identifier.trim()
+  );
+}
+
 class ApiClient {
   private token: string | null = storage.get(STORAGE_KEYS.token);
 
@@ -192,13 +198,14 @@ class ApiClient {
   async bindChild(
     childIdentifier: string
   ): Promise<ApiResponse<ParentBindPayload>> {
+    const identifier = childIdentifier.trim();
+    const body = looksLikeChildId(identifier)
+      ? { child_id: identifier }
+      : { child_username: identifier };
+
     return this.request<ParentBindPayload>("/parent/bind", {
       method: "POST",
-      body: JSON.stringify({
-        child_phone: childIdentifier,
-        child_id: childIdentifier,
-        child_username: childIdentifier,
-      }),
+      body: JSON.stringify(body),
     });
   }
 

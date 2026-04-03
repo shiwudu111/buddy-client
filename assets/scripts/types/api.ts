@@ -14,6 +14,7 @@ export interface AuthUser {
   email?: string | null;
   role: UserRole;
   childId?: string | null;
+  childNickname?: string | null;
   parentId?: string | null;
   nickname?: string | null;
 }
@@ -74,12 +75,15 @@ export interface HomeworkTodayStatus {
 }
 
 export interface ChildPetPayload {
+  childId?: string;
+  childNickname?: string;
   pet: {
     name: string;
     level: number;
     status: boolean;
     hunger: number;
     mood: number;
+    experience?: number;
   };
   today_homework: Record<string, { score: number | null } | null>;
 }
@@ -93,8 +97,14 @@ export interface ParentBindPayload {
 
 export interface WeeklyReportPayload {
   week: string;
+  childId?: string;
+  childNickname?: string;
   total_homework: number;
   average_score: number;
   subject_breakdown?: Record<string, { count: number; avg: number }>;
-  pet_status_summary?: Record<string, number>;
+  pet_status_summary?: {
+    alive?: boolean;
+    hunger?: number;
+    mood?: number;
+  };
 }
