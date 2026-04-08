@@ -11,12 +11,10 @@ export type HomeworkSubject = "chinese" | "math" | "english";
 export interface AuthUser {
   id: string;
   username: string;
-  email?: string | null;
   role: UserRole;
   childId?: string | null;
+  petId?: string | null;
   childNickname?: string | null;
-  parentId?: string | null;
-  nickname?: string | null;
 }
 
 export interface AuthPayload {
@@ -40,7 +38,7 @@ export interface PetResourcesPayload {
   hunger: number;
   mood: number;
   experience: number;
-  isAlive: boolean;
+  status: boolean;
   events: string[];
 }
 
@@ -90,9 +88,7 @@ export interface ChildPetPayload {
 
 export interface ParentBindPayload {
   childId?: string;
-  child_id?: string;
   childNickname?: string;
-  child_nickname?: string;
 }
 
 export interface WeeklyReportPayload {

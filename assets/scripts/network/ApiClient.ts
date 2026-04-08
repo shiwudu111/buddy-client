@@ -17,6 +17,13 @@ type RequestOptions = RequestInit & {
   skipAuth?: boolean;
 };
 
+type PetResourceReason =
+  | "manual_feed"
+  | "manual_play"
+  | "homework_reward"
+  | "daily_decay"
+  | "system_adjust";
+
 function looksLikeChildId(identifier: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     identifier.trim()
@@ -93,9 +100,15 @@ class ApiClient {
         statusCode: response.status,
       };
     } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : "请求失败";
+      const message =
+        rawMessage === "Failed to fetch"
+          ? "网络请求失败，请确认后端服务可访问且已允许当前预览来源跨域访问"
+          : rawMessage;
+
       return {
         success: false,
-        message: error instanceof Error ? error.message : "请求失败",
+        message,
       };
     }
   }
@@ -159,6 +172,7 @@ class ApiClient {
       fullness_delta?: number;
       mood_delta?: number;
       growth_delta?: number;
+      reason: PetResourceReason;
     }
   ): Promise<ApiResponse<PetResourcesPayload>> {
     return this.request<PetResourcesPayload>(`/pets/${petId}/resources`, {

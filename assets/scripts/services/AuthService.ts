@@ -5,7 +5,8 @@ import type { ApiResponse, AuthPayload, AuthUser } from "../types/api";
 function normalizeUser(user: AuthUser): AuthUser {
   return {
     ...user,
-    childId: user.childId ?? user.parentId ?? null,
+    childId: user.childId ?? null,
+    petId: user.petId ?? null,
   };
 }
 

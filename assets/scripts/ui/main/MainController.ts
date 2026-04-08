@@ -557,7 +557,7 @@ export class MainController extends ScreenController {
 
     this.bindChildInput = RuntimeUI.createEditBox(bindCard, {
       name: "ChildBindInput",
-      placeholder: "输入 child_id 或孩子账号",
+      placeholder: "输入孩子 User.id 或孩子账号",
       x: 0,
       y: 90,
       width: 320,

@@ -47,9 +47,8 @@ class ParentService {
     const result = await apiClient.bindChild(childIdentifier);
     if (result.success && result.data) {
       appState.patchCurrentUser({
-        childId: result.data.childId ?? result.data.child_id ?? null,
-        childNickname:
-          result.data.childNickname ?? result.data.child_nickname ?? null,
+        childId: result.data.childId ?? null,
+        childNickname: result.data.childNickname ?? null,
       });
       return result;
     }

@@ -19,6 +19,12 @@ class AppState {
   setCurrentUser(user: AuthUser): void {
     this.currentUser = user;
     storage.setJson(STORAGE_KEYS.user, user);
+
+    if (user.petId) {
+      this.persistPetIdForCurrentUser(user.petId);
+    } else {
+      this.removeStoredPetIdForCurrentUser();
+    }
   }
 
   patchCurrentUser(patch: Partial<AuthUser>): void {
@@ -34,10 +40,16 @@ class AppState {
 
   getLinkedChildId(): string | null {
     const user = this.getCurrentUser();
-    return user?.childId ?? user?.parentId ?? null;
+    return user?.childId ?? null;
   }
 
   getPetId(): string | null {
+    const userPetId = this.currentUser?.petId?.trim();
+    if (userPetId) {
+      this.persistPetIdForCurrentUser(userPetId);
+      return userPetId;
+    }
+
     const mappedPetId = this.getStoredPetIdForCurrentUser();
     if (mappedPetId) {
       return mappedPetId;
@@ -48,25 +60,29 @@ class AppState {
 
   setPetId(petId: string): void {
     storage.remove(STORAGE_KEYS.petId);
+    const user = this.currentUser;
+    if (user && user.petId !== petId) {
+      this.currentUser = {
+        ...user,
+        petId,
+      };
+      storage.setJson(STORAGE_KEYS.user, this.currentUser);
+    }
     this.persistPetIdForCurrentUser(petId);
   }
 
   clearPetState(): void {
     this.currentPet = null;
     storage.remove(STORAGE_KEYS.petId);
-
-    const ownerKey = this.getCurrentUserKey();
-    if (!ownerKey) {
-      return;
+    if (this.currentUser?.petId) {
+      this.currentUser = {
+        ...this.currentUser,
+        petId: null,
+      };
+      storage.setJson(STORAGE_KEYS.user, this.currentUser);
     }
 
-    const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
-    if (!(ownerKey in petIdMap)) {
-      return;
-    }
-
-    delete petIdMap[ownerKey];
-    storage.setJson(STORAGE_KEYS.petIdMap, petIdMap);
+    this.removeStoredPetIdForCurrentUser();
   }
 
   getCurrentPet(): PetStatus | null {
@@ -131,6 +147,21 @@ class AppState {
 
     const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
     petIdMap[ownerKey] = petId;
+    storage.setJson(STORAGE_KEYS.petIdMap, petIdMap);
+  }
+
+  private removeStoredPetIdForCurrentUser(): void {
+    const ownerKey = this.getCurrentUserKey();
+    if (!ownerKey) {
+      return;
+    }
+
+    const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
+    if (!(ownerKey in petIdMap)) {
+      return;
+    }
+
+    delete petIdMap[ownerKey];
     storage.setJson(STORAGE_KEYS.petIdMap, petIdMap);
   }
 

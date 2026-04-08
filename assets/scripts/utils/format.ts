@@ -12,12 +12,7 @@ export function formatPetSummary(pet: PetStatus | null): string[] {
     return ["暂无宠物数据"];
   }
 
-  const statusText =
-    typeof pet.status === "string"
-      ? pet.status
-      : pet.status === false
-      ? "dead"
-      : "alive";
+  const statusText = pet.status === false ? "异常" : "正常";
 
   return [
     `宠物名：${pet.name}`,
