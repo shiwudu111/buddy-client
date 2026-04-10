@@ -11,6 +11,10 @@ function normalizeUser(user: AuthUser): AuthUser {
 }
 
 class AuthService {
+  hasStoredSession(): boolean {
+    return Boolean(apiClient.getToken());
+  }
+
   async bootstrapSession(): Promise<AuthUser | null> {
     if (!apiClient.getToken()) {
       return null;

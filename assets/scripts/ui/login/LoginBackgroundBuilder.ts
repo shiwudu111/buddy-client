@@ -1,18 +1,34 @@
-import { Color, Graphics, Node, UITransform, Vec3, view } from "cc";
+import {
+  Color,
+  Graphics,
+  Node,
+  resources,
+  Sprite,
+  SpriteFrame,
+  UITransform,
+  Vec3,
+  view,
+} from "cc";
+import {
+  resolveLoginViewportMetrics,
+  type LoginViewportMetrics,
+} from "./LoginLayoutCalculator";
+import { ensureLoginPageHierarchy } from "./LoginSceneStructure";
+
+const FOREST_BACKGROUND_PATH = "login/login-forest-bg/spriteFrame";
+const DEFAULT_FOREST_WIDTH = 1536;
+const DEFAULT_FOREST_HEIGHT = 1024;
 
 type Size = {
   width: number;
   height: number;
 };
 
-type LayoutMetrics = Size & {
-  left: number;
-  right: number;
-  bottom: number;
-  top: number;
-  centerX: number;
-  centerY: number;
-  isPortrait: boolean;
+type BackgroundLayout = {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
 };
 
 function ensureTransform(node: Node, width: number, height: number): UITransform {
@@ -39,21 +55,13 @@ function ensureGraphics(node: Node): Graphics {
   return node.getComponent(Graphics) ?? node.addComponent(Graphics);
 }
 
-function ensureFoxPart(parent: Node, name: string): Node {
-  return ensureChild(parent, name);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function lerpColor(from: Color, to: Color, t: number): Color {
-  return new Color(
-    Math.round(from.r + (to.r - from.r) * t),
-    Math.round(from.g + (to.g - from.g) * t),
-    Math.round(from.b + (to.b - from.b) * t),
-    Math.round(from.a + (to.a - from.a) * t)
-  );
+function drawRect(node: Node, width: number, height: number, color: Color): void {
+  ensureTransform(node, width, height);
+  const graphics = ensureGraphics(node);
+  graphics.clear();
+  graphics.fillColor = color;
+  graphics.rect(-width / 2, -height / 2, width, height);
+  graphics.fill();
 }
 
 function drawCircle(node: Node, radius: number, color: Color): void {
@@ -65,85 +73,48 @@ function drawCircle(node: Node, radius: number, color: Color): void {
   graphics.fill();
 }
 
-function drawRoundedBody(node: Node, width: number, height: number, color: Color): void {
-  ensureTransform(node, width + 8, height + 8);
-  const graphics = ensureGraphics(node);
-  graphics.clear();
-  graphics.fillColor = color;
-  graphics.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) * 0.4);
-  graphics.fill();
-}
-
-function drawEar(node: Node, width: number, height: number, color: Color): void {
-  ensureTransform(node, width + 8, height + 8);
-  const graphics = ensureGraphics(node);
-  graphics.clear();
-  graphics.fillColor = color;
-  graphics.moveTo(0, height / 2);
-  graphics.lineTo(-width / 2, -height / 2);
-  graphics.lineTo(width / 2, -height / 2);
-  graphics.close();
-  graphics.fill();
-}
-
-function scaleValue(value: number, scale: number): number {
-  return value * scale;
-}
-
-function scaledPosition(x: number, y: number, scale: number): Vec3 {
-  return new Vec3(scaleValue(x, scale), scaleValue(y, scale), 0);
+function lerpColor(from: Color, to: Color, t: number): Color {
+  return new Color(
+    Math.round(from.r + (to.r - from.r) * t),
+    Math.round(from.g + (to.g - from.g) * t),
+    Math.round(from.b + (to.b - from.b) * t),
+    Math.round(from.a + (to.a - from.a) * t)
+  );
 }
 
 class LoginBackgroundBuilder {
+  private backgroundSpriteFrame: SpriteFrame | null = null;
+  private isLoadingBackground = false;
+  private activeCanvas: Node | null = null;
+
   ensure(canvas: Node): void {
+    this.activeCanvas = canvas;
     const metrics = this.getLayoutMetrics(canvas);
 
-    const loginPage = ensureChild(canvas, "LoginPage", 0);
+    const { loginPage, backgroundLayer } = ensureLoginPageHierarchy(canvas);
     loginPage.setPosition(Vec3.ZERO);
     ensureTransform(loginPage, metrics.width, metrics.height);
-
-    const backgroundLayer = ensureChild(loginPage, "BackgroundLayer", 0);
     backgroundLayer.setPosition(Vec3.ZERO);
     ensureTransform(backgroundLayer, metrics.width, metrics.height);
 
-    this.drawGradient(backgroundLayer, metrics);
+    this.drawFallbackGradient(backgroundLayer, metrics);
+    this.ensureForestBackground(backgroundLayer, metrics);
+    this.drawForestOverlays(backgroundLayer, metrics);
     this.drawAmbientShapes(backgroundLayer, metrics);
-    this.drawFoxVisual(backgroundLayer, metrics);
+    this.destroyLegacyFoxNodes(backgroundLayer);
   }
 
-  ensureContentLayer(canvas: Node): Node {
-    const metrics = this.getLayoutMetrics(canvas);
-
-    const loginPage = ensureChild(canvas, "LoginPage", 0);
-    loginPage.setPosition(Vec3.ZERO);
-    ensureTransform(loginPage, metrics.width, metrics.height);
-
-    const contentLayer = ensureChild(loginPage, "ContentLayer", 1);
-    contentLayer.setPosition(Vec3.ZERO);
-    ensureTransform(contentLayer, metrics.width, metrics.height);
-    return contentLayer;
-  }
-
-  private getLayoutMetrics(canvas: Node): LayoutMetrics {
+  private getLayoutMetrics(canvas: Node): LoginViewportMetrics {
     const visibleSize = view.getVisibleSize();
     const canvasTransform = canvas.getComponent(UITransform);
-    const width = visibleSize.width || canvasTransform?.width || 1280;
-    const height = visibleSize.height || canvasTransform?.height || 720;
-
-    return {
-      width,
-      height,
-      left: -width * 0.5,
-      right: width * 0.5,
-      bottom: -height * 0.5,
-      top: height * 0.5,
-      centerX: 0,
-      centerY: 0,
-      isPortrait: height > width,
-    };
+    return resolveLoginViewportMetrics(
+      visibleSize,
+      canvasTransform?.width,
+      canvasTransform?.height
+    );
   }
 
-  private drawGradient(parent: Node, size: Size): void {
+  private drawFallbackGradient(parent: Node, size: Size): void {
     const node = ensureChild(parent, "BgGradient", 0);
     node.setPosition(Vec3.ZERO);
     ensureTransform(node, size.width, size.height);
@@ -151,24 +122,18 @@ class LoginBackgroundBuilder {
     const graphics = ensureGraphics(node);
     graphics.clear();
 
-    const isPortrait = size.height > size.width;
-    const top = isPortrait
-      ? new Color(168, 197, 228, 255)
-      : new Color(154, 186, 222, 255);
-    const middle = isPortrait
-      ? new Color(102, 136, 180, 255)
-      : new Color(86, 123, 170, 255);
-    const bottom = isPortrait
-      ? new Color(34, 52, 83, 255)
-      : new Color(28, 44, 74, 255);
-    const steps = 30;
+    const top = new Color(17, 41, 59, 255);
+    const middle = new Color(16, 63, 73, 255);
+    const bottom = new Color(7, 26, 31, 255);
+    const steps = 32;
     const stepHeight = size.height / steps;
 
     for (let index = 0; index < steps; index += 1) {
       const t = index / (steps - 1);
-      const color = t < 0.55
-        ? lerpColor(top, middle, t / 0.55)
-        : lerpColor(middle, bottom, (t - 0.55) / 0.45);
+      const color =
+        t < 0.48
+          ? lerpColor(top, middle, t / 0.48)
+          : lerpColor(middle, bottom, (t - 0.48) / 0.52);
       graphics.fillColor = color;
       graphics.rect(
         -size.width / 2,
@@ -180,170 +145,199 @@ class LoginBackgroundBuilder {
     }
   }
 
-  private drawAmbientShapes(parent: Node, metrics: LayoutMetrics): void {
-    const size = { width: metrics.width, height: metrics.height };
-    const node = ensureChild(parent, "AmbientShapes", 1);
+  private ensureForestBackground(parent: Node, metrics: LoginViewportMetrics): void {
+    const node = ensureChild(parent, "ForestBackground", 1);
+    const sourceSize = this.getForestSourceSize();
+    const layout = this.getForestLayout(metrics, sourceSize.width, sourceSize.height);
+    node.setPosition(new Vec3(layout.x, layout.y, 0));
+    ensureTransform(node, layout.width, layout.height);
+
+    const sprite = node.getComponent(Sprite) ?? node.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.color = new Color(255, 255, 255, 255);
+
+    if (this.backgroundSpriteFrame) {
+      sprite.spriteFrame = this.backgroundSpriteFrame;
+      return;
+    }
+
+    sprite.spriteFrame = null;
+    this.loadForestBackground();
+  }
+
+  private drawForestOverlays(parent: Node, metrics: LoginViewportMetrics): void {
+    const wash = ensureChild(parent, "ForestWash", 2);
+    wash.setPosition(Vec3.ZERO);
+    drawRect(wash, metrics.width, metrics.height, new Color(5, 16, 21, 84));
+
+    const topMist = ensureChild(parent, "TopMist", 3);
+    topMist.setPosition(new Vec3(0, metrics.height * 0.24, 0));
+    drawCircle(topMist, metrics.isPortrait ? 250 : 320, new Color(117, 186, 223, 24));
+
+    const focusShade = ensureChild(parent, "LoginReadabilityShade", 4);
+    focusShade.setPosition(
+      new Vec3(
+        metrics.isPortrait ? 0 : metrics.width * 0.2,
+        metrics.isPortrait ? -metrics.height * 0.12 : metrics.height * 0.05,
+        0
+      )
+    );
+    drawCircle(
+      focusShade,
+      metrics.isPortrait ? metrics.width * 0.58 : metrics.height * 0.46,
+      new Color(7, 20, 27, metrics.isPortrait ? 116 : 98)
+    );
+
+    const bottomGlow = ensureChild(parent, "BottomGlow", 5);
+    bottomGlow.setPosition(new Vec3(-metrics.width * 0.16, -metrics.height * 0.36, 0));
+    drawCircle(
+      bottomGlow,
+      metrics.isPortrait ? metrics.width * 0.28 : metrics.height * 0.22,
+      new Color(121, 255, 157, 34)
+    );
+  }
+
+  private drawAmbientShapes(parent: Node, metrics: LoginViewportMetrics): void {
+    const node = ensureChild(parent, "AmbientShapes", 6);
     node.setPosition(Vec3.ZERO);
-    ensureTransform(node, size.width, size.height);
+    ensureTransform(node, metrics.width, metrics.height);
 
     const graphics = ensureGraphics(node);
     graphics.clear();
 
-    const isPortrait = metrics.isPortrait;
-    const shapes = isPortrait
+    const glows = metrics.isPortrait
       ? [
           {
-            x: 0,
-            y: metrics.height * 0.18,
-            radius: 120,
-            color: new Color(255, 255, 255, 30),
-          },
-          {
-            x: -metrics.width * 0.24,
-            y: -metrics.height * 0.1,
-            radius: 86,
-            color: new Color(193, 220, 255, 24),
+            x: -metrics.width * 0.22,
+            y: -metrics.height * 0.08,
+            radius: metrics.width * 0.15,
+            color: new Color(162, 255, 145, 24),
           },
           {
             x: metrics.width * 0.24,
-            y: -metrics.height * 0.18,
-            radius: 96,
-            color: new Color(255, 255, 255, 20),
+            y: metrics.height * 0.24,
+            radius: metrics.width * 0.12,
+            color: new Color(111, 232, 255, 20),
+          },
+          {
+            x: 0,
+            y: -metrics.height * 0.3,
+            radius: metrics.width * 0.18,
+            color: new Color(255, 241, 162, 18),
           },
         ]
       : [
           {
             x: metrics.left + metrics.width * 0.18,
-            y: metrics.height * 0.18,
-            radius: 180,
-            color: new Color(255, 255, 255, 34),
+            y: metrics.bottom + metrics.height * 0.16,
+            radius: metrics.height * 0.18,
+            color: new Color(145, 255, 162, 24),
           },
           {
-            x: metrics.left + metrics.width * 0.34,
-            y: -metrics.height * 0.2,
-            radius: 120,
-            color: new Color(245, 250, 255, 28),
+            x: metrics.right - metrics.width * 0.16,
+            y: metrics.top - metrics.height * 0.2,
+            radius: metrics.height * 0.16,
+            color: new Color(102, 219, 255, 22),
           },
           {
-            x: metrics.right - metrics.width * 0.22,
-            y: -metrics.height * 0.28,
-            radius: 150,
-            color: new Color(206, 229, 255, 18),
+            x: metrics.centerX - metrics.width * 0.03,
+            y: metrics.bottom + metrics.height * 0.12,
+            radius: metrics.height * 0.14,
+            color: new Color(255, 236, 170, 16),
           },
         ];
 
-    shapes.forEach((shape) => {
-      graphics.fillColor = shape.color;
-      graphics.circle(shape.x, shape.y, shape.radius);
+    glows.forEach((glow) => {
+      graphics.fillColor = glow.color;
+      graphics.circle(glow.x, glow.y, glow.radius);
       graphics.fill();
     });
   }
 
-  private drawFoxVisual(parent: Node, metrics: LayoutMetrics): void {
-    const portraitNode = ensureChild(parent, "FoxVisualPortrait", 2);
-    const landscapeNode = ensureChild(parent, "FoxVisualLandscape", 3);
+  private getForestLayout(
+    metrics: LoginViewportMetrics,
+    sourceWidth: number,
+    sourceHeight: number
+  ): BackgroundLayout {
+    if (metrics.isPortrait) {
+      const height = metrics.height;
+      const width = (sourceWidth / sourceHeight) * height;
 
-    this.drawFoxGraphicsVariant(portraitNode, metrics, true);
-    this.drawFoxGraphicsVariant(landscapeNode, metrics, false);
-
-    portraitNode.active = metrics.isPortrait;
-    landscapeNode.active = !metrics.isPortrait;
-  }
-
-  private drawFoxGraphicsVariant(node: Node, metrics: LayoutMetrics, portrait: boolean): void {
-    const baseFoxSize = 520;
-    const foxLayout = this.getFoxLayout(metrics, portrait);
-    const foxSize = foxLayout.size;
-    const foxScale = foxSize / baseFoxSize;
-    const estimatedHalfWidth = foxSize * 0.4;
-    const estimatedHalfHeight = foxSize * 0.42;
-    const foxX = clamp(
-      foxLayout.x,
-      metrics.left + 56 + estimatedHalfWidth,
-      metrics.right - 56 - estimatedHalfWidth
-    );
-    const foxY = clamp(
-      foxLayout.y,
-      metrics.bottom + 56 + estimatedHalfHeight,
-      metrics.top - 56 - estimatedHalfHeight
-    );
-
-    node.setPosition(new Vec3(foxX, foxY, 0));
-    ensureTransform(node, baseFoxSize, baseFoxSize);
-    node.setScale(Vec3.ONE);
-
-    const silhouetteColor = new Color(242, 151, 82, 156);
-    const softColor = new Color(255, 192, 128, 86);
-
-    const glow = ensureFoxPart(node, "Glow");
-    glow.setPosition(scaledPosition(0, -10, foxScale));
-    drawCircle(glow, scaleValue(190, foxScale), softColor);
-
-    const body = ensureFoxPart(node, "Body");
-    body.setPosition(scaledPosition(-24, -54, foxScale));
-    drawRoundedBody(
-      body,
-      scaleValue(236, foxScale),
-      scaleValue(218, foxScale),
-      silhouetteColor
-    );
-
-    const tail = ensureFoxPart(node, "Tail");
-    tail.setPosition(scaledPosition(104, -88, foxScale));
-    drawCircle(
-      tail,
-      scaleValue(84, foxScale),
-      new Color(241, 154, 90, 52)
-    );
-
-    const head = ensureFoxPart(node, "Head");
-    head.setPosition(scaledPosition(-8, 82, foxScale));
-    drawCircle(head, scaleValue(112, foxScale), silhouetteColor);
-
-    const earLeft = ensureFoxPart(node, "EarLeft");
-    earLeft.setPosition(scaledPosition(-86, 170, foxScale));
-    drawEar(
-      earLeft,
-      scaleValue(66, foxScale),
-      scaleValue(104, foxScale),
-      silhouetteColor
-    );
-
-    const earRight = ensureFoxPart(node, "EarRight");
-    earRight.setPosition(scaledPosition(26, 180, foxScale));
-    drawEar(
-      earRight,
-      scaleValue(60, foxScale),
-      scaleValue(96, foxScale),
-      new Color(241, 154, 90, 58)
-    );
-
-    const chest = ensureFoxPart(node, "Chest");
-    chest.setPosition(scaledPosition(2, -24, foxScale));
-    drawCircle(
-      chest,
-      scaleValue(68, foxScale),
-      new Color(255, 233, 205, 24)
-    );
-  }
-
-  private getFoxLayout(
-    metrics: LayoutMetrics,
-    portrait: boolean
-  ): { size: number; x: number; y: number } {
-    if (portrait) {
       return {
-        size: Math.min(metrics.width * 0.96, 460),
+        width,
+        height,
         x: 0,
-        y: metrics.height * 0.025,
+        y: 0,
+      };
+    }
+
+    const fitScale = Math.min(
+      1,
+      Math.min(metrics.width / sourceWidth, metrics.height / sourceHeight)
+    );
+    const width = sourceWidth * fitScale;
+    const height = sourceHeight * fitScale;
+
+    return {
+      width,
+      height,
+      x: 0,
+      y: 0,
+    };
+  }
+
+  private getForestSourceSize(): { width: number; height: number } {
+    if (!this.backgroundSpriteFrame) {
+      return {
+        width: DEFAULT_FOREST_WIDTH,
+        height: DEFAULT_FOREST_HEIGHT,
+      };
+    }
+
+    const rect = this.backgroundSpriteFrame.rect;
+    if (rect.width > 0 && rect.height > 0) {
+      return {
+        width: rect.width,
+        height: rect.height,
       };
     }
 
     return {
-      size: Math.min(metrics.height * 0.82, 420),
-      x: -metrics.width * 0.14,
-      y: metrics.height * 0.06,
+      width: DEFAULT_FOREST_WIDTH,
+      height: DEFAULT_FOREST_HEIGHT,
     };
+  }
+
+  private loadForestBackground(): void {
+    if (this.isLoadingBackground || this.backgroundSpriteFrame) {
+      return;
+    }
+
+    this.isLoadingBackground = true;
+    resources.load(FOREST_BACKGROUND_PATH, SpriteFrame, (error, spriteFrame) => {
+      this.isLoadingBackground = false;
+      if (error || !spriteFrame) {
+        console.warn("[LoginBackgroundBuilder] Failed to load forest background", error);
+        return;
+      }
+
+      this.backgroundSpriteFrame = spriteFrame;
+      if (this.activeCanvas?.isValid) {
+        this.ensure(this.activeCanvas);
+      }
+    });
+  }
+
+  private destroyLegacyFoxNodes(parent: Node): void {
+    ["FoxVisualPortrait", "FoxVisualLandscape"].forEach((name) => {
+      const child = parent.getChildByName(name);
+      if (!child) {
+        return;
+      }
+
+      child.removeFromParent();
+      child.destroy();
+    });
   }
 }
 
