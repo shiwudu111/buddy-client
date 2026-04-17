@@ -4,10 +4,14 @@ import type {
   ApiResponse,
   AuthPayload,
   AuthUser,
+  ChatHistoryPayload,
+  ChatReplyPayload,
+  ChatSendPayload,
   ChildPetPayload,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
   ParentBindPayload,
+  PetEvolutionPayload,
   PetResourcesPayload,
   PetStatus,
   WeeklyReportPayload,
@@ -164,6 +168,29 @@ class ApiClient {
 
   async getPetStatus(petId: string): Promise<ApiResponse<PetStatus>> {
     return this.request<PetStatus>(`/pets/${petId}`);
+  }
+
+  async getPetEvolution(petId: string): Promise<ApiResponse<PetEvolutionPayload>> {
+    return this.request<PetEvolutionPayload>(`/pets/${petId}/evolution`);
+  }
+
+  async sendChat(input: ChatSendPayload): Promise<ApiResponse<ChatReplyPayload>> {
+    return this.request<ChatReplyPayload>("/chat", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  async getChatHistory(
+    petId: string,
+    limit = 20
+  ): Promise<ApiResponse<ChatHistoryPayload>> {
+    const query = new URLSearchParams({
+      limit: String(limit),
+    });
+    return this.request<ChatHistoryPayload>(
+      `/chat/${encodeURIComponent(petId)}/history?${query.toString()}`
+    );
   }
 
   async updatePetResources(

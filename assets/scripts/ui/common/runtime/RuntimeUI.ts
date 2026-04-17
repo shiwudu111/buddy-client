@@ -13,9 +13,19 @@
   VerticalTextAlignment,
 } from "cc";
 
-// 鏂囦欢鏁翠綋浣滅敤锛?// 杩欐槸椤圭洰閲屸€滆繍琛屾椂鐜版嫾 UI鈥濈殑閫氱敤宸ュ叿绠便€?// 鐧诲綍椤点€佷富鐣岄潰銆佷綔涓氫腑蹇冦€佸疇鐗╂垚闀块〉閲屽緢澶氱洅瀛愩€佹寜閽€佽緭鍏ユ銆佹粴鍔ㄦ枃瀛楋紝閮戒細浠庤繖閲屽姩鎬佸垱寤恒€?//
-// 涓€鍙ヨ瘽鐗堟湰锛?// 杩欐浠ｇ爜鐨勬牳蹇冩剰鎬濆氨鏄細闇€瑕佷粈涔堟寜閽€佹枃瀛椼€佽緭鍏ユ銆佹粴鍔ㄥ尯锛屽氨鍦ㄨ繍琛屾椂鐜板満鐢熸垚鍑烘潵锛屼笉鐢ㄦ彁鍓嶅叏鎽嗗湪鍦烘櫙閲屻€?//
-// 缇庢湳闇€瑕佸叧娉ㄧ殑閲嶇偣锛?// 1. 杩欓噷鍒涘缓鍑烘潵鐨勮妭鐐癸紝寰堝涓嶄細鎻愬墠鍑虹幇鍦ㄥ満鏅眰绾ч噷锛岃€屾槸杩愯鏃朵复鏃剁敓鎴愩€?// 2. 涓€鏃﹂〉闈㈤噸缁橈紝杩欎簺鑺傜偣鍙兘琚暣浣撳垹鎺夊啀閲嶅缓锛屾墍浠ヤ笉瑕佹妸鎵嬪伐璧勬簮鐩存帴鎸傚湪杩欎簺涓存椂鑺傜偣涓嬮潰銆?// 3. name 瀛楁浼氭垚涓虹湡瀹炶妭鐐瑰悕锛岃皟璇曞姩鎬佸眰绾ф椂寰堥噸瑕併€?// 4. 杩欓噷涓嶈礋璐ｂ€滅偣鎸夐挳鍚庡彂鐢熶粈涔堚€濓紝鍙礋璐ｆ妸鎸夐挳銆佹枃瀛椼€佸鍣ㄧ敾鍑烘潵銆?type SizeLike = {
+// 文件整体作用：
+// 这是项目里“运行时动态拼 UI”的通用工具箱。
+// 登录页、主界面、作业中心、宠物成长页里很多盒子、按钮、输入框、滚动区，都会从这里动态创建。
+//
+// 一句话版本：
+// 这段代码的核心意思就是：需要什么按钮、文字、输入框、滚动区，就在运行时现场生成出来，不用提前全部摆在场景里。
+//
+// 美术需要关注的重点：
+// 1. 这里创建出来的节点，很多不会提前出现在场景层级里，而是在运行时临时生成。
+// 2. 页面重绘时，这些节点可能被整体删除再重建，所以不要把手工资源直接挂在这些临时节点下面。
+// 3. `name` 字段会成为真实节点名，排查动态层级时很重要。
+// 4. 这里不负责“点按钮后发生什么”，只负责把按钮、文字、容器画出来。
+type SizeLike = {
   width: number;
   height: number;
 };
@@ -57,6 +67,7 @@ type EditBoxOptions = SizeLike &
     defaultValue?: string;
     maxLength?: number;
     password?: boolean;
+    multiline?: boolean;
   };
 
 type ScrollTextOptions = SizeLike &
@@ -208,6 +219,13 @@ export const RuntimeUI = {
     editBoxAny.placeholderLabel = placeholderLabel;
     editBoxAny._textLabel = textLabel;
     editBoxAny._placeholderLabel = placeholderLabel;
+    if (options.multiline) {
+      editBoxAny.inputMode = EditBox.InputMode.ANY;
+      textLabel.enableWrapText = true;
+      placeholderLabel.enableWrapText = true;
+      textLabel.verticalAlign = VerticalTextAlignment.TOP;
+      placeholderLabel.verticalAlign = VerticalTextAlignment.TOP;
+    }
     if (options.password) {
       editBoxAny.inputFlag = 0;
     }

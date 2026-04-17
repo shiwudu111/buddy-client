@@ -1,6 +1,6 @@
 import { appState } from "../app/AppState";
 import { apiClient } from "../network/ApiClient";
-import type { ApiResponse, PetResourcesPayload, PetStatus } from "../types/api";
+import type { ApiResponse, PetEvolutionPayload, PetResourcesPayload, PetStatus } from "../types/api";
 
 class PetService {
   async refreshCurrentPet(canCommit?: () => boolean): Promise<ApiResponse<PetStatus>> {
@@ -24,6 +24,18 @@ class PetService {
     }
 
     return result;
+  }
+
+  async getCurrentPetEvolution(): Promise<ApiResponse<PetEvolutionPayload>> {
+    const petId = appState.getPetId();
+    if (!petId) {
+      return {
+        success: false,
+        message: "当前没有宠物 ID",
+      };
+    }
+
+    return apiClient.getPetEvolution(petId);
   }
 
   async createPet(name = "Buddy"): Promise<ApiResponse<PetStatus>> {

@@ -42,6 +42,44 @@ export interface PetResourcesPayload {
   events: string[];
 }
 
+export interface PetEvolutionPayload {
+  current_stage: number;
+  current_visual: string;
+  next_stage: number;
+  next_visual: string;
+  requirements: {
+    level: number;
+    growth: number;
+  };
+  days_until_evolution: number;
+}
+
+export type ChatMessageRole = "user" | "pet";
+export type ChatMessageSource = "backend" | "fallback";
+
+export interface ChatConversationItem {
+  role: ChatMessageRole;
+  content: string;
+  created_at?: string | null;
+  source?: ChatMessageSource;
+}
+
+export interface ChatHistoryPayload {
+  conversations: ChatConversationItem[];
+  mood_factor?: number;
+}
+
+export interface ChatReplyPayload {
+  reply: string;
+  mood_factor: number;
+  mood_impact: string;
+}
+
+export interface ChatSendPayload {
+  pet_id: string;
+  message: string;
+}
+
 export interface HomeworkItem {
   id: string;
   subject: HomeworkSubject;

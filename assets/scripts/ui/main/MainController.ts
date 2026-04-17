@@ -6,6 +6,7 @@ import { STORAGE_KEYS, storage } from "../../core/storage";
 import { authService } from "../../services/AuthService";
 import { homeworkService } from "../../services/HomeworkService";
 import { parentService } from "../../services/ParentService";
+import { chatService } from "../../services/ChatService";
 import { petService } from "../../services/PetService";
 import {
   formatHomeworkHistory,
@@ -17,27 +18,38 @@ import { ScreenController } from "../common/base/ScreenController";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
 import { HomeworkCenterCoordinator } from "../homework/HomeworkCenterCoordinator";
 import { renderHomeworkCenter } from "../homework/HomeworkCenterView";
+import { ChatConversationCoordinator } from "../chat/ChatConversationCoordinator";
+import { renderPetChatPanel } from "../chat/ChatConversationView";
 import { PetCreationCoordinator } from "../pet/PetCreationCoordinator";
 import { renderPetGrowthView } from "../pet/PetGrowthView";
 import { renderPetCreationFlow } from "../pet/PetCreationView";
-import type { ChildPetPayload, WeeklyReportPayload } from "../../types/api";
+import type {
+  ChildPetPayload,
+  PetEvolutionPayload,
+  WeeklyReportPayload,
+} from "../../types/api";
 
-// 鏂囦欢鏁翠綋浣滅敤锛?// 杩欐槸瀛︾敓绔?/ 瀹堕暱绔富鐣岄潰鐨勬€绘帶鍒跺櫒銆?// 鐧诲綍鎴愬姛杩涘叆涓荤晫闈㈠悗锛岀粷澶у鏁颁富椤甸潰鍐呭閮戒細浠庤繖閲屽喅瀹氭樉绀轰粈涔堛€佸埛鏂颁粈涔堛€佸垏鍒板摢涓€椤点€?//
-// 涓€鍙ヨ瘽鐗堟湰锛?// 杩欐浠ｇ爜鐨勬牳蹇冩剰鎬濆氨鏄細缁熶竴鎺у埗涓荤晫闈㈣鏄剧ず瀛︾敓绔繕鏄闀跨銆佸綋鍓嶅湪鍝釜椤电銆佺偣鎸夐挳鍚庡埛鏂版垨鍒囧埌鍝噷銆?//
-// 缇庢湳闇€瑕佸叧娉ㄧ殑閲嶇偣锛?// 1. MainRoot 涓嬬殑澶у鏁板崱鐗囥€佹寜閽€佹爣棰橀兘鏄繍琛屾椂鍔ㄦ€佸垱寤虹殑锛屽埛鏂版椂浼氳娓呮帀鍚庨噸寤恒€?// 2. 瀛︾敓绔拰瀹堕暱绔槸涓€濂楁帶鍒跺櫒閲岀殑涓ゆ潯鍒嗘敮锛屼笉鏄袱涓畬鍏ㄧ嫭绔嬬殑鍦烘櫙銆?// 3. 棣栨鍒涘缓瀹犵墿娴佺▼浼氱嫭鍗犻〉闈紝鎵€浠ラ偅鏃剁湅涓嶅埌椤堕儴鍒锋柊銆侀€€鍑哄拰鏅€氶〉绛俱€?const { ccclass } = _decorator;
+// 文件整体作用：
+// 这是学生端 / 家长端主界面的总控制器。
+// 登录成功进入主界面后，大多数主页面内容都会从这里决定显示什么、刷新什么、切到哪一页。
+const { ccclass } = _decorator;
 
 @ccclass("MainController")
 export class MainController extends ScreenController {
-  // activeTab锛氬鐢熺褰撳墠鍋滅暀鍦ㄥ摢涓〉绛俱€?  private activeTab: DashboardTab = "overview";
-  // pageMessage锛氶〉闈㈠簳閮ㄦ彁绀烘枃妗堛€?  private pageMessage = "";
-  // 涓嬮潰涓変釜杈撳叆妗嗗紩鐢紝鍙湪瀵瑰簲椤甸潰瀛樺湪鏃舵墠浼氭湁鍊笺€?  private homeworkInput: EditBox | null = null;
-  // homeworkInputSubject锛氳褰曗€滃綋鍓嶈繖涓緭鍏ユ瀹炰緥灞炰簬鍝竴绉戔€濄€?  // 杩欐牱鍦ㄥ垏绉戠洰鍚庯紝鏃ц緭鍏ユ鐨勫唴瀹瑰氨涓嶄細琚鍐欒繘鏂扮鐩€?  private homeworkInputSubject: HomeworkSubject | null = null;
+  private activeTab: DashboardTab = "overview";
+  private pageMessage = "";
+  private homeworkInput: EditBox | null = null;
+  private homeworkInputSubject: HomeworkSubject | null = null;
+  private chatInput: EditBox | null = null;
   private bindChildInput: EditBox | null = null;
   private petNameInput: EditBox | null = null;
   private readonly homeworkCoordinator = new HomeworkCenterCoordinator();
+  private readonly chatCoordinator = new ChatConversationCoordinator();
   private readonly petCreationCoordinator = new PetCreationCoordinator();
-  // 涓嬮潰杩欎簺 sessionId 閮芥槸鈥滀細璇濋棬绂佲€濓紝鐢ㄦ潵闃叉鏃ц姹傛櫄鍥炴潵姹℃煋褰撳墠椤甸潰銆?  private homeworkSubmissionSessionId = 0;
+  private homeworkSubmissionSessionId = 0;
   private activeHomeworkSubmissionSessionId = 0;
+  private chatSubmissionSessionId = 0;
+  private activeChatSubmissionSessionId = 0;
   private bootstrapSessionId = 0;
   private activeBootstrapSessionId = 0;
   private bindChildSessionId = 0;
@@ -46,27 +58,31 @@ export class MainController extends ScreenController {
   private activeDashboardRefreshSessionId = 0;
   private petGrowthRefreshSessionId = 0;
   private activePetGrowthRefreshSessionId = 0;
+  private petFeedSessionId = 0;
+  private activePetFeedSessionId = 0;
   private petCreationSessionId = 0;
   private activePetCreationSessionId = 0;
   private bindChildDraft = "";
+  private petEvolution: PetEvolutionPayload | null = null;
+  private petEvolutionError = "";
   private parentOverview: ChildPetPayload | null = null;
   private parentWeeklyReport: WeeklyReportPayload | null = null;
   private parentOverviewError = "";
   private parentWeeklyError = "";
 
   onLoad(): void {
-    // 杩涘叆涓荤晫闈㈡椂锛屽厛鎭㈠涓婃鍋滅暀鐨勫鐢熺椤电銆?    const savedTab = storage.get(STORAGE_KEYS.activeTab);
+    const savedTab = storage.get(STORAGE_KEYS.activeTab);
     if (savedTab === "overview" || savedTab === "homework" || savedTab === "growth") {
       this.activeTab = savedTab;
     }
   }
 
   async start(): Promise<void> {
-    // 鍚姩鍚庡厛鍋氫竴娆′富鐣岄潰鍒濆鍖栵紝鍐嶈繘鍏ョ湡姝ｆ覆鏌撱€?    await this.bootstrapAndRender();
+    await this.bootstrapAndRender();
   }
 
   private async bootstrapAndRender(): Promise<void> {
-    // 鍚姩闃舵瑕佸厛鎶婂綋鍓嶄細璇濃€滈攣浣忊€濓紝閬垮厤鏃ц姹傛櫄鍥炴潵鏃舵妸鏂颁細璇濈殑椤甸潰鐘舵€佸啿鎺夈€?    this.bootstrapSessionId += 1;
+    this.bootstrapSessionId += 1;
     this.activeBootstrapSessionId = this.bootstrapSessionId;
     const bootstrapSessionId = this.activeBootstrapSessionId;
     const canCommit = () =>
@@ -90,6 +106,13 @@ export class MainController extends ScreenController {
         if (!canCommit()) {
           return;
         }
+        await this.loadPetEvolutionData(canCommit);
+        if (!canCommit()) {
+          return;
+        }
+      } else {
+        this.petEvolution = null;
+        this.petEvolutionError = "";
       }
       await homeworkService.refreshHistory(1, 10, canCommit);
       if (!canCommit()) {
@@ -113,7 +136,8 @@ export class MainController extends ScreenController {
   }
 
   private async render(): Promise<void> {
-    // 姣忔閲嶇粯鍓嶏紝鍏堟妸褰撳墠杈撳叆妗嗛噷鐨勪复鏃跺唴瀹规敹鍥炴潵锛岄伩鍏嶅垏椤垫椂鎶婅崏绋垮紕涓€?    this.persistHomeworkDraft();
+    this.persistHomeworkDraft();
+    this.persistChatDraft();
     this.bindChildDraft = this.bindChildInput?.string ?? this.bindChildDraft;
 
     const root = this.ensureManagedRoot("MainRoot");
@@ -138,7 +162,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(root, {
       name: "Title",
-      text: `瀛︿即绮剧伒瀹㈡埛绔?路 ${user.role === "PARENT" ? "瀹堕暱绔? : "瀛︾敓绔?}`,
+      text: `学伴精灵客户端 · ${user.role === "PARENT" ? "家长端" : "学生端"}`,
       x: 0,
       y: 300,
       width: 940,
@@ -148,7 +172,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(root, {
       name: "Subtitle",
-      text: `褰撳墠璐﹀彿锛?{user.username}`,
+      text: `当前账号：${user.username}`,
       x: -350,
       y: 258,
       width: 360,
@@ -157,7 +181,9 @@ export class MainController extends ScreenController {
       color: new Color(171, 183, 200, 255),
     });
 
-    if (this.pageMessage) {
+    const showPageMessageAtRoot =
+      !(user.role === "CHILD" && this.activeTab === "overview" && Boolean(appState.getCurrentPet()));
+    if (this.pageMessage && showPageMessageAtRoot) {
       RuntimeUI.createLabel(root, {
         name: "PageMessage",
         text: this.pageMessage,
@@ -170,15 +196,17 @@ export class MainController extends ScreenController {
       });
     }
 
-    // 瀹堕暱绔拰瀛︾敓绔槸涓ゅ瀹屽叏涓嶅悓鐨勪富鐣岄潰锛氬闀跨鐩存帴灞曠ず缁戝畾涓庡懆鎶ワ紝瀛︾敓绔啀鍒嗕笁涓〉绛俱€?    if (user.role === "PARENT") {
+    if (user.role === "PARENT") {
       this.clearHomeworkInputRef();
+      this.clearChatInputRef();
       this.renderGlobalActions(root);
       await this.renderParentDashboard(root);
       return;
     }
 
-    // 瀛︾敓鏃犲疇鐗╂椂浼樺厛杩涘叆棣栨鍒涘缓娴佺▼锛岃繖鏉￠摼璺細鐙崰椤甸潰锛岄伩鍏嶅拰涓荤晫闈㈢浉浜掑共鎵般€?    if (this.shouldShowPetCreationFlow()) {
+    if (this.shouldShowPetCreationFlow()) {
       this.clearHomeworkInputRef();
+      this.clearChatInputRef();
       this.renderPetOnboarding(root);
       return;
     }
@@ -186,9 +214,11 @@ export class MainController extends ScreenController {
     this.renderGlobalActions(root);
     this.renderChildTabs(root);
     if (this.activeTab === "homework") {
+      this.clearChatInputRef();
       await this.renderHomeworkTab(root);
     } else if (this.activeTab === "growth") {
       this.clearHomeworkInputRef();
+      this.clearChatInputRef();
       await this.renderGrowthTab(root);
     } else {
       this.clearHomeworkInputRef();
@@ -197,9 +227,9 @@ export class MainController extends ScreenController {
   }
 
   private renderChildTabs(root: Node): void {
-    // 瀛︾敓绔殑涓変釜椤电鍙槸瑙嗗浘鍏ュ彛锛岀湡姝ｇ殑鏁版嵁閮芥潵鑷?appState 鍜屽悇鑷殑 coordinator銆?    const overviewButton = RuntimeUI.createButton(root, {
+    const overviewButton = RuntimeUI.createButton(root, {
       name: "OverviewTab",
-      text: "瀹犵墿鎬昏",
+      text: "宠物总览",
       x: -420,
       y: 205,
       width: 160,
@@ -222,7 +252,7 @@ export class MainController extends ScreenController {
 
     const homeworkButton = RuntimeUI.createButton(root, {
       name: "HomeworkTab",
-      text: "浣滀笟涓績",
+      text: "作业中心",
       x: -240,
       y: 205,
       width: 160,
@@ -245,7 +275,7 @@ export class MainController extends ScreenController {
 
     const growthButton = RuntimeUI.createButton(root, {
       name: "GrowthTab",
-      text: "瀹犵墿鎴愰暱",
+      text: "宠物成长",
       x: -60,
       y: 205,
       width: 160,
@@ -268,9 +298,9 @@ export class MainController extends ScreenController {
   }
 
   private renderGlobalActions(root: Node): void {
-    // 鍒锋柊鍜岄€€鍑哄睘浜庡叏灞€鍔ㄤ綔锛屽彧缁欌€滄甯镐富鐣岄潰鈥濅娇鐢紝涓嶆斁杩涢娆″垱寤烘祦绋嬮噷銆?    const refreshAction = RuntimeUI.createButton(root, {
+    const refreshAction = RuntimeUI.createButton(root, {
       name: "RefreshAction",
-      text: "鍒锋柊",
+      text: "刷新",
       x: 420,
       y: 258,
       width: 110,
@@ -286,7 +316,7 @@ export class MainController extends ScreenController {
 
     const logoutAction = RuntimeUI.createButton(root, {
       name: "LogoutAction",
-      text: "閫€鍑虹櫥褰?,
+      text: "退出登录",
       x: 545,
       y: 258,
       width: 130,
@@ -302,7 +332,7 @@ export class MainController extends ScreenController {
   }
 
   private async renderChildOverview(root: Node): Promise<void> {
-    // 宸︿晶鏄疇鐗╂€昏锛屽彸渚ф槸浣滀笟涓庤繎鏈熻褰曘€傝繖涓〉闈㈠亸鈥滅姸鎬佹眹鎬烩€濓紝涓嶈礋璐ｈ緭鍏ャ€?    const petCard = RuntimeUI.createBox(root, {
+    const petCard = RuntimeUI.createBox(root, {
       name: "PetCard",
       x: -250,
       y: -10,
@@ -321,7 +351,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(petCard, {
       name: "PetCardTitle",
-      text: "瀹犵墿鏍稿績鐘舵€?,
+      text: "宠物核心状态",
       x: 0,
       y: 170,
       width: 380,
@@ -331,6 +361,9 @@ export class MainController extends ScreenController {
 
     const pet = appState.getCurrentPet();
     const knownPetId = appState.getPetId();
+    if (!pet) {
+      this.clearChatInputRef();
+    }
     const petSummary = formatPetSummary(pet).join("\n");
     RuntimeUI.createLabel(petCard, {
       name: "PetSummary",
@@ -343,10 +376,10 @@ export class MainController extends ScreenController {
       color: new Color(221, 229, 238, 255),
     });
 
-    // 娌℃湁浠讳綍瀹犵墿淇℃伅鏃讹紝缁欏嚭棣栨鍒涘缓鍏ュ彛銆?    if (!pet && !knownPetId) {
+    if (!pet && !knownPetId) {
       const createButton = RuntimeUI.createButton(petCard, {
         name: "CreatePetButton",
-        text: "鍒涘缓瀹犵墿",
+        text: "创建宠物",
         x: 0,
         y: -138,
         width: 240,
@@ -358,10 +391,10 @@ export class MainController extends ScreenController {
         () => void this.handleCreatePet(),
         this
       );
-    // 宸茬煡鏈夊疇鐗╁叧鑱旓紝浣嗗疇鐗╂暟鎹繕娌″洖鏉ユ椂锛屾彁绀虹敤鎴风◢绛夊埛鏂般€?    } else if (!pet && knownPetId) {
+    } else if (!pet && knownPetId) {
       RuntimeUI.createLabel(petCard, {
         name: "PetSyncHint",
-        text: "宸叉娴嬪埌瀹犵墿鍏宠仈锛屾鍦ㄧ瓑寰呭埛鏂板疇鐗╃姸鎬?,
+        text: "已检测到宠物关联，正在等待刷新宠物状态。",
         x: 0,
         y: -120,
         width: 320,
@@ -370,9 +403,9 @@ export class MainController extends ScreenController {
         color: new Color(255, 194, 107, 255),
       });
     } else {
-      // 宸茬粡鏈夊疇鐗╀簡锛屽氨鎻愪緵鍠傚吇鍜屽幓浣滀笟涓や釜甯哥敤鍔ㄤ綔銆?      const feedButton = RuntimeUI.createButton(petCard, {
+      const feedButton = RuntimeUI.createButton(petCard, {
         name: "FeedPetButton",
-        text: "鍠傚吇瀹犵墿",
+        text: "喂养宠物",
         x: -90,
         y: -138,
         width: 160,
@@ -387,7 +420,7 @@ export class MainController extends ScreenController {
 
       const homeworkButton = RuntimeUI.createButton(petCard, {
         name: "OpenHomeworkButton",
-        text: "鍘诲仛浣滀笟",
+        text: "去做作业",
         x: 95,
         y: -138,
         width: 160,
@@ -406,7 +439,7 @@ export class MainController extends ScreenController {
 
       RuntimeUI.createLabel(petCard, {
         name: "GrowthEntryHint",
-        text: "鎴愰暱闃舵鍜岃繘鍖栨彁绀哄凡鏀惧埌鈥滃疇鐗╂垚闀库€濋〉绛句腑鏌ョ湅銆?,
+        text: "成长阶段和进化提示已经放到“宠物成长”页签中查看。",
         x: 0,
         y: -188,
         width: 380,
@@ -418,7 +451,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(sideCard, {
       name: "SideCardTitle",
-      text: "浠婃棩浣滀笟涓庤繎鏈熻褰?,
+      text: "今日作业与近期记录",
       x: 0,
       y: 170,
       width: 420,
@@ -450,10 +483,31 @@ export class MainController extends ScreenController {
       backgroundColor: new Color(23, 29, 40, 255),
       padding: 16,
     });
+
+    if (pet) {
+      const chatMessages = appState.getChatHistory();
+      const chatRefs = renderPetChatPanel(
+        root,
+        {
+          messages: chatMessages,
+          draft: this.chatCoordinator.getDraft(),
+          notice:
+            this.pageMessage ||
+            this.chatCoordinator.buildHint(pet.name, chatMessages.length, pet.mood, this.chatSending),
+          sending: this.chatSending,
+        },
+        {
+          onSend: () => void this.handleSendPetChat(),
+        },
+        this
+      );
+
+      this.chatInput = chatRefs.input;
+    }
   }
 
   private async renderHomeworkTab(root: Node): Promise<void> {
-    // 浣滀笟涓績鐢辩嫭绔?coordinator 绠¤崏绋垮拰褰撳墠瀛︾锛岃繖鏍峰垏瀛︾鏃朵笉浼氫簰鐩镐覆鍊笺€?    const selectedSubject = this.homeworkCoordinator.getSelectedSubject();
+    const selectedSubject = this.homeworkCoordinator.getSelectedSubject();
     const hint = this.homeworkCoordinator.getCurrentHint();
     const refs = renderHomeworkCenter(
       root,
@@ -486,10 +540,12 @@ export class MainController extends ScreenController {
   }
 
   private async renderGrowthTab(root: Node): Promise<void> {
-    // 鎴愰暱椤靛彧璐熻矗灞曠ず鎴愰暱淇℃伅鍜岃Е鍙戝埛鏂帮紝鍏蜂綋鏂囨鍜屾ā鎷熸牱鏈兘鍦?PetGrowthView 閲屻€?    renderPetGrowthView(
+    renderPetGrowthView(
       root,
       {
         pet: appState.getCurrentPet(),
+        evolution: this.petEvolution,
+        evolutionError: this.petEvolutionError,
       },
       {
         onRefresh: () => this.handleRefreshGrowth(),
@@ -507,7 +563,7 @@ export class MainController extends ScreenController {
   }
 
   private async renderParentDashboard(root: Node): Promise<void> {
-    // 瀹堕暱绔彧鏈変笁鍧楋細缁戝畾瀛╁瓙銆佸瀛愮姸鎬併€佸懆鎶ャ€傚畠鏇村儚鈥滄暟鎹湅鏉库€濓紝涓嶆槸缂栬緫椤点€?    const bindCard = RuntimeUI.createBox(root, {
+    const bindCard = RuntimeUI.createBox(root, {
       name: "ParentBindCard",
       x: -310,
       y: -5,
@@ -534,7 +590,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(bindCard, {
       name: "BindCardTitle",
-      text: "瀹堕暱缁戝畾涓庡瀛愮姸鎬?,
+      text: "家长绑定与孩子状态",
       x: 0,
       y: 155,
       width: 320,
@@ -544,7 +600,7 @@ export class MainController extends ScreenController {
 
     this.bindChildInput = RuntimeUI.createEditBox(bindCard, {
       name: "ChildBindInput",
-      placeholder: "杈撳叆瀛╁瓙 User.id 鎴栧瀛愯处鍙?,
+      placeholder: "输入孩子 User.id 或孩子账号",
       x: 0,
       y: 90,
       width: 320,
@@ -555,7 +611,7 @@ export class MainController extends ScreenController {
 
     const bindButton = RuntimeUI.createButton(bindCard, {
       name: "BindChildButton",
-      text: "缁戝畾瀛╁瓙",
+      text: "绑定孩子",
       x: 0,
       y: 25,
       width: 180,
@@ -578,9 +634,9 @@ export class MainController extends ScreenController {
       name: "ChildIdLabel",
       text: childId
         ? childDisplayName
-          ? `褰撳墠宸茬粦瀹氬瀛愶細${childDisplayName}`
-          : "褰撳墠宸茬粦瀹氬瀛?
-        : "褰撳墠灏氭湭缁戝畾瀛╁瓙",
+          ? `当前已绑定孩子：${childDisplayName}`
+          : "当前已绑定孩子"
+        : "当前尚未绑定孩子",
       x: 0,
       y: -35,
       width: 300,
@@ -593,11 +649,11 @@ export class MainController extends ScreenController {
 
     const overviewText = this.parentOverview
       ? formatParentOverview(this.parentOverview)
-      : this.parentOverviewError || "绛夊緟缁戝畾鍚庤幏鍙栧瀛愮姸鎬?;
+      : this.parentOverviewError || "等待绑定后获取孩子状态";
 
     RuntimeUI.createLabel(statusCard, {
       name: "StatusCardTitle",
-      text: "瀛╁瓙鐘舵€佷笌浠婃棩浣滀笟",
+      text: "孩子状态与今日作业",
       x: 0,
       y: 95,
       width: 360,
@@ -620,7 +676,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(reportCard, {
       name: "WeeklyTitle",
-      text: "鏈懆鍛ㄦ姤",
+      text: "本周周报",
       x: 0,
       y: 78,
       width: 360,
@@ -630,7 +686,7 @@ export class MainController extends ScreenController {
 
     const weeklyText = this.parentWeeklyReport
       ? formatWeeklyReportSummary(this.parentWeeklyReport)
-      : this.parentWeeklyError || "鍛ㄦ姤鎺ュ彛灏氭湭瀹屾垚";
+      : this.parentWeeklyError || "周报接口暂未完成";
 
     RuntimeUI.createScrollText(reportCard, {
       name: "WeeklySummary",
@@ -644,10 +700,31 @@ export class MainController extends ScreenController {
       backgroundColor: new Color(23, 29, 40, 255),
       padding: 16,
     });
+
+    if (pet) {
+      const chatMessages = appState.getChatHistory();
+      const chatRefs = renderPetChatPanel(
+        root,
+        {
+          messages: chatMessages,
+          draft: this.chatCoordinator.getDraft(),
+          notice:
+            this.pageMessage ||
+            this.chatCoordinator.buildHint(pet.name, chatMessages.length, pet.mood, this.chatSending),
+          sending: this.chatSending,
+        },
+        {
+          onSend: () => void this.handleSendPetChat(),
+        },
+        this
+      );
+
+      this.chatInput = chatRefs.input;
+    }
   }
 
   private async handleRefresh(): Promise<void> {
-    // 椤堕儴鈥滃埛鏂扳€濅細閲嶆媺鏁撮〉鏁版嵁锛屾墍浠ヨ鍗曠嫭寮€涓€涓埛鏂颁細璇濓紝闃叉閫€鍑哄悗鏃у搷搴斿洖鍐欍€?    this.pageMessage = "姝ｅ湪鍒锋柊鏈€鏂版暟鎹?..";
+    this.pageMessage = "正在刷新最新数据...";
     this.dashboardRefreshSessionId += 1;
     this.activeDashboardRefreshSessionId = this.dashboardRefreshSessionId;
     const refreshSessionId = this.activeDashboardRefreshSessionId;
@@ -665,43 +742,48 @@ export class MainController extends ScreenController {
     }
 
     if (result.failedTasks.length === 0 && result.pendingTasks.length === 0) {
-      this.pageMessage = "鏈€鏂版暟鎹凡鍒锋柊";
+      this.pageMessage = "最新数据已刷新";
     } else if (
       result.failedTasks.length === 0 &&
       result.pendingTasks.length === 1 &&
-      result.pendingTasks[0] === "鏈娴嬪埌瀹犵墿鏄犲皠"
+      result.pendingTasks[0] === "未检测到宠物映射"
     ) {
-      this.pageMessage = "鏈娴嬪埌瀹犵墿鏄犲皠锛岃鍏堝垱寤哄疇鐗?;
+      this.pageMessage = "未检测到宠物映射，请先创建宠物";
     } else if (
       result.failedTasks.length === 0 &&
       result.pendingTasks.length === 1 &&
-      result.pendingTasks[0] === "褰撳墠灏氭湭缁戝畾瀛╁瓙"
+      result.pendingTasks[0] === "当前尚未绑定孩子"
     ) {
-      this.pageMessage = "褰撳墠灏氭湭缁戝畾瀛╁瓙锛岃鍏堢粦瀹氬悗鍐嶅埛鏂?;
+      this.pageMessage = "当前尚未绑定孩子，请先绑定后再刷新";
     } else if (result.successTasks.length === 0) {
       const blockers = [...result.failedTasks, ...result.pendingTasks];
-      this.pageMessage = `鍒锋柊澶辫触锛?{blockers.join("銆?)}`;
+      this.pageMessage = `刷新失败：${blockers.join("、")}`;
     } else {
       const issues = [...result.failedTasks, ...result.pendingTasks];
-      this.pageMessage = `閮ㄥ垎鍒锋柊鎴愬姛锛屽緟澶勭悊椤癸細${issues.join("銆?)}`;
+      this.pageMessage = `部分刷新成功，待处理项：${issues.join("、")}`;
     }
     await this.render();
   }
 
   private handleLogout(): void {
-    // 閫€鍑烘椂鐩存帴娓呮帀鎵€鏈変細璇濈紪鍙凤紝琛ㄧず褰撳墠椤甸潰涓婄殑鏅氬埌鍥炶皟閮戒笉鍐嶅厑璁告彁浜ゃ€?    this.activeBootstrapSessionId = 0;
+    this.activeBootstrapSessionId = 0;
     this.activeBindChildSessionId = 0;
     this.activeHomeworkSubmissionSessionId = 0;
+    this.activeChatSubmissionSessionId = 0;
     this.activeDashboardRefreshSessionId = 0;
     this.activePetGrowthRefreshSessionId = 0;
+    this.activePetFeedSessionId = 0;
     this.activePetCreationSessionId = 0;
+    this.chatSending = false;
+    this.chatCoordinator.clearDraft();
+    this.clearChatInputRef();
     this.petCreationCoordinator.complete();
     authService.logout();
     sceneRouter.goToLogin();
   }
 
   private async handleCreatePet(): Promise<void> {
-    // 瑙﹀彂棣栨鍒涘缓娴佺▼锛屼絾鐪熸鍒涘缓瀹犵墿瑕佺瓑鐢ㄦ埛杈撳叆鍚嶅瓧骞剁偣鍑绘彁浜ゃ€?    this.pageMessage = "";
+    this.pageMessage = "";
     this.petCreationSessionId += 1;
     this.activePetCreationSessionId = this.petCreationSessionId;
     this.petCreationCoordinator.begin();
@@ -709,8 +791,23 @@ export class MainController extends ScreenController {
   }
 
   private async handleFeedPet(): Promise<void> {
-    // 鍠傚吇瀹屾垚鍚庡啀鍒锋柊褰撳墠瀹犵墿鐘舵€侊紝璁╂€昏鍗″拰鎴愰暱椤典繚鎸佷竴鑷淬€?    const before = appState.getCurrentPet();
+    // 喂养完成后再刷新当前宠物状态，让总览卡和成长页保持一致。
+    this.petFeedSessionId += 1;
+    this.activePetFeedSessionId = this.petFeedSessionId;
+    const petFeedSessionId = this.activePetFeedSessionId;
+    const canCommit = () =>
+      this.activePetFeedSessionId === petFeedSessionId &&
+      this.petFeedSessionId === petFeedSessionId;
+
+    const before = appState.getCurrentPet();
     const result = await petService.feedCurrentPet();
+    if (!canCommit()) {
+      return;
+    }
+    await this.loadPetEvolutionData(canCommit);
+    if (!canCommit()) {
+      return;
+    }
     const after = appState.getCurrentPet();
     const changed =
       Boolean(before && after) &&
@@ -721,14 +818,81 @@ export class MainController extends ScreenController {
 
     this.pageMessage = result.success
       ? changed
-        ? "鍠傚吇瀹屾垚锛屽疇鐗╃姸鎬佸凡鍒锋柊"
-        : "鍠傚吇瀹屾垚锛屼絾褰撳墠瀹犵墿鐘舵€佸凡鎺ヨ繎涓婇檺锛屾暟鍊兼病鏈夋槑鏄惧彉鍖?
-      : result.message ?? "鍠傚吇澶辫触";
+        ? "喂养完成，宠物状态已刷新"
+        : "喂养完成，但当前宠物状态已接近上限，数值没有明显变化"
+      : result.message ?? "喂养失败";
+    await this.render();
+  }
+
+  private async handleSendPetChat(): Promise<void> {
+    if (this.chatSending) {
+      return;
+    }
+
+    const pet = appState.getCurrentPet();
+    const petId = appState.getPetId();
+    const draft = this.chatInput?.string ?? this.chatCoordinator.getDraft();
+    const message = draft.trim();
+    this.chatCoordinator.setDraft(message);
+
+    if (!petId || !pet) {
+      this.pageMessage = "先创建宠物，再来聊天";
+      await this.render();
+      return;
+    }
+
+    if (!message) {
+      this.pageMessage = "请先输入想对宠物说的话";
+      await this.render();
+      return;
+    }
+
+    this.chatSubmissionSessionId += 1;
+    this.activeChatSubmissionSessionId = this.chatSubmissionSessionId;
+    const chatSessionId = this.activeChatSubmissionSessionId;
+    const canCommit = () =>
+      this.activeChatSubmissionSessionId === chatSessionId &&
+      this.chatSubmissionSessionId === chatSessionId;
+
+    this.chatSending = true;
+    this.pageMessage = "宠物正在回复...";
+    await this.render();
+
+    const result = await chatService.sendMessage({
+      petId,
+      message,
+      petMood: pet.mood,
+      canCommit,
+    });
+
+    if (!canCommit()) {
+      this.chatSending = false;
+      return;
+    }
+
+    this.chatSending = false;
+    if (result.success) {
+      this.pageMessage = result.usedFallback
+        ? "后端暂时不可用，已使用本地回复"
+        : "宠物回复完成";
+      if (
+        this.chatInput &&
+        this.chatInput.node?.isValid &&
+        this.chatInput.string.trim() === message
+      ) {
+        this.chatInput.string = "";
+      }
+      this.chatCoordinator.clearDraftIfMatch(message);
+      await this.render();
+      return;
+    }
+
+    this.pageMessage = result.message ?? "宠物回复失败";
     await this.render();
   }
 
   private async handleRefreshGrowth(): Promise<void> {
-    // 鎴愰暱椤电殑鍒锋柊鍙洿鏂板疇鐗╂垚闀跨姸鎬侊紝涓嶅奖鍝嶄綔涓氥€佺粦瀹氭垨鐧诲綍鎬併€?    this.petGrowthRefreshSessionId += 1;
+    this.petGrowthRefreshSessionId += 1;
     this.activePetGrowthRefreshSessionId = this.petGrowthRefreshSessionId;
     const growthSessionId = this.activePetGrowthRefreshSessionId;
     const canCommit = () =>
@@ -739,15 +903,19 @@ export class MainController extends ScreenController {
     if (!canCommit()) {
       return;
     }
+    await this.loadPetEvolutionData(canCommit);
+    if (!canCommit()) {
+      return;
+    }
 
     this.pageMessage = result.success
-      ? "瀹犵墿鎴愰暱鐘舵€佸凡鍒锋柊"
-      : result.message ?? "瀹犵墿鎴愰暱鐘舵€佸埛鏂板け璐?;
+      ? "宠物成长状态已刷新"
+      : result.message ?? "宠物成长状态刷新失败";
     await this.render();
   }
 
   private async handleSubmitHomework(): Promise<void> {
-    // 浣滀笟鎻愪氦鎴愬姛鍚庯紝闇€瑕佹妸浣滀笟鍘嗗彶銆佷粖鏃ョ姸鎬佸拰瀹犵墿鐘舵€佷竴璧疯ˉ榻愶紝閬垮厤椤甸潰鍙埛鏂颁竴鍗娿€?    const subject = this.homeworkCoordinator.getSelectedSubject();
+    const subject = this.homeworkCoordinator.getSelectedSubject();
     const content = this.homeworkInput?.string ?? "";
     this.homeworkSubmissionSessionId += 1;
     this.activeHomeworkSubmissionSessionId = this.homeworkSubmissionSessionId;
@@ -772,11 +940,20 @@ export class MainController extends ScreenController {
       if (!canCommit()) {
         return;
       }
-      this.homeworkCoordinator.clearDraftForSubject(subject);
+      await this.loadPetEvolutionData(canCommit);
+      if (!canCommit()) {
+        return;
+      }
+      const shouldClearDraft = this.homeworkCoordinator.clearDraftForSubjectIfMatch(
+        subject,
+        content
+      );
       if (
+        shouldClearDraft &&
         this.homeworkInput &&
         this.homeworkInputSubject === subject &&
-        this.homeworkInput.node?.isValid
+        this.homeworkInput.node?.isValid &&
+        this.homeworkInput.string === content
       ) {
         this.homeworkInput.string = "";
       }
@@ -786,10 +963,10 @@ export class MainController extends ScreenController {
   }
 
   private async handleBindChild(): Promise<void> {
-    // 瀹堕暱缁戝畾鍏堟彁浜ゆ爣璇嗭紝鍐嶅湪纭鎴愬姛鍚庡埛鏂版暣浠藉闀跨湅鏉裤€?    const identifier = this.bindChildInput?.string.trim() ?? "";
+    const identifier = this.bindChildInput?.string.trim() ?? "";
     this.bindChildDraft = identifier;
     if (!identifier) {
-      this.pageMessage = "璇疯緭鍏ュ瀛愭爣璇嗗悗鍐嶇粦瀹?;
+      this.pageMessage = "请输入孩子标识后再绑定";
       await this.render();
       return;
     }
@@ -806,8 +983,8 @@ export class MainController extends ScreenController {
       return;
     }
     this.pageMessage = result.success
-      ? "缁戝畾鎴愬姛锛屽凡鍔犺浇瀛╁瓙鐘舵€?
-      : result.message ?? "缁戝畾澶辫触";
+      ? "绑定成功，已加载孩子状态"
+      : result.message ?? "绑定失败";
     if (result.success) {
       if (result.data) {
         appState.patchCurrentUser({
@@ -825,7 +1002,7 @@ export class MainController extends ScreenController {
   }
 
   private persistHomeworkDraft(): void {
-    // 浠讳綍鍒囬〉銆侀噸缁樹箣鍓嶏紝閮藉厛鎶婂綋鍓嶈緭鍏ユ鍐呭淇濆瓨鍥炩€滃畠鍘熸湰鎵€灞炵殑閭ｄ竴绉戔€濄€?    // 杩欓噷涓嶈兘鐩存帴鎸?current selectedSubject 淇濆瓨锛屽惁鍒欏垏绉戠洰鍚庝細鎶婃棫杈撳叆璇啓鍒版柊绉戠洰銆?    if (this.homeworkInput && (!this.homeworkInput.node || !this.homeworkInput.node.isValid)) {
+    if (this.homeworkInput && (!this.homeworkInput.node || !this.homeworkInput.node.isValid)) {
       this.homeworkInput = null;
       this.homeworkInputSubject = null;
       return;
@@ -844,13 +1021,51 @@ export class MainController extends ScreenController {
     }
   }
 
+  private persistChatDraft(): void {
+    if (this.chatInput && (!this.chatInput.node || !this.chatInput.node.isValid)) {
+      this.chatInput = null;
+      return;
+    }
+
+    if (this.chatInput) {
+      this.chatCoordinator.setDraft(this.chatInput.string);
+    }
+  }
+
   private clearHomeworkInputRef(): void {
     this.homeworkInput = null;
     this.homeworkInputSubject = null;
   }
 
+  private clearChatInputRef(): void {
+    this.chatInput = null;
+  }
+
+  private async loadPetEvolutionData(canCommit?: () => boolean): Promise<void> {
+    const petId = appState.getPetId();
+    if (!petId) {
+      this.petEvolution = null;
+      this.petEvolutionError = "";
+      return;
+    }
+
+    const result = await petService.getCurrentPetEvolution();
+    if (canCommit && !canCommit()) {
+      return;
+    }
+
+    if (result.success && result.data) {
+      this.petEvolution = result.data;
+      this.petEvolutionError = "";
+      return;
+    }
+
+    this.petEvolution = null;
+    this.petEvolutionError = result.message ?? "宠物进化信息加载失败";
+  }
+
   private shouldShowPetCreationFlow(): boolean {
-    // 棣栨鍒涘缓娴佺▼鍙湅鈥滃綋鍓嶆槸鍚︽湁瀹犵墿鈥濆拰鈥滄槸鍚﹀凡缁忕煡閬撳疇鐗?ID鈥濊繖涓や釜淇″彿銆?    // 鍙鍒ゅ畾杩涘叆 onboarding锛屾暣涓〉闈㈠氨鍒囧埌鍒涘缓瀹犵墿锛屼笉鍐嶆覆鏌撲富鐣岄潰銆?    const pet = appState.getCurrentPet();
+    const pet = appState.getCurrentPet();
     const knownPetId = appState.getPetId();
     const started = this.petCreationCoordinator.ensureStartedForNewChild(
       Boolean(pet),
@@ -870,7 +1085,7 @@ export class MainController extends ScreenController {
   }
 
   private renderPetOnboarding(root: Node): void {
-    // 棣栨鍒涘缓娴佺▼鏄竴涓嫭绔嬬殑灏忕姸鎬佹満锛氳鏄?-> 鍛藉悕 -> 鎻愪氦涓?-> 鎴愬姛銆?    const refs = renderPetCreationFlow(
+    const refs = renderPetCreationFlow(
       root,
       this.petCreationCoordinator.getState(),
       {
@@ -886,7 +1101,7 @@ export class MainController extends ScreenController {
         },
         onSubmitCreate: () => this.handleSubmitFirstPetCreate(),
         onEnterPetHome: () => {
-          this.pageMessage = "鏂扮殑瀹犵墿宸插姞鍏ワ紝闄綘寮€濮嬫垚闀裤€?;
+          this.pageMessage = "新的宠物已加入，陪你开始成长。";
           this.activePetCreationSessionId = 0;
           this.petCreationCoordinator.complete();
           this.activeTab = "overview";
@@ -901,12 +1116,12 @@ export class MainController extends ScreenController {
   }
 
   private async handleSubmitFirstPetCreate(): Promise<void> {
-    // 鐪熸鍒涘缓瀹犵墿鏃惰鍏堟牎楠屽綋鍓嶄細璇濓紝閬垮厤鐢ㄦ埛閫€鍑哄悗鏅氬埌鍝嶅簲鎶婃柊浼氳瘽鍐叉帀銆?    const state = this.petCreationCoordinator.getState();
+    const state = this.petCreationCoordinator.getState();
     const petName = this.petNameInput?.string.trim() ?? state.petName.trim();
     this.petCreationCoordinator.updatePetName(petName);
 
     if (!petName) {
-      this.pageMessage = "璇峰厛缁欏疇鐗╄捣涓€涓悕瀛?;
+      this.pageMessage = "请先给宠物起一个名字";
       await this.render();
       return;
     }
@@ -934,7 +1149,7 @@ export class MainController extends ScreenController {
         statusCode: result.statusCode,
       });
       this.petCreationCoordinator.goToNaming();
-      this.pageMessage = result.message ?? "瀹犵墿鍒涘缓澶辫触";
+      this.pageMessage = result.message ?? "宠物创建失败";
       await this.render();
       return;
     }
@@ -957,7 +1172,7 @@ export class MainController extends ScreenController {
     failedTasks: string[];
     pendingTasks: string[];
   }> {
-    // 杩欓噷缁熶竴鍒锋柊鎵€鏈変富鐣岄潰鏁版嵁锛氬疇鐗┿€佷綔涓氥€佸闀跨湅鏉块兘瑕佹寜鍚屼竴涓細璇濊竟鐣屾彁浜ゃ€?    const user = appState.getCurrentUser() ?? (await authService.bootstrapSession(canCommit));
+    const user = appState.getCurrentUser() ?? (await authService.bootstrapSession(canCommit));
     if (!user) {
       if (canCommit && !canCommit()) {
         return {
@@ -971,7 +1186,7 @@ export class MainController extends ScreenController {
       return {
         sessionReady: false,
         successTasks: [],
-        failedTasks: ["鐧诲綍鎬佹仮澶?],
+        failedTasks: ["登录态恢复失败"],
         pendingTasks: [],
       };
     }
@@ -994,12 +1209,23 @@ export class MainController extends ScreenController {
           };
         }
         if (petResult.success) {
-          successTasks.push("瀹犵墿鐘舵€?);
+          successTasks.push("宠物状态");
+          await this.loadPetEvolutionData(canCommit);
+          if (!canWrite()) {
+            return {
+              sessionReady: false,
+              successTasks: [],
+              failedTasks: [],
+              pendingTasks: [],
+            };
+          }
         } else {
-          failedTasks.push("瀹犵墿鐘舵€?);
+          failedTasks.push("宠物状态");
         }
       } else if (!appState.getCurrentPet()) {
-        pendingTasks.push("鏈娴嬪埌瀹犵墿鏄犲皠");
+        this.petEvolution = null;
+        this.petEvolutionError = "";
+        pendingTasks.push("未检测到宠物映射");
       }
 
       const historyResult = await homeworkService.refreshHistory(1, 10, canCommit);
@@ -1012,9 +1238,9 @@ export class MainController extends ScreenController {
         };
       }
       if (historyResult.success) {
-        successTasks.push("浣滀笟鍘嗗彶");
+        successTasks.push("作业历史");
       } else {
-        failedTasks.push("浣滀笟鍘嗗彶");
+        failedTasks.push("作业历史");
       }
 
       const statusResult = await homeworkService.refreshTodayStatus(canCommit);
@@ -1027,9 +1253,9 @@ export class MainController extends ScreenController {
         };
       }
       if (statusResult.success) {
-        successTasks.push("浠婃棩鐘舵€?);
+        successTasks.push("今日状态");
       } else {
-        failedTasks.push("浠婃棩鐘舵€?);
+        failedTasks.push("今日状态");
       }
     } else {
       const linkedChildId = appState.getLinkedChildId();
@@ -1047,9 +1273,9 @@ export class MainController extends ScreenController {
         });
         this.parentOverview = null;
         this.parentWeeklyReport = null;
-        this.parentOverviewError = "褰撳墠灏氭湭缁戝畾瀛╁瓙";
-        this.parentWeeklyError = "璇峰厛缁戝畾瀛╁瓙鍚庢煡鐪嬪懆鎶?;
-        pendingTasks.push("褰撳墠灏氭湭缁戝畾瀛╁瓙");
+        this.parentOverviewError = "当前尚未绑定孩子";
+        this.parentWeeklyError = "请先绑定孩子后查看周报";
+        pendingTasks.push("当前尚未绑定孩子");
         return {
           sessionReady: true,
           successTasks,
@@ -1075,11 +1301,11 @@ export class MainController extends ScreenController {
             childNickname: overviewResult.data.childNickname,
           });
         }
-        successTasks.push("瀛╁瓙鐘舵€?);
+        successTasks.push("孩子状态");
       } else {
         this.parentOverview = null;
-        this.parentOverviewError = overviewResult.message ?? "瀛╁瓙鐘舵€佸姞杞藉け璐?;
-        failedTasks.push("瀛╁瓙鐘舵€?);
+        this.parentOverviewError = overviewResult.message ?? "孩子状态加载失败";
+        failedTasks.push("孩子状态");
       }
 
       const weeklyResult = await parentService.getWeeklyReport();
@@ -1094,11 +1320,11 @@ export class MainController extends ScreenController {
       if (weeklyResult.success && weeklyResult.data) {
         this.parentWeeklyReport = weeklyResult.data;
         this.parentWeeklyError = "";
-        successTasks.push("鍛ㄦ姤");
+        successTasks.push("周报");
       } else {
         this.parentWeeklyReport = null;
-        this.parentWeeklyError = weeklyResult.message ?? "鍛ㄦ姤鍔犺浇澶辫触";
-        failedTasks.push("鍛ㄦ姤");
+        this.parentWeeklyError = weeklyResult.message ?? "周报加载失败";
+        failedTasks.push("周报");
       }
     }
 
@@ -1121,8 +1347,8 @@ export class MainController extends ScreenController {
       });
       this.parentOverview = null;
       this.parentWeeklyReport = null;
-      this.parentOverviewError = "褰撳墠灏氭湭缁戝畾瀛╁瓙";
-      this.parentWeeklyError = "璇峰厛缁戝畾瀛╁瓙鍚庢煡鐪嬪懆鎶?;
+      this.parentOverviewError = "当前尚未绑定孩子";
+      this.parentWeeklyError = "请先绑定孩子后查看周报";
       return;
     }
 
@@ -1140,7 +1366,7 @@ export class MainController extends ScreenController {
       }
     } else {
       this.parentOverview = null;
-      this.parentOverviewError = overviewResult.message ?? "绛夊緟缁戝畾鍚庤幏鍙栧瀛愮姸鎬?;
+      this.parentOverviewError = overviewResult.message ?? "等待绑定后获取孩子状态";
     }
 
     const weeklyResult = await parentService.getWeeklyReport();
@@ -1152,7 +1378,7 @@ export class MainController extends ScreenController {
       this.parentWeeklyError = "";
     } else {
       this.parentWeeklyReport = null;
-      this.parentWeeklyError = weeklyResult.message ?? "鍛ㄦ姤鎺ュ彛灏氭湭瀹屾垚";
+      this.parentWeeklyError = weeklyResult.message ?? "周报接口暂未完成";
     }
   }
 }

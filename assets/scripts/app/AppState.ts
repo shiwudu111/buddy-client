@@ -1,6 +1,7 @@
 import { STORAGE_KEYS, storage } from "../core/storage";
 import type {
   AuthUser,
+  ChatConversationItem,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
   PetStatus,
@@ -11,6 +12,8 @@ class AppState {
   private currentPet: PetStatus | null = null;
   private homeworkHistory: HomeworkHistoryPayload | null = null;
   private todayHomeworkStatus: HomeworkTodayStatus | null = null;
+  private chatHistory: ChatConversationItem[] = [];
+  private suppressNextChatHistoryBootstrap = false;
 
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
@@ -109,11 +112,37 @@ class AppState {
     this.todayHomeworkStatus = status;
   }
 
+  getChatHistory(): ChatConversationItem[] {
+    return [...this.chatHistory];
+  }
+
+  setChatHistory(history: ChatConversationItem[]): void {
+    this.chatHistory = [...history];
+  }
+
+  appendChatHistory(entries: ChatConversationItem[]): void {
+    this.chatHistory = [...this.chatHistory, ...entries];
+  }
+
+  clearChatHistory(): void {
+    this.chatHistory = [];
+  }
+
+  suppressChatHistoryBootstrapOnce(): void {
+    this.suppressNextChatHistoryBootstrap = true;
+  }
+
+  isChatHistoryBootstrapSuppressed(): boolean {
+    return this.suppressNextChatHistoryBootstrap;
+  }
+
   clearSession(): void {
     this.currentUser = null;
     this.currentPet = null;
     this.homeworkHistory = null;
     this.todayHomeworkStatus = null;
+    this.chatHistory = [];
+    this.suppressNextChatHistoryBootstrap = true;
     storage.remove(STORAGE_KEYS.user);
     storage.remove(STORAGE_KEYS.token);
     storage.remove(STORAGE_KEYS.petId);

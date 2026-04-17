@@ -61,6 +61,17 @@ export class HomeworkCenterCoordinator {
     this.drafts[subject] = "";
   }
 
+  clearDraftForSubjectIfMatch(subject: HomeworkSubject, content: string): boolean {
+    // 只有当前草稿和“刚刚提交出去的内容”完全一致时，才允许清空。
+    // 这样如果用户在网络返回前又重新输入了新内容，就不会被晚到的成功回调误删。
+    if (this.drafts[subject] !== content) {
+      return false;
+    }
+
+    this.drafts[subject] = "";
+    return true;
+  }
+
   isCurrentSubjectSubmittedToday(): boolean {
     // 检查当前科目今天是否已经交过作业。
     return homeworkService.isSubmittedToday(this.selectedSubject);
