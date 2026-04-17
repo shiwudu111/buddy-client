@@ -1,4 +1,4 @@
-import {
+﻿import {
   Button,
   Color,
   EditBox,
@@ -13,7 +13,9 @@ import {
   VerticalTextAlignment,
 } from "cc";
 
-type SizeLike = {
+// 鏂囦欢鏁翠綋浣滅敤锛?// 杩欐槸椤圭洰閲屸€滆繍琛屾椂鐜版嫾 UI鈥濈殑閫氱敤宸ュ叿绠便€?// 鐧诲綍椤点€佷富鐣岄潰銆佷綔涓氫腑蹇冦€佸疇鐗╂垚闀块〉閲屽緢澶氱洅瀛愩€佹寜閽€佽緭鍏ユ銆佹粴鍔ㄦ枃瀛楋紝閮戒細浠庤繖閲屽姩鎬佸垱寤恒€?//
+// 涓€鍙ヨ瘽鐗堟湰锛?// 杩欐浠ｇ爜鐨勬牳蹇冩剰鎬濆氨鏄細闇€瑕佷粈涔堟寜閽€佹枃瀛椼€佽緭鍏ユ銆佹粴鍔ㄥ尯锛屽氨鍦ㄨ繍琛屾椂鐜板満鐢熸垚鍑烘潵锛屼笉鐢ㄦ彁鍓嶅叏鎽嗗湪鍦烘櫙閲屻€?//
+// 缇庢湳闇€瑕佸叧娉ㄧ殑閲嶇偣锛?// 1. 杩欓噷鍒涘缓鍑烘潵鐨勮妭鐐癸紝寰堝涓嶄細鎻愬墠鍑虹幇鍦ㄥ満鏅眰绾ч噷锛岃€屾槸杩愯鏃朵复鏃剁敓鎴愩€?// 2. 涓€鏃﹂〉闈㈤噸缁橈紝杩欎簺鑺傜偣鍙兘琚暣浣撳垹鎺夊啀閲嶅缓锛屾墍浠ヤ笉瑕佹妸鎵嬪伐璧勬簮鐩存帴鎸傚湪杩欎簺涓存椂鑺傜偣涓嬮潰銆?// 3. name 瀛楁浼氭垚涓虹湡瀹炶妭鐐瑰悕锛岃皟璇曞姩鎬佸眰绾ф椂寰堥噸瑕併€?// 4. 杩欓噷涓嶈礋璐ｂ€滅偣鎸夐挳鍚庡彂鐢熶粈涔堚€濓紝鍙礋璐ｆ妸鎸夐挳銆佹枃瀛椼€佸鍣ㄧ敾鍑烘潵銆?type SizeLike = {
   width: number;
   height: number;
 };
@@ -274,12 +276,16 @@ export const RuntimeUI = {
         0
       )
     );
-    content.setPosition(
-      new Vec3(0, Math.max(0, (contentHeight - options.height) / 2), 0)
-    );
+    content.setPosition(Vec3.ZERO);
 
     scrollView.content = content;
-    scrollView.scrollToTop(0);
+    // 内容要等到这一帧布局都稳定后，再把视图拉回顶部。
+    // 这样进入页面时，用户会先看到最上面的文字，而不是中间一段。
+    scrollView.scheduleOnce(() => {
+      if (scrollView.node.isValid) {
+        scrollView.scrollToTop(0);
+      }
+    }, 0);
 
     return { node, scrollView, content, label };
   },

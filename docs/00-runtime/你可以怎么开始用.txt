@@ -1,0 +1,25 @@
+你可以直接把这三份文件丢进仓库，比如放到 docs/00-runtime/ 或 ops/ 下开始用。
+
+1) CURRENT-SOURCE-OF-TRUTH.md
+2) TASK-PACK.template.md
+
+  这个模板是给你每次开工时复制一份用的。一个任务包只对应一个明确结果
+
+2.1) 直接可开的实例：TASK-homework-closure.md
+
+这个我帮你按当前项目现状预填好了，直接拿去丢给 Codex Builder。
+
+3) REVIEWER-PROMPT.md
+
+这个是给 Reviewer Agent 的。重点是：不让它自由发挥设计，只让它对任务包和验收负责。
+
+你可以怎么开始用
+
+第一步，把这三份文件落进仓库。
+第二步，以后每开一个任务，就从 TASK-PACK.template.md 复制一份。
+第三步，Builder 只吃 CURRENT-SOURCE-OF-TRUTH.md + 某个 TASK-PACK。
+第四步，Reviewer 只吃 CURRENT-SOURCE-OF-TRUTH.md + 某个 TASK-PACK + REVIEWER-PROMPT.md。
+
+这样你就把“agent 彼此沟通”改成了“agent 对同一张工单负责”。
+
+顺手提醒你一个关键点：Login 模块已经明确做了职责拆分，LoginController 应保持薄控制器，流程迁移由 LoginFlowCoordinator 承接；首次宠物创建流程也已经明确不该继续堆进 MainController。所以你后面写 Task Pack 时，Allowed Files / Forbidden Files 一定要把这种边界写死，不要靠 agent 自觉。

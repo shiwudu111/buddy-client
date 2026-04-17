@@ -45,18 +45,12 @@ function normalizeParentMessage(result: ApiResponse<unknown>): string | undefine
 class ParentService {
   async bindChild(childIdentifier: string): Promise<ApiResponse<ParentBindPayload>> {
     const result = await apiClient.bindChild(childIdentifier);
-    if (result.success && result.data) {
-      appState.patchCurrentUser({
-        childId: result.data.childId ?? null,
-        childNickname: result.data.childNickname ?? null,
-      });
-      return result;
-    }
-
-    return {
-      ...result,
-      message: normalizeParentMessage(result) ?? "绑定失败",
-    };
+    return result.success
+      ? result
+      : {
+          ...result,
+          message: normalizeParentMessage(result) ?? "绑定失败",
+        };
   }
 
   async getChildOverview(): Promise<ApiResponse<ChildPetPayload>> {

@@ -10,28 +10,26 @@ import type {
 
 class HomeworkService {
   async submit(input: HomeworkSubmitPayload): Promise<ApiResponse<{ expReward: number }>> {
-    const result = await apiClient.submitHomework(input);
-    if (result.success) {
-      await this.refreshHistory();
-      await this.refreshTodayStatus();
-    }
-    return result;
+    return apiClient.submitHomework(input);
   }
 
   async refreshHistory(
     page = 1,
-    limit = 10
+    limit = 10,
+    canCommit?: () => boolean
   ): Promise<ApiResponse<HomeworkHistoryPayload>> {
     const result = await apiClient.getHomeworkHistory(page, limit);
-    if (result.success && result.data) {
+    if (result.success && result.data && (!canCommit || canCommit())) {
       appState.setHomeworkHistory(result.data);
     }
     return result;
   }
 
-  async refreshTodayStatus(): Promise<ApiResponse<HomeworkTodayStatus>> {
+  async refreshTodayStatus(
+    canCommit?: () => boolean
+  ): Promise<ApiResponse<HomeworkTodayStatus>> {
     const result = await apiClient.getHomeworkStatus();
-    if (result.success && result.data) {
+    if (result.success && result.data && (!canCommit || canCommit())) {
       appState.setTodayHomeworkStatus(result.data);
     }
     return result;

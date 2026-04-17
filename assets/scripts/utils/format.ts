@@ -17,9 +17,11 @@ export function formatPetSummary(pet: PetStatus | null): string[] {
   return [
     `宠物名：${pet.name}`,
     `等级：Lv.${pet.level}`,
+    `成长阶段：${formatPetStageLabel(pet.stage)}`,
     `饥饿度：${pet.hunger}%`,
     `心情值：${pet.mood}%`,
     `经验值：${pet.experience}`,
+    `进化提示：${formatPetEvolutionHint(pet.next_evolve_days)}`,
     `状态：${statusText}`,
   ];
 }
@@ -75,6 +77,7 @@ export function formatParentOverview(data: ChildPetPayload): string {
   return [
     `孩子：${data.childNickname ?? data.childId ?? "未命名"}`,
     `宠物：${data.pet.name}  Lv.${data.pet.level}`,
+    `成长阶段：${formatPetStageLabel(data.pet.stage)}${formatParentEvolutionSuffix(data.pet.next_evolve_days)}`,
     `状态：${data.pet.status ? "正常" : "异常"} | 饥饿 ${data.pet.hunger}% | 心情 ${data.pet.mood}%`,
     `经验值：${data.pet.experience ?? "-"}`,
     "今日作业状态：",
@@ -93,7 +96,10 @@ export function formatWeeklyReportSummary(data: WeeklyReportPayload): string {
     : "暂无学科统计";
 
   const petStatusText = petSummary
-    ? `宠物：${petSummary.alive === false ? "异常" : "正常"} | 饥饿 ${petSummary.hunger ?? "-"} | 心情 ${petSummary.mood ?? "-"}`
+    ? [
+        `宠物：${petSummary.alive === false ? "异常" : "正常"} | 饥饿 ${petSummary.hunger ?? "-"} | 心情 ${petSummary.mood ?? "-"}`,
+        `成长阶段：${formatPetStageLabel(petSummary.stage)}${formatParentEvolutionSuffix(petSummary.next_evolve_days)}`,
+      ].join("\n")
     : "宠物：暂无周报数据";
 
   return [
@@ -103,6 +109,44 @@ export function formatWeeklyReportSummary(data: WeeklyReportPayload): string {
     subjectBreakdown,
     petStatusText,
   ].join("\n");
+}
+
+function formatPetStageLabel(stage?: string | null): string {
+  const normalized = stage?.trim();
+  if (!normalized) {
+    return "成长期";
+  }
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === "stage_1" || lowered === "stage1" || lowered === "1") {
+    return "第一阶段";
+  }
+
+  if (lowered === "stage_2" || lowered === "stage2" || lowered === "2") {
+    return "第二阶段";
+  }
+
+  return normalized;
+}
+
+function formatPetEvolutionHint(nextEvolveDays?: number | null): string {
+  if (typeof nextEvolveDays !== "number") {
+    return "等级 + 资源达标后开放进化";
+  }
+
+  if (nextEvolveDays <= 0) {
+    return "满足条件后可进化";
+  }
+
+  return `距离下一次进化：${nextEvolveDays} 天`;
+}
+
+function formatParentEvolutionSuffix(nextEvolveDays?: number | null): string {
+  if (typeof nextEvolveDays !== "number") {
+    return "";
+  }
+
+  return nextEvolveDays <= 0 ? " | 进化待命" : ` | 进化倒计时 ${nextEvolveDays} 天`;
 }
 
 function formatHistoryTimestamp(raw?: string | null): string {

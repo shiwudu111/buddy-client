@@ -15,6 +15,17 @@ import {
 } from "./LoginLayoutCalculator";
 import { ensureLoginPageHierarchy } from "./LoginSceneStructure";
 
+// 文件整体作用：
+// 这是登录页背景层的专用搭建器。
+// 它负责把森林背景图、渐变底色、雾感光斑这些“背景气氛层”拼出来。
+//
+// 一句话版本：
+// 这段代码的核心意思就是：把登录页的背景气氛层现场搭出来，包括背景图、渐变、雾气和发光点。
+//
+// 美术需要关注的重点：
+// 1. BackgroundLayer 下的很多节点是运行时生成的，不是场景里手摆的。
+// 2. ForestBackground / BgGradient / BottomGlow / AmbientShapes 这些名字不要随便改。
+// 3. 如果正式背景图没加载成功，这里会先用代码画一个兜底渐变，不会直接黑屏。
 const FOREST_BACKGROUND_PATH = "login/login-forest-bg/spriteFrame";
 const DEFAULT_FOREST_WIDTH = 1536;
 const DEFAULT_FOREST_HEIGHT = 1024;
@@ -83,11 +94,15 @@ function lerpColor(from: Color, to: Color, t: number): Color {
 }
 
 class LoginBackgroundBuilder {
+  // backgroundSpriteFrame：正式背景图资源。
   private backgroundSpriteFrame: SpriteFrame | null = null;
+  // isLoadingBackground：防止重复加载背景图。
   private isLoadingBackground = false;
+  // activeCanvas：当前登录页所在的 Canvas，用于背景图加载完成后重新刷新。
   private activeCanvas: Node | null = null;
 
   ensure(canvas: Node): void {
+    // 确保登录页背景层完整存在并完成绘制。
     this.activeCanvas = canvas;
     const metrics = this.getLayoutMetrics(canvas);
 
@@ -115,6 +130,7 @@ class LoginBackgroundBuilder {
   }
 
   private drawFallbackGradient(parent: Node, size: Size): void {
+    // 正式森林图还没准备好时，先画一层渐变当兜底背景。
     const node = ensureChild(parent, "BgGradient", 0);
     node.setPosition(Vec3.ZERO);
     ensureTransform(node, size.width, size.height);
@@ -146,6 +162,7 @@ class LoginBackgroundBuilder {
   }
 
   private ensureForestBackground(parent: Node, metrics: LoginViewportMetrics): void {
+    // 正式森林背景图的容器。
     const node = ensureChild(parent, "ForestBackground", 1);
     const sourceSize = this.getForestSourceSize();
     const layout = this.getForestLayout(metrics, sourceSize.width, sourceSize.height);
@@ -166,6 +183,7 @@ class LoginBackgroundBuilder {
   }
 
   private drawForestOverlays(parent: Node, metrics: LoginViewportMetrics): void {
+    // 顶层的雾、底部的发光等氛围层，都在这里统一补。
     const wash = ensureChild(parent, "ForestWash", 2);
     wash.setPosition(Vec3.ZERO);
     drawRect(wash, metrics.width, metrics.height, new Color(5, 16, 21, 84));
@@ -174,19 +192,11 @@ class LoginBackgroundBuilder {
     topMist.setPosition(new Vec3(0, metrics.height * 0.24, 0));
     drawCircle(topMist, metrics.isPortrait ? 250 : 320, new Color(117, 186, 223, 24));
 
-    const focusShade = ensureChild(parent, "LoginReadabilityShade", 4);
-    focusShade.setPosition(
-      new Vec3(
-        metrics.isPortrait ? 0 : metrics.width * 0.2,
-        metrics.isPortrait ? -metrics.height * 0.12 : metrics.height * 0.05,
-        0
-      )
-    );
-    drawCircle(
-      focusShade,
-      metrics.isPortrait ? metrics.width * 0.58 : metrics.height * 0.46,
-      new Color(7, 20, 27, metrics.isPortrait ? 116 : 98)
-    );
+    const focusShade = parent.getChildByName("LoginReadabilityShade");
+    if (focusShade) {
+      focusShade.removeFromParent();
+      focusShade.destroy();
+    }
 
     const bottomGlow = ensureChild(parent, "BottomGlow", 5);
     bottomGlow.setPosition(new Vec3(-metrics.width * 0.16, -metrics.height * 0.36, 0));
@@ -198,6 +208,7 @@ class LoginBackgroundBuilder {
   }
 
   private drawAmbientShapes(parent: Node, metrics: LoginViewportMetrics): void {
+    // 背景里那些柔和的光团和气氛块，由这里动态画出。
     const node = ensureChild(parent, "AmbientShapes", 6);
     node.setPosition(Vec3.ZERO);
     ensureTransform(node, metrics.width, metrics.height);
@@ -309,6 +320,7 @@ class LoginBackgroundBuilder {
   }
 
   private loadForestBackground(): void {
+    // 异步加载正式背景资源。
     if (this.isLoadingBackground || this.backgroundSpriteFrame) {
       return;
     }
@@ -329,6 +341,7 @@ class LoginBackgroundBuilder {
   }
 
   private destroyLegacyFoxNodes(parent: Node): void {
+    // 清理历史版本遗留的狐狸节点，避免旧资源还挂在背景层里。
     ["FoxVisualPortrait", "FoxVisualLandscape"].forEach((name) => {
       const child = parent.getChildByName(name);
       if (!child) {

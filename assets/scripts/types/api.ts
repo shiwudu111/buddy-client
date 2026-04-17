@@ -82,6 +82,8 @@ export interface ChildPetPayload {
     hunger: number;
     mood: number;
     experience?: number;
+    stage?: string;
+    next_evolve_days?: number;
   };
   today_homework: Record<string, { score: number | null } | null>;
 }
@@ -102,5 +104,7 @@ export interface WeeklyReportPayload {
     alive?: boolean;
     hunger?: number;
     mood?: number;
+    stage?: string;
+    next_evolve_days?: number;
   };
 }

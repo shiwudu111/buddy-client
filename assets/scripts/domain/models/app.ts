@@ -1,6 +1,6 @@
 export type SceneName = "Login" | "Main";
 
-export type DashboardTab = "overview" | "homework";
+export type DashboardTab = "overview" | "homework" | "growth";
 
 export type HomeworkSubject = "chinese" | "math" | "english";
 

@@ -1,12 +1,24 @@
 import { authService } from "../../services/AuthService";
-import type { ApiResponse, AuthPayload } from "../../types/api";
+import type { ApiResponse, AuthPayload, UserRole } from "../../types/api";
 
+// 文件整体作用：
+// 这是登录页真正负责“登录 / 注册 / 恢复会话”业务判断的协调器。
+// 它不直接操作界面节点，而是把结果整理成“该显示什么状态、要不要跳场景”。
+//
+// 一句话版本：
+// 这段代码的核心意思就是：统一处理登录、注册和恢复登录态，并告诉界面现在该提示成功、失败还是处理中。
+//
+// 美术需要关注的重点：
+// 1. 登录页底部那一行状态文案，大多来自这里定义的状态集合。
+// 2. 这里会决定按钮什么时候进入“正在提交”的锁定状态。
+// 3. 如果出现“界面显示成功但没跳转”或“状态文字不对”，常常和这里有关。
 export type LoginStatusTone = "neutral" | "success" | "error";
 
 export type LoginStatusKey =
   | "idle"
   | "restorePending"
   | "restoreSuccess"
+  | "restoreNoSession"
   | "restoreFailure"
   | "loginMissingFields"
   | "loginPending"
@@ -14,12 +26,16 @@ export type LoginStatusKey =
   | "loginFailure"
   | "registerMissingFields"
   | "registerInvalidFields"
+  | "registerPasswordMismatch"
   | "registerPending"
   | "registerSuccess"
   | "registerFailure"
   | "networkError";
 
 export type LoginStatusState = {
+  // key：内部识别用的状态名。
+  // message：界面上真正显示给用户看的文案。
+  // tone：决定文案应该用普通色、成功色还是失败色。
   key: LoginStatusKey;
   message: string;
   tone: LoginStatusTone;
@@ -28,80 +44,98 @@ export type LoginStatusState = {
 export type LoginAuthOutcome = {
   status: LoginStatusState;
   shouldNavigate: boolean;
+  resolvedRole: UserRole | null;
+};
+
+export type LoginRestoreOutcomeKind = "restoreSuccess" | "restoreNoSession" | "restoreFailure";
+
+export type LoginRestoreOutcome = LoginAuthOutcome & {
+  kind: LoginRestoreOutcomeKind;
 };
 
 type LoginStatusListener = (status: LoginStatusState) => void;
 
 export const LOGIN_STATUS_STATES: Record<LoginStatusKey, LoginStatusState> = {
-  idle: { key: "idle", message: "请输入账号密码", tone: "neutral" },
+  idle: { key: "idle", message: "\u8bf7\u8f93\u5165\u8d26\u53f7\u5bc6\u7801", tone: "neutral" },
   restorePending: {
     key: "restorePending",
-    message: "正在恢复登录状态...",
+    message: "\u6b63\u5728\u6062\u590d\u767b\u5f55\u72b6\u6001...",
     tone: "neutral",
   },
   restoreSuccess: {
     key: "restoreSuccess",
-    message: "检测到已登录状态，正在进入主界面...",
+    message: "\u68c0\u6d4b\u5230\u5df2\u767b\u5f55\u72b6\u6001\uff0c\u53ef\u7ee7\u7eed\u8fdb\u5165",
     tone: "success",
+  },
+  restoreNoSession: {
+    key: "restoreNoSession",
+    message: "\u8bf7\u9009\u62e9\u767b\u5f55\u65b9\u5f0f",
+    tone: "neutral",
   },
   restoreFailure: {
     key: "restoreFailure",
-    message: "登录态恢复失败",
+    message: "\u767b\u5f55\u6001\u6062\u590d\u5931\u8d25",
     tone: "error",
   },
   loginMissingFields: {
     key: "loginMissingFields",
-    message: "请填写账号和密码",
+    message: "\u8bf7\u586b\u5199\u8d26\u53f7\u548c\u5bc6\u7801",
     tone: "error",
   },
   loginPending: {
     key: "loginPending",
-    message: "正在登录...",
+    message: "\u6b63\u5728\u767b\u5f55...",
     tone: "neutral",
   },
   loginSuccess: {
     key: "loginSuccess",
-    message: "登录成功，正在进入主界面...",
+    message: "\u767b\u5f55\u6210\u529f\uff0c\u6b63\u5728\u8fdb\u5165\u4e3b\u754c\u9762...",
     tone: "success",
   },
   loginFailure: {
     key: "loginFailure",
-    message: "登录失败",
+    message: "\u767b\u5f55\u5931\u8d25",
     tone: "error",
   },
   registerMissingFields: {
     key: "registerMissingFields",
-    message: "请先输入要注册的账号和密码",
+    message: "\u8bf7\u5148\u8f93\u5165\u8d26\u53f7\u3001\u5bc6\u7801\u548c\u786e\u8ba4\u5bc6\u7801",
     tone: "error",
   },
   registerInvalidFields: {
     key: "registerInvalidFields",
-    message: "账号至少 3 位，密码至少 6 位",
+    message: "\u8d26\u53f7\u81f3\u5c11 3 \u4f4d\uff0c\u5bc6\u7801\u81f3\u5c11 6 \u4f4d",
+    tone: "error",
+  },
+  registerPasswordMismatch: {
+    key: "registerPasswordMismatch",
+    message: "\u4e24\u6b21\u8f93\u5165\u7684\u5bc6\u7801\u4e0d\u4e00\u81f4",
     tone: "error",
   },
   registerPending: {
     key: "registerPending",
-    message: "正在注册...",
+    message: "\u6b63\u5728\u6ce8\u518c...",
     tone: "neutral",
   },
   registerSuccess: {
     key: "registerSuccess",
-    message: "注册成功，正在进入主界面...",
+    message: "\u6ce8\u518c\u6210\u529f\uff0c\u6b63\u5728\u8fdb\u5165\u4e3b\u754c\u9762...",
     tone: "success",
   },
   registerFailure: {
     key: "registerFailure",
-    message: "注册失败",
+    message: "\u6ce8\u518c\u5931\u8d25",
     tone: "error",
   },
   networkError: {
     key: "networkError",
-    message: "网络异常",
+    message: "\u7f51\u7edc\u5f02\u5e38",
     tone: "error",
   },
 };
 
 function createErrorStatus(message: string, fallback: LoginStatusState): LoginStatusState {
+  // 把后端或运行时错误，统一包装成登录页可显示的错误状态。
   return {
     key: fallback.key,
     message,
@@ -121,7 +155,9 @@ function hasCompleteAuthPayload(
 }
 
 export class LoginAuthCoordinator {
+  // isSubmitting：当前是否正在发登录/注册请求。
   private isSubmitting = false;
+  // isBootstrappingSession：当前是否正在恢复旧登录态。
   private isBootstrappingSession = false;
 
   constructor(private readonly auth: LoginAuthService = authService) {}
@@ -131,16 +167,28 @@ export class LoginAuthCoordinator {
   }
 
   canRestoreSession(): boolean {
-    return !this.isSubmitting && !this.isBootstrappingSession && this.hasStoredSession();
+    return !this.isSubmitting && !this.isBootstrappingSession;
   }
 
   canSubmit(): boolean {
     return !this.isSubmitting && !this.isBootstrappingSession;
   }
 
-  async restoreSessionIfNeeded(onStatusChange?: LoginStatusListener): Promise<LoginAuthOutcome | null> {
+  async restoreSessionIfNeeded(
+    onStatusChange?: LoginStatusListener
+  ): Promise<LoginRestoreOutcome | null> {
+    // 登录页刚打开时，优先尝试恢复上一次会话。
     if (!this.canRestoreSession()) {
       return null;
+    }
+
+    if (!this.hasStoredSession()) {
+      return {
+        kind: "restoreNoSession",
+        status: LOGIN_STATUS_STATES.restoreNoSession,
+        shouldNavigate: false,
+        resolvedRole: null,
+      };
     }
 
     this.isBootstrappingSession = true;
@@ -149,21 +197,27 @@ export class LoginAuthCoordinator {
       const user = await this.auth.bootstrapSession();
       if (user) {
         return {
+          kind: "restoreSuccess",
           status: LOGIN_STATUS_STATES.restoreSuccess,
-          shouldNavigate: true,
+          shouldNavigate: false,
+          resolvedRole: user.role,
         };
       }
 
       return {
-        status: LOGIN_STATUS_STATES.idle,
+        kind: "restoreNoSession",
+        status: LOGIN_STATUS_STATES.restoreNoSession,
         shouldNavigate: false,
+        resolvedRole: null,
       };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : LOGIN_STATUS_STATES.restoreFailure.message;
       return {
+        kind: "restoreFailure",
         status: createErrorStatus(message, LOGIN_STATUS_STATES.restoreFailure),
         shouldNavigate: false,
+        resolvedRole: null,
       };
     } finally {
       this.isBootstrappingSession = false;
@@ -175,6 +229,7 @@ export class LoginAuthCoordinator {
     password: string,
     onStatusChange?: LoginStatusListener
   ): Promise<LoginAuthOutcome | null> {
+    // 普通登录入口。
     if (!this.canSubmit()) {
       return null;
     }
@@ -183,6 +238,7 @@ export class LoginAuthCoordinator {
       return {
         status: LOGIN_STATUS_STATES.loginMissingFields,
         shouldNavigate: false,
+        resolvedRole: null,
       };
     }
 
@@ -190,7 +246,8 @@ export class LoginAuthCoordinator {
       pendingStatus: LOGIN_STATUS_STATES.loginPending,
       fallbackErrorStatus: LOGIN_STATUS_STATES.loginFailure,
       successStatus: LOGIN_STATUS_STATES.loginSuccess,
-      invalidSuccessMessage: "登录结果不完整，请重试",
+      invalidSuccessMessage:
+        "\u767b\u5f55\u7ed3\u679c\u4e0d\u5b8c\u6574\uff0c\u8bf7\u91cd\u8bd5",
       action: () => this.auth.login(username, password),
       onStatusChange,
     });
@@ -199,8 +256,10 @@ export class LoginAuthCoordinator {
   async register(
     username: string,
     password: string,
+    role: UserRole = "CHILD",
     onStatusChange?: LoginStatusListener
   ): Promise<LoginAuthOutcome | null> {
+    // 注册入口。学生和家长都复用这里，只是 role 不同。
     if (!this.canSubmit()) {
       return null;
     }
@@ -209,6 +268,7 @@ export class LoginAuthCoordinator {
       return {
         status: LOGIN_STATUS_STATES.registerMissingFields,
         shouldNavigate: false,
+        resolvedRole: null,
       };
     }
 
@@ -216,6 +276,7 @@ export class LoginAuthCoordinator {
       return {
         status: LOGIN_STATUS_STATES.registerInvalidFields,
         shouldNavigate: false,
+        resolvedRole: null,
       };
     }
 
@@ -223,8 +284,9 @@ export class LoginAuthCoordinator {
       pendingStatus: LOGIN_STATUS_STATES.registerPending,
       fallbackErrorStatus: LOGIN_STATUS_STATES.registerFailure,
       successStatus: LOGIN_STATUS_STATES.registerSuccess,
-      invalidSuccessMessage: "注册结果不完整，请重试",
-      action: () => this.auth.register(username, password),
+      invalidSuccessMessage:
+        "\u6ce8\u518c\u7ed3\u679c\u4e0d\u5b8c\u6574\uff0c\u8bf7\u91cd\u8bd5",
+      action: () => this.auth.register(username, password, role),
       onStatusChange,
     });
   }
@@ -237,6 +299,7 @@ export class LoginAuthCoordinator {
     action: () => Promise<ApiResponse<AuthPayload>>;
     onStatusChange?: LoginStatusListener;
   }): Promise<LoginAuthOutcome> {
+    // 登录和注册最后都会走到这一个通用提交流程里。
     this.isSubmitting = true;
     options.onStatusChange?.(options.pendingStatus);
     try {
@@ -248,6 +311,7 @@ export class LoginAuthCoordinator {
             options.fallbackErrorStatus
           ),
           shouldNavigate: false,
+          resolvedRole: null,
         };
       }
 
@@ -259,12 +323,14 @@ export class LoginAuthCoordinator {
             options.fallbackErrorStatus
           ),
           shouldNavigate: false,
+          resolvedRole: null,
         };
       }
 
       return {
         status: options.successStatus,
         shouldNavigate: true,
+        resolvedRole: result.data.user.role,
       };
     } catch (error) {
       const message =
@@ -272,6 +338,7 @@ export class LoginAuthCoordinator {
       return {
         status: createErrorStatus(message, LOGIN_STATUS_STATES.networkError),
         shouldNavigate: false,
+        resolvedRole: null,
       };
     } finally {
       this.isSubmitting = false;

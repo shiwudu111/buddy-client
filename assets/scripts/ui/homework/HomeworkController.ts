@@ -1,62 +1,23 @@
-import { _decorator, Button, Color, UITransform } from "cc";
+import { _decorator } from "cc";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { ScreenController } from "../common/base/ScreenController";
-import { RuntimeUI } from "../common/runtime/RuntimeUI";
 
+// 文件整体作用：
+// 这是旧版 Homework 场景的入口脚本。
+// 现在正式作业界面已经并入 MainController，所以这里会直接跳回主界面。
+//
+// 一句话版本：
+// 这段代码的核心意思就是：旧作业入口已经不用了，进来后直接跳回现在统一的主界面。
+//
+// 美术需要关注的重点：
+// 1. 如果你看到单独 Homework 场景没承载完整内容，这是预期行为。
+// 2. 现在真正需要关注的作业界面在 MainController + HomeworkCenterView。
 const { ccclass } = _decorator;
 
 @ccclass("HomeworkController")
 export class HomeworkController extends ScreenController {
   start(): void {
-    const root = this.ensureManagedRoot("HomeworkStandaloneRoot");
-    const transform = root.getComponent(UITransform) ?? root.addComponent(UITransform);
-    transform.setContentSize(1280, 720);
-    RuntimeUI.clear(root);
-
-    RuntimeUI.createBox(root, {
-      name: "HomeworkStandaloneCard",
-      x: 0,
-      y: 0,
-      width: 700,
-      height: 320,
-      color: new Color(24, 31, 43, 255),
-    });
-
-    RuntimeUI.createLabel(root, {
-      name: "HomeworkStandaloneTitle",
-      text: "作业中心已并入 Main 场景",
-      x: 0,
-      y: 70,
-      width: 520,
-      height: 40,
-      fontSize: 28,
-    });
-
-    RuntimeUI.createLabel(root, {
-      name: "HomeworkStandaloneDesc",
-      text: "当前客户端框架将作业提交、作业历史与宠物联动统一放入 Main 场景的“作业中心”页签，避免依赖额外场景资源。",
-      x: 0,
-      y: 0,
-      width: 560,
-      height: 100,
-      fontSize: 20,
-      color: new Color(186, 197, 212, 255),
-    });
-
-    const backButton = RuntimeUI.createButton(root, {
-      name: "BackToMainButton",
-      text: "返回 Main",
-      x: 0,
-      y: -90,
-      width: 180,
-      height: 52,
-      color: new Color(76, 128, 255, 255),
-      fontSize: 20,
-    });
-    backButton.button.node.on(
-      Button.EventType.CLICK,
-      () => sceneRouter.goToMain(),
-      this
-    );
+    // 旧版作业入口现在只是一个跳转壳，真正的作业页面已经统一到 MainController 里。
+    sceneRouter.goToMain();
   }
 }

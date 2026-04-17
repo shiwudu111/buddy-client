@@ -3,6 +3,7 @@ import { sys } from "cc";
 export const STORAGE_KEYS = {
   token: "buddy.auth.token",
   user: "buddy.auth.user",
+  lastAccount: "buddy.auth.lastAccount",
   petId: "buddy.pet.id",
   petIdMap: "buddy.pet.id.map",
   activeTab: "buddy.main.activeTab",
