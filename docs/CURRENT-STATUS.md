@@ -1,18 +1,19 @@
 # buddy-client 当前状态
 
-**更新日期**：2026-04-16  
+**更新日期**：2026-04-20  
 **面向对象**：只查看 `buddy-client` 仓库的协作者
 
 ---
 
 ## 当前阶段
 
-项目处于 **MVP 主链路收口后段 + Pet 成长/进化 v1 起步阶段**。
+项目当前处于 **学生端主界面改版 + 口粮资源系统联调准备 / 前端落地推进阶段**。
 
-当前重点不是继续扩散功能，而是：
-- 把已实现主链路收口到可验收状态
-- 用运行态冒烟补齐最后的验证缺口
-- 在不打断主链路稳定性的前提下推进 `Pet 成长/进化 v1`
+当前重点不是继续横向扩新模块，而是：
+- 保持学生端与家长端主链路稳定
+- 把主界面改版与后端资源系统的口径先冻结清楚
+- 让当前状态、执行真相、验收清单和联调文档保持一致
+- 在不破坏主链路的前提下推进学生端主页改版与资源系统联调
 
 ---
 
@@ -21,83 +22,85 @@
 ### 1. 主链路
 - `Login + Main` 主链路已跑通
 - 学生端和家长端都可进入主界面
+- 退出登录、重新登录、刷新等关键会话边界已收口
 
 ### 2. Login 模块
-- Login 主入口重构已完成
-- 当前口径为：`restore -> brandEntry -> roleSelect -> authForm`
-- 默认账号、其他账号、返回、登录/注册切换、状态清理等关键路径已完成收口
+- 登录入口重构已完成
+- 当前执行口径为：`restore -> brandEntry -> roleSelect -> authForm`
+- 默认账号、其他账号、返回、登录/注册切换、状态清理等关键路径已收口
 - Login 关键冒烟已通过
 
 ### 3. 家长端主链路
 - 家长端绑定孩子链路已稳定
 - `绑定孩子 -> 查看孩子状态 -> 查看周报 -> 刷新 -> 退出登录 -> 重新登录` 已作为稳定联调基线通过
-- `bootstrap / refresh / bind / logout` 的会话边界已统一为“有效才提交、失效就静默丢弃”
+- `bootstrap / refresh / bind / logout` 的会话边界已统一成“有效才提交，失效就静默丢弃”
 
-### 4. 首次宠物创建
-- 首次宠物创建已按冻结口径正式落地
-- 当前正式链路为：
-  - 无宠物学生首次进入
-  - 创建宠物
-  - 进入成长主链路
-- 对应冻结文档：
-  - [首次宠物创建链路冻结说明-V1.0.md](/E:/buddy-client/docs/05-决策记录/首次宠物创建链路冻结说明-V1.0.md)
+### 4. 学生端聊天 v1
+- 学生端聊天功能已完成并收口
+- 已完成：
+  - `Main` 内聊天 UI
+  - 本地预设回复
+  - 会话内聊天状态保留
+  - 空输入拦截
+  - 防重复提交
+  - 登录退出清空
+  - 浏览器关闭后重新启动不回灌旧聊天
+- 当前口径：
+  - 聊天只在当前运行会话内保留
+  - 聊天不会影响宠物成长
+  - 历史接口可用，但当前不作为启动自动恢复主流程
 
-### 5. UI 代码可读化
-- `assets/scripts/ui` 目录的 23 个 `ts` 文件已完成第一轮“美术可读化”注释整理
-- 已补充：
-  - 文件整体作用
-  - 一句话版本
-  - 关键函数 / 变量 / 动态节点说明
-- 导读文档：
-  - [UI代码美术导读-V1.0.md](/E:/buddy-client/docs/06-开发规范/UI代码美术导读-V1.0.md)
+### 5. Homework 模块
+- Homework 当前已完成收口
+- 已确认：
+  - 学科切换后的草稿隔离
+  - 提交成功后的历史 / 今日状态 / 宠物状态刷新
+  - 刷新与退出重登后的会话边界
+  - 学生端 Homework 手工点测通过
+
+### 6. Pet 成长/进化 v1
+- 已进入第一版功能落地阶段
+- 当前已完成：
+  - 学生端 `宠物成长` 页签正式展示
+  - 当前状态展示：阶段、等级、经验、饥饿、心情、状态
+  - 进化条件展示：当前阶段、下一阶段、等级要求、进化时机、保守判断
+  - 最近成长反馈展示：仅接 `喂养成功` 与 `作业提交成功` 两个触点
+- 当前限制：
+  - 聊天不会影响成长
+  - 不做历史作业回放
+  - 不做后端假接口或伪造增量字段
+
+### 7. 学生端主界面改版准备
+- 已明确主界面视觉参考以 `index.html` 为准
+- 主界面将从“文档式宠物状态”改为更接近宠物主页的暖色场景壳子
+- 当前主页第一版已接入：状态卡、宠物场景、最近事件、选粮喂养弹层、底部动作区
+- 当前宠物场景已继续细化，朝 `index.html` 的圆润暖色风格收拢
+- 新阶段需要后端配合的真实能力包括：
+  - `energy / health`
+  - 口粮库存
+  - 作业奖励口粮
+  - 选粮喂养
+- 这部分能力需要单独的联调文档和冻结规则，不再混在旧聊天 / 成长文档里
 
 ---
 
-## 当前已收口但待最后确认
+## 当前验收结论
 
-### Homework 模块
-- Homework 已完成代码收口
-- 当前状态为：**带验证缺口的通过**
-
-当前已确认收住的点包括：
-- 提交链路已改为“服务纯返回，控制器在会话有效时统一提交”
-- 提交后的作业历史、今日状态、宠物状态补刷新均已带会话门禁
-- `refresh + logout`、`bootstrap + logout`、`bindChild + logout` 等晚到回调污染共享状态的问题已统一收口
-- 旧 `HomeworkController` 已退为跳转壳，不再与 `MainController` 中的作业中心并存打架
-
-当前剩余的不是代码结构问题，而是最后一轮运行态确认：
-- 还未补齐独立的学生端 Homework Cocos 冒烟
-- 还未跑 `tsc`
-
-若以下 5 条运行态也通过，可直接记为 **本轮收口完成**：
-1. 学生端进入 Homework，切语文/数学/英语，草稿互不覆盖。
-2. 提交成功后，当前科目草稿被清空，历史/今日状态刷新，宠物联动正常。
-3. 提交失败时，提示、回退、重试正常。
-4. 刷新后退出重进，不出现旧会话污染。
-5. 已提交科目再次进入时，提示文案和状态一致。
-
----
-
-## 当前进行中
+### 学生端聊天 v1
+- **功能验收：通过**
+- **视觉最终验收：不作为本阶段收口标准**
 
 ### Pet 成长/进化 v1
-- 已进入第一版实现阶段
-- 当前已有：
-  - 学生端 `宠物成长` 页签
-  - 成长阶段展示
-  - 进化提示展示
-  - 宠物成长状态刷新入口
-  - 本地模拟样本开关，用于测试 `stage / next_evolve_days` 分支
+- **功能实现：已落地，可继续验收**
+- **界面观感：当前仅达到功能版，不作为 MVP 最终视觉定版**
+- 后续如需作为正式最终界面交付，必须单独开 `UI/视觉优化` 任务，不在当前功能任务内继续扩修
 
-当前这部分更接近：
-- 成长信息展示层
-- 进化提示层
-- 测试和验收支撑层
-
-还不是完整正式进化功能，暂未进入：
-- 正式进化触发动作
-- 完整后端业务权威接入
-- 复杂进化演出和动画
+### 学生端主界面改版
+- **当前状态：联调准备 / 前端落地推进中**
+- **视觉目标：以 `index.html` 为参考进行主页重做**
+- **联调目标：先冻结口粮资源系统和新宠物状态字段，再进入实现**
+- **视觉审查结论：当前仅达到“暖色三栏主页第一版”，距离 `index.html` 级别还原仍有明显差距**
+- **已新增整改清单：后续应按《Main 首页 P0 结构整改执行单（当前版）》分块推进，不再把当前效果误判为接近最终视觉**
 
 ---
 
@@ -105,37 +108,49 @@
 
 - 正式选蛋 / 孵化系统
 - 稀有度 / 物种结果承诺
-- `AI 对话 / 宠物对话`
+- 聊天对成长联动
 - 更复杂的宠物演出包装
 - 自动化测试体系
 - 性能 / 监控专项
+- 主界面视觉定版以外的扩展花活
 
 ---
 
 ## 当前风险
 
-1. `Homework` 已基本收口，但最后一轮运行态验证尚未补齐，仍存在“代码正确、运行态未完全确认”的风险。  
-2. 当前项目仍主要依赖人工 review、Network 检查和 Cocos 冒烟，而不是自动化验证。  
-3. `Pet 成长/进化 v1` 已起步，但当前仍以展示和边界落地为主，后续若扩成正式进化功能，必须先冻结正式业务口径。  
+1. `Pet 成长/进化 v1` 当前已经达到功能可验收，但界面观感仍偏“功能版”，若不单独拆 UI 优化任务，容易在后续协作中被误判为“最终界面已完成”。
+2. 聊天、成长、作业三块当前边界已经冻结，但若后续协作不看最新文档，容易再次把聊天历史恢复、聊天影响成长、历史回放成长等旧讨论带回实现。
+3. 当前正在进入学生端主界面改版阶段，如果后端资源系统契约不先冻结，主界面很容易变成前端猜字段的伪实现。
+4. 当前仍以手工点测和编译验证为主，自动化回归覆盖不足。
 
 ---
 
 ## 下一步建议
 
-1. 按最小清单补完 Homework 最后一轮运行态冒烟，完成正式收口。  
-2. 在不新增入口层需求的前提下，继续推进 `Pet 成长/进化 v1`。  
-3. 保持 `Parent` 和 `Login` 只做回归验证，不再扩需求分支。  
-4. 后续状态更新优先直接写入本文件，避免再出现“代码已推进、状态文档落后”的情况。  
+1. 保持学生端聊天 v1 关闭状态，不再继续扩需求。
+2. 开始推进学生端主界面改版与资源系统联调准备。
+3. 如需提升成长页交付观感，单独开 `Pet Growth UI/视觉优化` 任务，不混入当前功能验收。
+4. 后续任何阶段变化，应优先更新本文件和 `CURRENT-SOURCE-OF-TRUTH.md`。
 
 ---
 
 ## 快速入口
 
-- 项目背景： [PROJECT-CONTEXT.md](/E:/buddy-client/docs/PROJECT-CONTEXT.md)
-- 协作规则： [CLIENT-COLLAB-RULES.md](/E:/buddy-client/docs/CLIENT-COLLAB-RULES.md)
-- 冻结总决策： [DECISION-RESULT-FROZEN-V1.0.md](/E:/buddy-client/docs/05-决策记录/DECISION-RESULT-FROZEN-V1.0.md)
-- Login 专项决议： [登录入口重构变更决议-V1.0.md](/E:/buddy-client/docs/05-决策记录/登录入口重构变更决议-V1.0.md)
-- 首次宠物创建冻结： [首次宠物创建链路冻结说明-V1.0.md](/E:/buddy-client/docs/05-决策记录/首次宠物创建链路冻结说明-V1.0.md)
-- Login 模块说明： [Login模块说明-V1.0.md](/E:/buddy-client/docs/06-开发规范/Login模块说明-V1.0.md)
-- 两天冲刺目标： [两天冲刺目标-V1.0.md](/E:/buddy-client/docs/06-开发规范/两天冲刺目标-V1.0.md)
-- API 基线： [API-MVP-BASELINE-V1.0.md](/E:/buddy-client/docs/03-API接口/API-MVP-BASELINE-V1.0.md)
+- 项目背景：[PROJECT-CONTEXT.md](/E:/buddy-client/docs/PROJECT-CONTEXT.md)
+- 协作规则：[CLIENT-COLLAB-RULES.md](/E:/buddy-client/docs/CLIENT-COLLAB-RULES.md)
+- 当前执行真相：[CURRENT-SOURCE-OF-TRUTH.md](/E:/buddy-client/docs/00-runtime/CURRENT-SOURCE-OF-TRUTH.md)
+- 主界面改版联调：[Main 首页 P0 结构整改执行单（当前版）.md](/E:/buddy-client/docs/06-开发规范/Main%20%E9%A6%96%E9%A1%B5%20P0%20%E7%BB%93%E6%9E%84%E6%95%B4%E6%94%B9%E6%89%A7%E8%A1%8C%E5%8D%95%EF%BC%88%E5%BD%93%E5%89%8D%E7%89%88%EF%BC%89.md)
+- 冻结总决策：[DECISION-RESULT-FROZEN-V1.0.md](/E:/buddy-client/docs/05-决策记录/DECISION-RESULT-FROZEN-V1.0.md)
+- 客户端联调验收：[客户端联调验收清单-V1.0.md](/E:/buddy-client/docs/06-开发规范/客户端联调验收清单-V1.0.md)
+
+## 2026-04-20 Milestone
+- Student main shell is now moving onto a viewport-safe, responsive layout foundation.
+- Runtime UI primitives were upgraded for card / badge / progress / action tile / speech bubble / mini input usage.
+- Student child top bar has been reshaped into a responsive combined shell with pill tabs and compact controls.
+- Compact child overview now hides the always-on right event panel instead of keeping the old fixed three-column feel.
+- Main child overview panels and action bar now derive sizes and placement from layout metrics instead of pure fixed coordinates.
+- Main child scene panel and compact event panel now derive title, card, and summary spacing from layout metrics.
+- PetGrowthView is now aligned with the same warm responsive card system and no longer reads like the old dark-theme leftover page.
+- MainController's legacy child branch inside renderGlobalActions has been removed so the old header action shell no longer coexists with the new child top bar.
+- Main overview scene bubble, name tag, and right-side summary cards are now using the shared product component set instead of bare boxes.
+- Main overview scene backdrop layers and the pet hero proportions were tightened again to better match the reference composition.

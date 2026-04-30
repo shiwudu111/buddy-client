@@ -514,7 +514,7 @@ class LoginVisualStyler {
     titleNode.setPosition(new Vec3(36, 20, 0));
     const titleLabel = titleNode.getComponent(Label);
     if (titleLabel) {
-      titleLabel.enableBold = true;
+      (titleLabel as unknown as { enableBold?: boolean }).enableBold = true;
     }
 
     const subtitleNode = ensureNamedChild(logoArea, "SubtitleLabel");
@@ -635,7 +635,7 @@ class LoginVisualStyler {
 
     const label = labelNode.getComponent(Label);
     if (label) {
-      label.enableBold = true;
+      (label as unknown as { enableBold?: boolean }).enableBold = true;
     }
 
     labelNode.setPosition(Vec3.ZERO);

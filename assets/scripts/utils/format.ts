@@ -21,6 +21,8 @@ export function formatPetSummary(pet: PetStatus | null): string[] {
     `饥饿度：${pet.hunger}%`,
     `心情值：${pet.mood}%`,
     `经验值：${pet.experience}`,
+    ...(typeof pet.energy === "number" ? [`体力值：${pet.energy}%`] : []),
+    ...(typeof pet.health === "number" ? [`健康度：${pet.health}%`] : []),
     `进化提示：${formatPetEvolutionHint(pet.next_evolve_days)}`,
     `状态：${statusText}`,
   ];
@@ -80,6 +82,8 @@ export function formatParentOverview(data: ChildPetPayload): string {
     `成长阶段：${formatPetStageLabel(data.pet.stage)}${formatParentEvolutionSuffix(data.pet.next_evolve_days)}`,
     `状态：${data.pet.status ? "正常" : "异常"} | 饥饿 ${data.pet.hunger}% | 心情 ${data.pet.mood}%`,
     `经验值：${data.pet.experience ?? "-"}`,
+    ...(typeof data.pet.energy === "number" ? [`体力值：${data.pet.energy}%`] : []),
+    ...(typeof data.pet.health === "number" ? [`健康度：${data.pet.health}%`] : []),
     "今日作业状态：",
     `语文：${formatTodayHomeworkScore(homework.chinese)}`,
     `数学：${formatTodayHomeworkScore(homework.math)}`,

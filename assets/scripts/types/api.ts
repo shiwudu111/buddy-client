@@ -29,9 +29,42 @@ export interface PetStatus {
   hunger: number;
   mood: number;
   experience: number;
+  energy?: number;
+  health?: number;
   stage?: string;
   status?: boolean;
   next_evolve_days?: number;
+}
+
+export type PetFoodType = "xp" | "energy";
+export type PetFoodQuality = "normal" | "premium" | "advanced";
+
+export interface PetFoodInventoryItem {
+  food_type: PetFoodType;
+  food_quality: PetFoodQuality;
+  count: number;
+}
+
+export type MainEventKind =
+  | "system"
+  | "chat"
+  | "feed"
+  | "homework"
+  | "reward"
+  | "level_up"
+  | "stage_up";
+
+export interface MainEventEntry {
+  kind: MainEventKind;
+  title: string;
+  detail: string;
+  timestamp: string;
+}
+
+export interface PetDashboardPayload {
+  pet: PetStatus;
+  foods: PetFoodInventoryItem[];
+  recent_events?: MainEventEntry[];
 }
 
 export interface PetResourcesPayload {
@@ -52,6 +85,34 @@ export interface PetEvolutionPayload {
     growth: number;
   };
   days_until_evolution: number;
+}
+
+export interface PetFeedPayload {
+  food_type: PetFoodType;
+  food_quality: PetFoodQuality;
+  count?: number;
+}
+
+export interface PetFeedResultPayload {
+  pet: PetStatus;
+  foods: PetFoodInventoryItem[];
+}
+
+export interface HomeworkSubmitResultPayload {
+  expReward?: number;
+  score?: number;
+  food_reward?: PetFoodInventoryItem | null;
+  pet?: Partial<PetStatus> | null;
+  foods?: PetFoodInventoryItem[];
+}
+
+export type PetGrowthFeedbackSource = "homework_submit" | "pet_feed";
+
+export interface PetGrowthFeedback {
+  source: PetGrowthFeedbackSource;
+  status: "success";
+  message: string;
+  timestamp: string;
 }
 
 export type ChatMessageRole = "user" | "pet";
@@ -120,6 +181,8 @@ export interface ChildPetPayload {
     hunger: number;
     mood: number;
     experience?: number;
+    energy?: number;
+    health?: number;
     stage?: string;
     next_evolve_days?: number;
   };

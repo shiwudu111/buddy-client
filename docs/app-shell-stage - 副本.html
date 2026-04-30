@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>电子宠物乐园 - 主舞台底层场景</title>
+  <style>
+    :root {
+      --bg-primary: #FBF2E8;
+      --bg-secondary: #F7E9D8;
+      --brand: #F79B34;
+      --gold: #F4B74F;
+      --mint: #72D39A;
+      --text-primary: #6E4A33;
+      --border-soft: #EBCFB4;
+      --border-inner: #F2DDC8;
+      --shadow: 0 14px 28px rgba(187, 129, 62, 0.10), 0 6px 12px rgba(187, 129, 62, 0.07);
+      --inner-shadow: inset 0 0 0 2px rgba(255,255,255,0.45);
+      --radius-xl: 32px;
+      --radius-lg: 24px;
+      --radius-pill: 999px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      background:
+        radial-gradient(circle at top left, #fff7ef 0%, transparent 32%),
+        radial-gradient(circle at bottom right, #fce6ce 0%, transparent 26%),
+        linear-gradient(180deg, #FDF5EC 0%, #F8EBDD 100%);
+      color: var(--text-primary);
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .AppShell {
+      width: min(1280px, 100%);
+      aspect-ratio: 4 / 3;
+      min-height: 720px;
+      background: linear-gradient(180deg, var(--bg-primary), #F9EEDF);
+      border: 2px solid var(--border-soft);
+      border-radius: 38px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      padding: 18px;
+    }
+
+    .AppShell::before,
+    .AppShell::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+      border-radius: 50%;
+      opacity: 0.35;
+    }
+
+    .AppShell::before {
+      width: 240px;
+      height: 240px;
+      left: -70px;
+      top: -70px;
+      background: radial-gradient(circle, #FFE8C8 0%, transparent 70%);
+    }
+
+    .AppShell::after {
+      width: 300px;
+      height: 300px;
+      right: -90px;
+      bottom: -110px;
+      background: radial-gradient(circle, #FFD8C4 0%, transparent 72%);
+    }
+
+    .ShellFrame {
+      height: 100%;
+      border-radius: 30px;
+      border: 2px solid rgba(255,255,255,0.55);
+      box-shadow: var(--inner-shadow);
+      padding: 22px;
+      position: relative;
+      z-index: 1;
+      display: flex;
+    }
+
+    .MainViewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border-radius: var(--radius-xl);
+      border: 2px solid var(--border-soft);
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.45);
+      background: rgba(255, 249, 241, 0.72);
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .MainStage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 28px;
+      border: 1.5px solid var(--border-inner);
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, #FFF8F4 0%, #FFF4E8 48%, #F8E7C9 49%, #F1DEB8 100%);
+      isolation: isolate;
+    }
+
+    .MainStage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 18% 16%, rgba(255,255,255,0.96) 0 9%, transparent 9.5%),
+        radial-gradient(circle at 26% 20%, rgba(255,255,255,0.84) 0 7%, transparent 7.5%),
+        radial-gradient(circle at 72% 14%, rgba(255,255,255,0.94) 0 10%, transparent 10.5%),
+        radial-gradient(circle at 82% 20%, rgba(255,255,255,0.82) 0 7%, transparent 7.5%),
+        radial-gradient(circle at 10% 70%, rgba(247, 223, 162, 0.7) 0 1.8%, transparent 1.9%),
+        radial-gradient(circle at 20% 76%, rgba(155, 223, 163, 0.8) 0 2.3%, transparent 2.4%),
+        radial-gradient(circle at 76% 72%, rgba(243, 168, 196, 0.7) 0 1.8%, transparent 1.9%),
+        radial-gradient(circle at 84% 78%, rgba(160, 221, 182, 0.8) 0 2.1%, transparent 2.2%);
+      z-index: 0;
+    }
+
+    .AmbientLayer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .AmbientLayer::before {
+      content: "✦  ✧  ✦";
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(244, 183, 79, 0.82);
+      font-size: 18px;
+      letter-spacing: 10px;
+      text-shadow: 0 0 12px rgba(255,255,255,0.65);
+    }
+
+    .AmbientGlow {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 50% 12%, rgba(255,255,255,0.38) 0%, transparent 28%),
+        radial-gradient(circle at 50% 100%, rgba(255, 214, 161, 0.22) 0%, transparent 38%);
+      z-index: 1;
+    }
+
+    .StageSkeleton {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .StageFloor {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 46%;
+      background: linear-gradient(180deg, rgba(249,232,204,0) 0%, rgba(244,225,189,0.82) 22%, #F4E1BD 100%);
+    }
+
+    .StageBaseArc {
+      position: absolute;
+      left: 50%;
+      bottom: 58px;
+      transform: translateX(-50%);
+      width: min(70%, 720px);
+      height: 132px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.15) 38%, rgba(231,197,149,0.42) 66%, rgba(209,168,111,0.18) 100%);
+      filter: blur(2px);
+      opacity: 0.9;
+    }
+
+    .StageGroundLine {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      bottom: 92px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent 0%, rgba(213,171,118,0.65) 16%, rgba(213,171,118,0.65) 84%, transparent 100%);
+    }
+
+    .PetSafeZone {
+      position: absolute;
+      left: 50%;
+      bottom: 86px;
+      transform: translateX(-50%);
+      width: min(42%, 420px);
+      height: min(56%, 420px);
+      min-width: 280px;
+      min-height: 280px;
+      border-radius: 28px;
+      border: 2px dashed rgba(247, 155, 52, 0.34);
+      background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22);
+      z-index: 3;
+    }
+
+    .PetSafeZone::before {
+      content: "PET SAFE ZONE";
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 12px;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.78);
+      border: 1px solid rgba(247, 155, 52, 0.18);
+      color: rgba(110, 74, 51, 0.72);
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .PetAnchor {
+      position: absolute;
+      left: 50%;
+      bottom: 36px;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 18px;
+      border-radius: var(--radius-pill);
+      background: rgba(247, 155, 52, 0.18);
+      border: 1px solid rgba(247, 155, 52, 0.24);
+    }
+
+    .GrassLayer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 74px;
+      height: 58px;
+      background:
+        radial-gradient(circle at 9% 90%, #72D39A 0 13px, transparent 14px),
+        radial-gradient(circle at 18% 100%, #8CDDAD 0 12px, transparent 13px),
+        radial-gradient(circle at 72% 100%, #A7E6BE 0 15px, transparent 16px),
+        radial-gradient(circle at 86% 92%, #6FCA95 0 14px, transparent 15px);
+      opacity: 0.64;
+      z-index: 2;
+    }
+
+    .StageMarker {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow:
+        0 -8px 0 0 #fff,
+        0 8px 0 0 #fff,
+        -8px 0 0 0 #fff,
+        8px 0 0 0 #fff,
+        0 0 0 5px #F7B8C8 inset;
+      opacity: 0.92;
+      z-index: 2;
+    }
+
+    .StageMarker.left { left: 18%; bottom: 96px; }
+    .StageMarker.right { right: 14%; bottom: 100px; transform: scale(0.85); }
+
+    .StageHint {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 4;
+      padding: 10px 14px;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.74);
+      border: 1px solid var(--border-inner);
+      color: rgba(110, 74, 51, 0.78);
+      font-size: 13px;
+      font-weight: 700;
+      backdrop-filter: blur(4px);
+    }
+
+    .FooterTip {
+      position: absolute;
+      left: 26px;
+      bottom: 24px;
+      font-size: 12px;
+      color: rgba(156, 123, 99, 0.8);
+      z-index: 2;
+    }
+
+    @media (max-width: 1100px) {
+      body { padding: 12px; }
+      .AppShell { min-height: 660px; }
+      .PetSafeZone { width: min(50%, 420px); }
+    }
+
+    @media (max-width: 920px) {
+      .AppShell {
+        aspect-ratio: auto;
+        min-height: auto;
+      }
+
+      .ShellFrame {
+        min-height: 78vh;
+      }
+
+      .PetSafeZone {
+        width: min(68%, 420px);
+        min-width: 240px;
+        min-height: 250px;
+      }
+
+      .FooterTip {
+        position: static;
+        margin-top: 12px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .ShellFrame { padding: 14px; }
+      .MainViewport { padding: 12px; }
+      .StageHint {
+        right: 12px;
+        top: 12px;
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="AppShell" aria-label="电子宠物乐园主舞台壳层">
+    <div class="ShellFrame">
+      <section class="MainViewport" aria-label="主视口 MainViewport">
+        <section class="MainStage" aria-label="主舞台 MainStage">
+          <div class="AmbientLayer" aria-hidden="true">
+            <div class="AmbientGlow"></div>
+          </div>
+
+          <div class="StageSkeleton" aria-hidden="true">
+            <div class="StageFloor"></div>
+            <div class="StageBaseArc"></div>
+            <div class="StageGroundLine"></div>
+            <div class="GrassLayer"></div>
+            <div class="StageMarker left"></div>
+            <div class="StageMarker right"></div>
+          </div>
+
+          <div class="PetSafeZone" aria-label="宠物安全区">
+            <div class="PetAnchor" aria-hidden="true"></div>
+          </div>
+
+          <div class="StageHint">仅保留底层画布 / 主舞台骨架</div>
+        </section>
+      </section>
+    </div>
+
+    <div class="FooterTip">当前版本：仅保留壳层、MainViewport、MainStage、ambient layer、宠物安全区与舞台基础骨架</div>
+  </main>
+</body>
+</html>

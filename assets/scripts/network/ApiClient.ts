@@ -7,11 +7,15 @@ import type {
   ChatHistoryPayload,
   ChatReplyPayload,
   ChatSendPayload,
+  HomeworkSubmitResultPayload,
   ChildPetPayload,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
   ParentBindPayload,
+  PetDashboardPayload,
+  PetFeedPayload,
   PetEvolutionPayload,
+  PetFeedResultPayload,
   PetResourcesPayload,
   PetStatus,
   WeeklyReportPayload,
@@ -174,6 +178,10 @@ class ApiClient {
     return this.request<PetEvolutionPayload>(`/pets/${petId}/evolution`);
   }
 
+  async getPetDashboard(petId: string): Promise<ApiResponse<PetDashboardPayload>> {
+    return this.request<PetDashboardPayload>(`/pets/${petId}/dashboard`);
+  }
+
   async sendChat(input: ChatSendPayload): Promise<ApiResponse<ChatReplyPayload>> {
     return this.request<ChatReplyPayload>("/chat", {
       method: "POST",
@@ -208,12 +216,25 @@ class ApiClient {
     });
   }
 
+  async feedPet(
+    petId: string,
+    payload: PetFeedPayload
+  ): Promise<ApiResponse<PetFeedResultPayload>> {
+    return this.request<PetFeedResultPayload>(`/pets/${petId}/feed`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...payload,
+        count: payload.count ?? 1,
+      }),
+    });
+  }
+
   async submitHomework(input: {
     subject: string;
     content: string;
     imageUrl?: string;
-  }): Promise<ApiResponse<{ expReward: number }>> {
-    return this.request<{ expReward: number }>("/homeworks/submit", {
+  }): Promise<ApiResponse<HomeworkSubmitResultPayload>> {
+    return this.request<HomeworkSubmitResultPayload>("/homeworks/submit", {
       method: "POST",
       body: JSON.stringify(input),
     });

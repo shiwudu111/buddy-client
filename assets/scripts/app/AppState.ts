@@ -4,6 +4,9 @@ import type {
   ChatConversationItem,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
+  MainEventEntry,
+  PetFoodInventoryItem,
+  PetGrowthFeedback,
   PetStatus,
 } from "../types/api";
 
@@ -12,6 +15,9 @@ class AppState {
   private currentPet: PetStatus | null = null;
   private homeworkHistory: HomeworkHistoryPayload | null = null;
   private todayHomeworkStatus: HomeworkTodayStatus | null = null;
+  private recentPetGrowthFeedback: PetGrowthFeedback | null = null;
+  private petFoodInventory: PetFoodInventoryItem[] = [];
+  private mainEventLog: MainEventEntry[] = [];
   private chatHistory: ChatConversationItem[] = [];
   private suppressNextChatHistoryBootstrap = false;
 
@@ -76,6 +82,9 @@ class AppState {
 
   clearPetState(): void {
     this.currentPet = null;
+    this.recentPetGrowthFeedback = null;
+    this.petFoodInventory = [];
+    this.mainEventLog = [];
     storage.remove(STORAGE_KEYS.petId);
     if (this.currentUser?.petId) {
       this.currentUser = {
@@ -112,6 +121,42 @@ class AppState {
     this.todayHomeworkStatus = status;
   }
 
+  getRecentPetGrowthFeedback(): PetGrowthFeedback | null {
+    return this.recentPetGrowthFeedback;
+  }
+
+  setRecentPetGrowthFeedback(feedback: PetGrowthFeedback | null): void {
+    this.recentPetGrowthFeedback = feedback;
+  }
+
+  clearRecentPetGrowthFeedback(): void {
+    this.recentPetGrowthFeedback = null;
+  }
+
+  getPetFoodInventory(): PetFoodInventoryItem[] {
+    return [...this.petFoodInventory];
+  }
+
+  setPetFoodInventory(items: PetFoodInventoryItem[]): void {
+    this.petFoodInventory = [...items];
+  }
+
+  getMainEvents(): MainEventEntry[] {
+    return [...this.mainEventLog];
+  }
+
+  setMainEvents(items: MainEventEntry[]): void {
+    this.mainEventLog = [...items];
+  }
+
+  appendMainEvent(entry: MainEventEntry): void {
+    this.mainEventLog = [entry, ...this.mainEventLog].slice(0, 8);
+  }
+
+  clearMainEvents(): void {
+    this.mainEventLog = [];
+  }
+
   getChatHistory(): ChatConversationItem[] {
     return [...this.chatHistory];
   }
@@ -141,6 +186,9 @@ class AppState {
     this.currentPet = null;
     this.homeworkHistory = null;
     this.todayHomeworkStatus = null;
+    this.recentPetGrowthFeedback = null;
+    this.petFoodInventory = [];
+    this.mainEventLog = [];
     this.chatHistory = [];
     this.suppressNextChatHistoryBootstrap = true;
     storage.remove(STORAGE_KEYS.user);

@@ -1,0 +1,52 @@
+import { Color } from "cc";
+
+export const UiTokens = {
+  colors: {
+    bgPrimary: new Color(251, 242, 232, 255),
+    bgSecondary: new Color(255, 247, 238, 255),
+    panel: new Color(255, 249, 241, 255),
+    panelInner: new Color(255, 252, 247, 188),
+    borderSoft: new Color(235, 207, 180, 255),
+    borderInner: new Color(242, 221, 200, 255),
+    textPrimary: new Color(110, 74, 51, 255),
+    textSecondary: new Color(156, 123, 99, 255),
+    textLight: new Color(255, 255, 255, 255),
+    brand: new Color(247, 155, 52, 255),
+    gold: new Color(244, 183, 79, 255),
+    mint: new Color(114, 211, 154, 255),
+    blue: new Color(126, 148, 240, 255),
+    purple: new Color(183, 155, 239, 255),
+    pink: new Color(244, 160, 181, 255),
+    music: new Color(240, 179, 71, 255),
+    hunger: new Color(244, 183, 79, 255),
+    energy: new Color(114, 211, 154, 255),
+    mood: new Color(244, 160, 181, 255),
+    xp: new Color(126, 148, 240, 255),
+  },
+  radii: {
+    cardXL: 32,
+    cardLG: 28,
+    cardMD: 22,
+    pill: 999,
+    actionTile: 24,
+    input: 18,
+  },
+  spacing: {
+    page: 20,
+    panel: 16,
+    section: 14,
+    item: 10,
+  },
+  fontSizes: {
+    h1: 28,
+    h2: 24,
+    h3: 20,
+    body: 16,
+    small: 13,
+    button: 18,
+  },
+  shadows: {
+    card: "0 8px 18px rgba(181, 127, 64, 0.08)",
+    brand: "0 8px 16px rgba(247, 155, 52, 0.28)",
+  },
+};

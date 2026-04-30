@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<!--
+  告诉浏览器：这是一个 HTML5 页面。
+  可以理解为“这份网页文件使用的是现代标准格式”。
+-->
+
+<html lang="zh-CN">
+<!--
+  整个网页的根节点。
+  lang="zh-CN" 表示这个页面主要使用简体中文，
+  方便浏览器、搜索引擎、读屏软件正确识别语言。
+-->
+
+<head>
+  <!--
+    head 里放的是“网页的配置信息”，
+    比如编码、标题、样式表等。
+    这些内容通常不会直接显示在页面正文里。
+  -->
+
+  <meta charset="UTF-8" />
+  <!--
+    设置字符编码为 UTF-8。
+    作用：确保中文、英文、符号都能正常显示，不会乱码。
+  -->
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    告诉手机浏览器如何缩放页面。
+    width=device-width：页面宽度跟设备屏幕宽度一致
+    initial-scale=1.0：初始缩放比例为 100%
+    这样页面在手机、平板上会更自然，不会默认缩得很小。
+  -->
+
+  <title>App Shell Only</title>
+  <!--
+    网页标题。
+    这个标题通常会显示在浏览器标签页上。
+  -->
+
+  <style>
+    /*
+      style 标签里写的是 CSS，
+      也就是“控制网页长什么样”的样式代码。
+    */
+
+    :root {
+      /*
+        :root 可以理解为“全局变量的存放位置”。
+        在这里定义的颜色、阴影等，后面整份样式都能重复使用。
+        好处：
+        1. 统一管理
+        2. 后面改颜色时更方便
+      */
+
+      --bg-primary: #FBF2E8;
+      /* 主背景色：偏暖的浅米色 */
+
+      --bg-secondary: #F7E9D8;
+      /* 次背景色：比主背景略深一点的暖色 */
+
+      --border-soft: #EBCFB4;
+      /* 边框颜色：柔和的浅棕色 */
+
+      --shadow: 0 14px 28px rgba(187, 129, 62, 0.10), 0 6px 12px rgba(187, 129, 62, 0.07);
+      /*
+        阴影效果。
+        这里其实定义了两层阴影，叠加后更柔和、更立体。
+
+        每层阴影大致含义：
+        0 14px 28px rgba(...)
+        - 第1个 0：水平偏移（左右方向不移动）
+        - 第2个 14px：垂直偏移（向下 14px）
+        - 第3个 28px：模糊程度（数值越大越柔和）
+        - rgba(...)：颜色和透明度
+
+        rgba(187, 129, 62, 0.10)
+        - 前3个数字是颜色
+        - 最后 0.10 是透明度，表示很淡
+      */
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+    /*
+      * 表示“页面里的所有元素”。
+
+      box-sizing: border-box 的意思是：
+      元素设置的宽高，会把 padding（内边距）和 border（边框）都算进去。
+
+      这样做的好处是：
+      更容易控制实际尺寸，不容易出现“明明写了 100px，结果看起来更大”的问题。
+    */
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+    /*
+      html 和 body 是网页最外层的两个结构。
+
+      height: 100%;
+      让它们的高度都占满整个浏览器窗口，
+      这样后面才能更方便地做垂直居中布局。
+
+      margin: 0;
+      浏览器默认会给 body 留一圈空白边距，
+      这里把默认空白去掉，避免页面四周出现莫名的留白。
+    */
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at top left, #fff7ef 0%, transparent 32%),
+        radial-gradient(circle at bottom right, #fce6ce 0%, transparent 26%),
+        linear-gradient(180deg, #FDF5EC 0%, #F8EBDD 100%);
+    }
+    /*
+      body 是页面可见内容的承载区域。
+
+      display: flex;
+      把 body 变成弹性布局容器（flex 容器）。
+      可以理解为：开启一种更方便对齐内容的布局模式。
+
+      align-items: center;
+      让子元素在“上下方向”居中。
+
+      justify-content: center;
+      让子元素在“左右方向”居中。
+
+      上面两句合起来：
+      页面里的主要内容会水平、垂直都居中显示。
+
+      padding: 20px;
+      给页面内容和浏览器边缘之间留出 20 像素空隙，
+      防止内容贴边。
+
+      background:
+      这里用了 3 层背景叠加，制造柔和、带装饰感的页面底色。
+
+      第1层：
+      radial-gradient(circle at top left, #fff7ef 0%, transparent 32%)
+      - radial-gradient：径向渐变（像圆形光晕一样）
+      - circle at top left：圆形，位置在左上角
+      - #fff7ef 0%：中心颜色
+      - transparent 32%：到 32% 范围时变成透明
+      => 形成左上角一团柔和亮色
+
+      第2层：
+      radial-gradient(circle at bottom right, #fce6ce 0%, transparent 26%)
+      => 右下角一团暖色光晕
+
+      第3层：
+      linear-gradient(180deg, #FDF5EC 0%, #F8EBDD 100%)
+      - linear-gradient：线性渐变
+      - 180deg：从上到下
+      => 整个页面从更浅的暖色，渐变到略深一点的暖色
+    */
+
+    .app-shell {
+      width: min(1280px, 100%);
+      aspect-ratio: 4 / 3;
+      min-height: 720px;
+      background: linear-gradient(180deg, var(--bg-primary), #F9EEDF);
+      border: 2px solid var(--border-soft);
+      border-radius: 38px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      padding: 18px;
+    }
+    /*
+      .app-shell 是页面中的主要“卡片/容器”。
+      你可以把它理解成一个应用界面的外壳、展示框。
+
+      width: min(1280px, 100%);
+      含义是：宽度取 1280px 和 100% 中较小的那个。
+      也就是：
+      - 大屏时，最大不超过 1280px
+      - 小屏时，自动缩小到不超出屏幕宽度
+
+      aspect-ratio: 4 / 3;
+      设定宽高比例为 4:3。
+      比如宽 1200 时，高度会尽量接近 900。
+      这样容器比例更稳定，像一个固定风格的展示面板。
+
+      min-height: 720px;
+      最小高度 720px。
+      即使屏幕环境导致按比例算出来高度太小，也至少保持 720px，
+      避免内容区看起来太扁。
+
+      background: linear-gradient(180deg, var(--bg-primary), #F9EEDF);
+      给容器本身设置从上到下的浅色渐变背景。
+      var(--bg-primary) 表示使用前面定义的全局颜色变量。
+
+      border: 2px solid var(--border-soft);
+      给容器加一圈 2px 的柔和边框。
+
+      border-radius: 38px;
+      把容器四角变圆。
+      数值越大，圆角越明显。
+      这里是比较明显的大圆角，风格更柔和。
+
+      box-shadow: var(--shadow);
+      使用前面定义好的阴影，让容器有“浮起来”的层次感。
+
+      position: relative;
+      把这个元素设为“相对定位”。
+      这通常是为了给它内部的绝对定位元素（比如伪元素）提供参考坐标。
+
+      overflow: hidden;
+      超出容器范围的内容会被裁掉，不显示。
+      很重要，因为后面会有装饰性圆形光晕，如果不裁掉可能会溢出外面。
+
+      padding: 18px;
+      给容器内部留出 18px 内边距。
+      即使里面暂时没放内容，这也是在为未来的内容预留安全空间。
+    */
+
+    .app-shell::before,
+    .app-shell::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+      border-radius: 50%;
+      opacity: 0.35;
+    }
+    /*
+      ::before 和 ::after 是“伪元素”。
+      可以理解为：在 .app-shell 里面额外生成两个装饰层，
+      但不需要在 HTML 里真的多写两个 div。
+
+      content: "";
+      伪元素要显示，通常必须写 content。
+      即使内容是空字符串，也是在“启用”它。
+
+      position: absolute;
+      绝对定位。
+      这样可以把这两个装饰元素精确放在容器的某个位置。
+
+      pointer-events: none;
+      鼠标不会点到这些装饰层。
+      它们纯粹是视觉效果，不参与交互。
+
+      border-radius: 50%;
+      让它们变成圆形。
+
+      opacity: 0.35;
+      整体透明度设为 35%，让它们更轻、更柔和。
+    */
+
+    .app-shell::before {
+      width: 240px;
+      height: 240px;
+      left: -70px;
+      top: -70px;
+      background: radial-gradient(circle, #FFE8C8 0%, transparent 70%);
+    }
+    /*
+      这是左上角的装饰圆形。
+
+      width / height: 240px;
+      设置这个圆的尺寸。
+
+      left: -70px;
+      top: -70px;
+      往左上角移出容器一部分。
+      因为父元素设置了 overflow: hidden，所以只会显示圆的一部分，
+      看起来像一个从边缘“透出来”的柔和光斑。
+
+      background: radial-gradient(circle, #FFE8C8 0%, transparent 70%);
+      圆心颜色较明显，向外逐渐透明。
+      所以它不是一个实心圆，而像发光/晕染效果。
+    */
+
+    .app-shell::after {
+      width: 300px;
+      height: 300px;
+      right: -90px;
+      bottom: -110px;
+      background: radial-gradient(circle, #FFD8C4 0%, transparent 72%);
+    }
+    /*
+      这是右下角的装饰圆形。
+
+      它和前一个伪元素作用类似，
+      只是尺寸更大、位置在右下角、颜色略偏粉橘色。
+
+      right: -90px;
+      bottom: -110px;
+      同样是故意让它有一部分跑到容器外面，
+      再通过 overflow: hidden 裁切，
+      形成自然的装饰感。
+    */
+  </style>
+</head>
+
+<body>
+  <!--
+    body 里放的是网页真正显示出来的内容。
+  -->
+
+  <div class="app-shell" aria-label="app-shell preview"></div>
+  <!--
+    这里创建了一个 div 容器，并给它一个类名 app-shell。
+    这个 div 就是页面中央看到的“大面板”。
+
+    class="app-shell"
+    表示它会使用上面 .app-shell 那套样式。
+
+    aria-label="app-shell preview"
+    这是给辅助功能工具（例如读屏软件）使用的说明文字。
+    作用是帮助视障用户知道这个区域是什么。
+    可以理解为：给这个视觉容器加了一个“无障碍说明”。
+
+    注意：
+    这个 div 里面目前是空的，
+    所以页面现在只会显示一个漂亮的外壳容器，
+    还没有放按钮、文字、图片、导航等实际内容。
+  -->
+</body>
+</html>

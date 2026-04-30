@@ -1,19 +1,13 @@
 import { Button, Color, Node } from "cc";
 import { storage } from "../../core/storage";
-import type { PetEvolutionPayload, PetStatus } from "../../types/api";
+import type {
+  PetEvolutionPayload,
+  PetGrowthFeedback,
+  PetStatus,
+} from "../../types/api";
+import { resolveLayoutMetrics, type LayoutMetrics } from "../layout/LayoutMetrics";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
-
-// 文件整体作用：
-// 这是“宠物成长”页签的绘制文件。
-// 左边展示当前宠物成长状态，右边展示进化信息和刷新入口。
-//
-// 一句话版本：
-// 这段代码的核心意思就是：把“宠物成长页”画出来，让用户看见当前成长情况、下一步进化条件，以及本地测试时常用的模拟样本。
-//
-// 美术需要关注的重点：
-// 1. 这里的卡片、标题、按钮都是运行时动态生成的，不是预先摆在场景里的固定节点。
-// 2. 右侧“进化信息”区域，正式环境会优先显示后端真实数据；如果后端没返回，就会降级成前端推导说明。
-// 3. 底部“本地模拟样本”只用于验收和调试，不会修改真实宠物数据。
+import { UiTokens } from "../theme/UiTokens";
 
 export type PetGrowthViewActions = {
   onRefresh: () => void | Promise<void>;
@@ -25,161 +19,354 @@ export type PetGrowthViewState = {
   pet: PetStatus | null;
   evolution: PetEvolutionPayload | null;
   evolutionError?: string;
+  recentFeedback: PetGrowthFeedback | null;
 };
 
-const PANEL_COLOR = new Color(28, 35, 48, 255);
-const SUBTEXT_COLOR = new Color(190, 200, 216, 255);
-const PRIMARY_ACTION_COLOR = new Color(76, 128, 255, 255);
-const SECONDARY_ACTION_COLOR = new Color(93, 102, 122, 255);
-const READY_COLOR = new Color(121, 225, 167, 255);
-const WAIT_COLOR = new Color(255, 194, 107, 255);
+const PANEL_COLOR = UiTokens.colors.panel;
+const SECTION_BG_COLOR = new Color(255, 246, 237, 255);
+const TITLE_COLOR = UiTokens.colors.textPrimary;
+const SUBTEXT_COLOR = UiTokens.colors.textSecondary;
+const READY_COLOR = new Color(124, 214, 153, 255);
+const WAIT_COLOR = UiTokens.colors.gold;
+const MUTED_COLOR = UiTokens.colors.textSecondary;
+const PRIMARY_ACTION_COLOR = UiTokens.colors.brand;
+const SECONDARY_ACTION_COLOR = new Color(205, 189, 171, 255);
 const PREVIEW_MODE_KEY = "buddy.dev.petGrowthPreviewMode";
 
 type PreviewMode = "real" | "stage1" | "stage2" | "unknown" | "countdown";
+
+type GrowthPanelLayout = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  titleY: number;
+  subtitleY: number;
+  sectionY: number;
+  sectionHeight: number;
+  feedbackTitleY: number;
+  feedbackSectionY: number;
+  feedbackSectionHeight: number;
+  footerY: number;
+  previewTitleY: number;
+  previewTabY: number;
+  previewTabHeight: number;
+};
+
+type GrowthPageLayout = {
+  shellWidth: number;
+  shellHeight: number;
+  compact: boolean;
+  growthCard: GrowthPanelLayout;
+  evolutionCard: GrowthPanelLayout;
+};
+
+function resolveGrowthLayout(metrics?: LayoutMetrics): GrowthPageLayout {
+  const base = metrics ?? resolveLayoutMetrics(1280, 720);
+  const compact = base.deviceClass === "compact";
+  const shellWidth = Math.max(
+    compact ? 760 : 980,
+    Math.min(base.safeWidth - (compact ? 18 : 28), compact ? 860 : base.deviceClass === "regular" ? 1080 : 1160)
+  );
+  const shellHeight = Math.max(
+    compact ? 640 : 620,
+    Math.min(base.safeHeight - (compact ? 18 : 28), compact ? 720 : 680)
+  );
+  const cardGap = compact ? 14 : 20;
+  const cardWidth = compact ? shellWidth - 48 : Math.floor((shellWidth - 48 - cardGap) / 2);
+  const leftX = compact ? 0 : -(cardWidth / 2 + cardGap / 2);
+  const rightX = compact ? 0 : cardWidth / 2 + cardGap / 2;
+  const growthHeight = compact ? 292 : 470;
+  const evolutionHeight = compact ? 318 : 470;
+
+  return {
+    shellWidth,
+    shellHeight,
+    compact,
+    growthCard: {
+      x: leftX,
+      y: compact ? 112 : 0,
+      width: compact ? shellWidth - 48 : cardWidth,
+      height: growthHeight,
+      titleY: compact ? 98 : 176,
+      subtitleY: compact ? 70 : 144,
+      sectionY: compact ? 18 : 42,
+      sectionHeight: compact ? 100 : 170,
+      feedbackTitleY: compact ? -28 : -54,
+      feedbackSectionY: compact ? -106 : -148,
+      feedbackSectionHeight: compact ? 82 : 110,
+      footerY: compact ? -172 : -188,
+      previewTitleY: compact ? -142 : -200,
+      previewTabY: compact ? -168 : -220,
+      previewTabHeight: compact ? 34 : 24,
+    },
+    evolutionCard: {
+      x: rightX,
+      y: compact ? -164 : 0,
+      width: compact ? shellWidth - 48 : cardWidth,
+      height: evolutionHeight,
+      titleY: compact ? 108 : 176,
+      subtitleY: compact ? 80 : 144,
+      sectionY: compact ? 38 : 2,
+      sectionHeight: compact ? 156 : 252,
+      feedbackTitleY: 0,
+      feedbackSectionY: 0,
+      feedbackSectionHeight: 0,
+      footerY: compact ? -168 : -188,
+      previewTitleY: 0,
+      previewTabY: 0,
+      previewTabHeight: 0,
+    },
+  };
+}
 
 export function renderPetGrowthView(
   root: Node,
   state: PetGrowthViewState,
   actions: PetGrowthViewActions,
-  context?: object
+  context?: object,
+  metrics?: LayoutMetrics
 ): void {
   const previewMode = getPreviewMode();
-  const displayPet = resolvePreviewPet(state.pet, previewMode);
-  const displayEvolution = resolveDisplayEvolution(displayPet, state.evolution, previewMode);
+  const displayPet = previewMode === "real" ? state.pet : resolvePreviewPet(state.pet, previewMode);
+  const displayEvolution =
+    previewMode === "real" ? state.evolution : synthesizeEvolutionFromPet(displayPet);
+  const isPreviewMode = previewMode !== "real";
 
-  const growthCard = RuntimeUI.createBox(root, {
+  const layout = resolveGrowthLayout(metrics);
+
+  const shell = RuntimeUI.createCard(root, {
+    name: "PetGrowthShell",
+    x: 0,
+    y: 0,
+    width: layout.shellWidth,
+    height: layout.shellHeight,
+    color: PANEL_COLOR,
+    innerColor: new Color(255, 252, 247, 180),
+    borderColor: UiTokens.colors.borderSoft,
+    radius: 34,
+  });
+
+  RuntimeUI.createBox(shell, {
+    name: "PetGrowthShellGlowLeft",
+    x: -Math.round(layout.shellWidth / 2) + 96,
+    y: Math.round(layout.shellHeight / 2) - 92,
+    width: 150,
+    height: 150,
+    color: new Color(255, 230, 190, 110),
+    radius: 75,
+  });
+  RuntimeUI.createBox(shell, {
+    name: "PetGrowthShellGlowRight",
+    x: Math.round(layout.shellWidth / 2) - 110,
+    y: -Math.round(layout.shellHeight / 2) + 100,
+    width: 180,
+    height: 180,
+    color: new Color(255, 217, 203, 96),
+    radius: 90,
+  });
+
+  RuntimeUI.createPanelHeader(shell, {
+    name: "PetGrowthPageHeader",
+    title: "宠物成长",
+    subtitle: "查看当前阶段、进化条件和最近反馈",
+    icon: "✦",
+    x: 0,
+    y: Math.round(layout.shellHeight / 2) - 42,
+    width: Math.max(320, layout.shellWidth - 180),
+    height: 54,
+    titleFontSize: 24,
+    subtitleFontSize: 13,
+    titleColor: TITLE_COLOR,
+    subtitleColor: SUBTEXT_COLOR,
+    iconColor: WAIT_COLOR,
+  });
+
+  const growthCard = RuntimeUI.createCard(shell, {
     name: "PetGrowthCard",
-    x: -265,
-    y: -10,
-    width: 520,
-    height: 420,
-    color: PANEL_COLOR,
+    x: layout.growthCard.x,
+    y: layout.growthCard.y,
+    width: layout.growthCard.width,
+    height: layout.growthCard.height,
+    color: new Color(255, 249, 241, 255),
+    innerColor: new Color(255, 255, 255, 112),
+    borderColor: UiTokens.colors.borderSoft,
+    radius: 28,
   });
 
-  const evolutionCard = RuntimeUI.createBox(root, {
+  const evolutionCard = RuntimeUI.createCard(shell, {
     name: "PetEvolutionCard",
-    x: 285,
-    y: -10,
-    width: 510,
-    height: 420,
-    color: PANEL_COLOR,
+    x: layout.evolutionCard.x,
+    y: layout.evolutionCard.y,
+    width: layout.evolutionCard.width,
+    height: layout.evolutionCard.height,
+    color: new Color(255, 249, 241, 255),
+    innerColor: new Color(255, 255, 255, 112),
+    borderColor: UiTokens.colors.borderSoft,
+    radius: 28,
   });
 
-  renderGrowthSummary(growthCard, displayPet);
-  renderEvolutionSummary(evolutionCard, displayPet, displayEvolution, state.evolutionError, previewMode);
-  renderFooterActions(evolutionCard, actions, context);
-  renderPreviewModeControls(growthCard, previewMode, actions, context);
+  renderGrowthSummaryResponsive(growthCard, displayPet, layout);
+  renderRecentFeedbackResponsive(growthCard, state.recentFeedback, layout);
+  if (isPreviewMode) {
+    renderPreviewModeControlsResponsive(growthCard, previewMode, actions, context, layout);
+  }
+
+  renderEvolutionSummaryResponsive(
+    evolutionCard,
+    displayPet,
+    displayEvolution,
+    state.evolutionError,
+    isPreviewMode,
+    layout
+  );
+  renderFooterActionsResponsive(evolutionCard, actions, context, layout);
 }
 
 function renderGrowthSummary(card: Node, pet: PetStatus | null): void {
   RuntimeUI.createLabel(card, {
     name: "GrowthTitle",
-    text: "宠物成长",
+    text: "宠物成长状态",
     x: 0,
-    y: 170,
-    width: 380,
-    height: 36,
+    y: 176,
+    width: 360,
+    height: 34,
     fontSize: 24,
+    color: TITLE_COLOR,
   });
 
   RuntimeUI.createLabel(card, {
     name: "GrowthSubtitle",
-    text: pet
-      ? "这里看成长阶段、经验值和进化提示。"
-      : "先创建宠物，再来看成长信息。",
+    text: pet ? "这里会展示当前成长阶段、状态和经验。" : "先创建宠物，再查看成长信息。",
     x: 0,
-    y: 132,
+    y: 144,
     width: 420,
-    height: 40,
+    height: 28,
     fontSize: 16,
     color: SUBTEXT_COLOR,
   });
 
+  const summarySection = RuntimeUI.createBox(card, {
+    name: "GrowthSummarySection",
+    x: 0,
+    y: 42,
+    width: 450,
+    height: 170,
+    color: SECTION_BG_COLOR,
+  });
+
   if (!pet) {
-    RuntimeUI.createLabel(card, {
-      name: "GrowthEmpty",
+    RuntimeUI.createLabel(summarySection, {
+      name: "GrowthEmptyTitle",
       text: "暂无宠物成长数据",
       x: 0,
-      y: 30,
+      y: 16,
       width: 320,
-      height: 32,
+      height: 30,
       fontSize: 22,
       color: WAIT_COLOR,
     });
-    RuntimeUI.createLabel(card, {
+    RuntimeUI.createLabel(summarySection, {
       name: "GrowthEmptyHint",
-      text: "先完成首次创建宠物，再回来查看成长和进化信息。",
+      text: "完成首次宠物创建后，就能在这里查看成长阶段、经验和进化条件。",
       x: 0,
-      y: -18,
+      y: -24,
       width: 380,
-      height: 44,
-      fontSize: 17,
+      height: 52,
+      fontSize: 16,
       color: SUBTEXT_COLOR,
     });
     return;
   }
 
-  RuntimeUI.createLabel(card, {
-    name: "GrowthStage",
-    text: `成长阶段：${resolveStageLabel(pet.stage)}`,
-    x: 0,
-    y: 76,
-    width: 360,
-    height: 30,
-    fontSize: 22,
-  });
+  const lines = [
+    `成长阶段：${resolveStageLabel(pet.stage)}`,
+    `等级：Lv.${pet.level}`,
+    `经验值：${pet.experience}`,
+    `饥饿度：${pet.hunger}%`,
+    `心情值：${pet.mood}%`,
+    `状态：${pet.status === false ? "异常" : "正常"}`,
+  ].join("\n");
 
-  RuntimeUI.createLabel(card, {
-    name: "GrowthLevel",
-    text: `等级：Lv.${pet.level}`,
+  RuntimeUI.createLabel(summarySection, {
+    name: "GrowthSummaryText",
+    text: lines,
     x: 0,
-    y: 36,
-    width: 360,
-    height: 30,
-    fontSize: 22,
+    y: 4,
+    width: 390,
+    height: 140,
+    fontSize: 19,
+    color: TITLE_COLOR,
   });
+}
 
+function renderRecentFeedback(card: Node, feedback: PetGrowthFeedback | null): void {
   RuntimeUI.createLabel(card, {
-    name: "GrowthExperience",
-    text: `经验值：${pet.experience}`,
+    name: "GrowthFeedbackTitle",
+    text: "最近成长反馈",
     x: 0,
-    y: -4,
-    width: 360,
-    height: 30,
+    y: -54,
+    width: 240,
+    height: 28,
     fontSize: 20,
+    color: TITLE_COLOR,
   });
 
-  RuntimeUI.createLabel(card, {
-    name: "GrowthStatus",
-    text: `饥饿 ${pet.hunger}%  |  心情 ${pet.mood}%  |  状态 ${pet.status === false ? "异常" : "正常"}`,
+  const feedbackSection = RuntimeUI.createBox(card, {
+    name: "GrowthFeedbackSection",
     x: 0,
-    y: -44,
-    width: 420,
-    height: 30,
-    fontSize: 18,
-    color: SUBTEXT_COLOR,
+    y: -148,
+    width: 450,
+    height: 110,
+    color: SECTION_BG_COLOR,
   });
 
-  RuntimeUI.createLabel(card, {
-    name: "GrowthHint",
-    text: resolveEvolveHint(pet.next_evolve_days),
-    x: 0,
-    y: -94,
-    width: 420,
-    height: 34,
-    fontSize: 18,
-    color: isEvolutionReady(pet.next_evolve_days) ? READY_COLOR : WAIT_COLOR,
-  });
+  if (!feedback) {
+    RuntimeUI.createLabel(feedbackSection, {
+      name: "GrowthFeedbackEmpty",
+      text: "最近还没有新的成长反馈。完成一次喂养或作业提交后，再回来查看这里。",
+      x: 0,
+      y: 0,
+      width: 390,
+      height: 52,
+      fontSize: 16,
+      color: MUTED_COLOR,
+    });
+    return;
+  }
 
-  RuntimeUI.createLabel(card, {
-    name: "GrowthNote",
-    text: "当前只看状态和提示，不做复杂动画。",
+  const sourceLabel = feedback.source === "pet_feed" ? "喂养成功" : "作业提交成功";
+  RuntimeUI.createLabel(feedbackSection, {
+    name: "GrowthFeedbackSource",
+    text: sourceLabel,
     x: 0,
-    y: -140,
-    width: 430,
-    height: 48,
+    y: 28,
+    width: 320,
+    height: 22,
     fontSize: 15,
-    color: SUBTEXT_COLOR,
+    color: WAIT_COLOR,
+  });
+
+  RuntimeUI.createLabel(feedbackSection, {
+    name: "GrowthFeedbackMessage",
+    text: feedback.message,
+    x: 0,
+    y: -2,
+    width: 390,
+    height: 48,
+    fontSize: 16,
+    color: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(feedbackSection, {
+    name: "GrowthFeedbackTime",
+    text: formatFeedbackTime(feedback.timestamp),
+    x: 0,
+    y: -36,
+    width: 390,
+    height: 18,
+    fontSize: 13,
+    color: MUTED_COLOR,
   });
 }
 
@@ -188,38 +375,56 @@ function renderEvolutionSummary(
   pet: PetStatus | null,
   evolution: PetEvolutionPayload | null,
   evolutionError: string | undefined,
-  previewMode: PreviewMode
+  isPreviewMode: boolean
 ): void {
-  const isSyntheticMode = previewMode !== "real";
-  const isSyntheticFallback = previewMode === "real" && !evolution && !!pet;
-  const shouldLabelSynthetic = isSyntheticMode || isSyntheticFallback;
   RuntimeUI.createLabel(card, {
     name: "EvolutionTitle",
-    text: shouldLabelSynthetic ? "进化信息（前端推导）" : evolution ? "进化信息（后端真实）" : "进化预览",
+    text: "进化条件",
     x: 0,
-    y: 170,
-    width: 300,
-    height: 36,
+    y: 176,
+    width: 260,
+    height: 34,
     fontSize: 24,
+    color: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(card, {
+    name: "EvolutionSubtitle",
+    text: isPreviewMode ? "当前处于开发预览模式。" : "这里会显示当前阶段、下一阶段和条件判断。",
+    x: 0,
+    y: 144,
+    width: 390,
+    height: 28,
+    fontSize: 15,
+    color: isPreviewMode ? WAIT_COLOR : SUBTEXT_COLOR,
+  });
+
+  const evolutionSection = RuntimeUI.createBox(card, {
+    name: "EvolutionSummarySection",
+    x: 0,
+    y: 2,
+    width: 440,
+    height: 252,
+    color: SECTION_BG_COLOR,
   });
 
   if (!pet) {
-    RuntimeUI.createLabel(card, {
+    RuntimeUI.createLabel(evolutionSection, {
       name: "EvolutionEmpty",
       text: "当前没有可用的进化信息",
       x: 0,
-      y: 32,
+      y: 20,
       width: 320,
-      height: 32,
-      fontSize: 22,
+      height: 28,
+      fontSize: 21,
       color: WAIT_COLOR,
     });
-    RuntimeUI.createLabel(card, {
+    RuntimeUI.createLabel(evolutionSection, {
       name: "EvolutionEmptyHint",
-      text: "先创建宠物，再通过刷新状态查看后端返回的进化数据。",
+      text: "先创建宠物，再刷新状态查看正式进化条件。",
       x: 0,
-      y: -24,
-      width: 380,
+      y: -20,
+      width: 360,
       height: 44,
       fontSize: 16,
       color: SUBTEXT_COLOR,
@@ -227,94 +432,93 @@ function renderEvolutionSummary(
     return;
   }
 
-  RuntimeUI.createLabel(card, {
-    name: "EvolutionSource",
-    text: shouldLabelSynthetic ? "来源：前端根据宠物状态推导" : "来源：后端接口返回的真实数据",
-    x: 0,
-    y: 148,
-    width: 360,
-    height: 22,
-    fontSize: 14,
-    color: SUBTEXT_COLOR,
-  });
-
   if (!evolution) {
-    RuntimeUI.createLabel(card, {
-      name: "EvolutionMissing",
-      text: evolutionError || "当前还没有进化数据，请先点击刷新状态。",
+    RuntimeUI.createLabel(evolutionSection, {
+      name: "EvolutionFallbackState",
+      text: "当前缺少足够数据，仅显示保守提示。",
       x: 0,
-      y: 20,
-      width: 400,
-      height: 80,
-      fontSize: 18,
+      y: 48,
+      width: 360,
+      height: 28,
+      fontSize: 20,
       color: WAIT_COLOR,
+    });
+    RuntimeUI.createLabel(evolutionSection, {
+      name: "EvolutionFallbackHint",
+      text:
+        evolutionError?.trim() ||
+        "宠物状态已同步，但进化接口暂未返回可判断的完整信息。请稍后刷新再查看。",
+      x: 0,
+      y: -2,
+      width: 390,
+      height: 64,
+      fontSize: 16,
+      color: SUBTEXT_COLOR,
     });
     return;
   }
 
-  RuntimeUI.createLabel(card, {
-    name: "EvolutionCurrent",
-    text: `当前阶段：${evolution.current_visual}`,
-    x: 0,
-    y: 120,
-    width: 380,
-    height: 28,
-    fontSize: 18,
-  });
+  const levelSatisfied = pet.level >= evolution.requirements.level;
+  const daySatisfied = evolution.days_until_evolution <= 0;
+  const growthRequirementText =
+    evolution.requirements.growth > 0
+      ? `成长要求：目标 ${evolution.requirements.growth}（当前未返回可直接比较字段）`
+      : "成长要求：当前无需额外成长值判断";
+  const overallStatus = resolveOverallEvolutionStatus(levelSatisfied, daySatisfied, evolution);
 
-  RuntimeUI.createLabel(card, {
-    name: "EvolutionNext",
-    text: `下一阶段：${evolution.next_visual}`,
-    x: 0,
-    y: 82,
-    width: 380,
-    height: 28,
-    fontSize: 18,
-  });
+  const lines = [
+    `当前阶段：${evolution.current_visual}`,
+    `下一阶段：${evolution.next_visual}`,
+    `等级要求：Lv.${evolution.requirements.level}（${levelSatisfied ? "已满足" : "未满足"}）`,
+    growthRequirementText,
+    `进化时机：${daySatisfied ? "已满足" : `距离进化 ${evolution.days_until_evolution} 天`}`,
+  ].join("\n");
 
-  RuntimeUI.createLabel(card, {
-    name: "EvolutionRequirements",
-    text: `进化条件：等级达到 Lv.${evolution.requirements.level}，成长值达到 ${evolution.requirements.growth}`,
+  RuntimeUI.createLabel(evolutionSection, {
+    name: "EvolutionInfoText",
+    text: lines,
     x: 0,
-    y: 26,
+    y: 42,
     width: 390,
-    height: 56,
+    height: 146,
     fontSize: 17,
-    color: SUBTEXT_COLOR,
+    color: TITLE_COLOR,
   });
 
-  RuntimeUI.createLabel(card, {
-    name: "EvolutionSummary",
-    text: resolveEvolutionSummaryText(previewMode, evolutionError, shouldLabelSynthetic),
+  const badgeColor =
+    overallStatus.kind === "ready"
+      ? READY_COLOR
+      : overallStatus.kind === "waiting"
+      ? WAIT_COLOR
+      : new Color(110, 128, 152, 255);
+  const badge = RuntimeUI.createBox(evolutionSection, {
+    name: "EvolutionStatusBadge",
     x: 0,
-    y: -54,
-    width: 400,
-    height: 72,
-    fontSize: 16,
-    color: SUBTEXT_COLOR,
-  });
-
-  const badgeColor = evolution.days_until_evolution <= 0 ? READY_COLOR : WAIT_COLOR;
-  const badge = RuntimeUI.createBox(card, {
-    name: "EvolutionBadge",
-    x: 0,
-    y: -138,
-    width: 250,
-    height: 48,
+    y: -72,
+    width: 280,
+    height: 42,
     color: badgeColor,
   });
-
   RuntimeUI.createLabel(badge, {
-    name: "EvolutionBadgeText",
-    text:
-      evolution.days_until_evolution <= 0
-        ? "进化条件已满足"
-        : `进化倒计时：${evolution.days_until_evolution} 天`,
+    name: "EvolutionStatusBadgeText",
+    text: overallStatus.title,
     x: 0,
     y: 0,
-    width: 220,
-    height: 28,
+    width: 240,
+    height: 24,
     fontSize: 18,
+    color: new Color(24, 30, 40, 255),
+  });
+
+  RuntimeUI.createLabel(evolutionSection, {
+    name: "EvolutionSummaryText",
+    text: overallStatus.message,
+    x: 0,
+    y: -110,
+    width: 390,
+    height: 44,
+    fontSize: 15,
+    color: SUBTEXT_COLOR,
   });
 }
 
@@ -327,9 +531,9 @@ function renderFooterActions(
     name: "RefreshGrowthButton",
     text: "刷新状态",
     x: -100,
-    y: -195,
+    y: -188,
     width: 160,
-    height: 52,
+    height: 50,
     color: PRIMARY_ACTION_COLOR,
     fontSize: 18,
   });
@@ -339,9 +543,9 @@ function renderFooterActions(
     name: "BackGrowthButton",
     text: "返回总览",
     x: 100,
-    y: -195,
+    y: -188,
     width: 160,
-    height: 52,
+    height: 50,
     color: SECONDARY_ACTION_COLOR,
     fontSize: 18,
   });
@@ -356,30 +560,19 @@ function renderPreviewModeControls(
 ): void {
   RuntimeUI.createLabel(growthCard, {
     name: "PreviewModeTitle",
-    text: "本地模拟样本",
+    text: `开发预览：${resolvePreviewModeLabel(currentMode)}`,
     x: 0,
-    y: -168,
-    width: 220,
-    height: 22,
-    fontSize: 16,
-    color: SUBTEXT_COLOR,
-  });
-
-  RuntimeUI.createLabel(growthCard, {
-    name: "PreviewModeState",
-    text: `当前：${resolvePreviewModeLabel(currentMode)}`,
-    x: 0,
-    y: -188,
-    width: 260,
-    height: 22,
+    y: -200,
+    width: 240,
+    height: 18,
     fontSize: 14,
     color: WAIT_COLOR,
   });
 
   const modes: Array<{ mode: PreviewMode; label: string; x: number }> = [
     { mode: "real", label: "真实", x: -160 },
-    { mode: "stage1", label: "1阶", x: -80 },
-    { mode: "stage2", label: "2阶", x: 0 },
+    { mode: "stage1", label: "一阶段", x: -80 },
+    { mode: "stage2", label: "二阶段", x: 0 },
     { mode: "unknown", label: "未知", x: 80 },
     { mode: "countdown", label: "倒计时", x: 160 },
   ];
@@ -389,11 +582,11 @@ function renderPreviewModeControls(
       name: `PreviewMode${mode}Button`,
       text: label,
       x,
-      y: -206,
+      y: -220,
       width: 72,
-      height: 26,
+      height: 24,
       color: currentMode === mode ? READY_COLOR : new Color(62, 72, 96, 255),
-      fontSize: 14,
+      fontSize: 13,
     });
     button.button.node.on(
       Button.EventType.CLICK,
@@ -406,16 +599,481 @@ function renderPreviewModeControls(
   });
 }
 
-function resolveDisplayEvolution(
+function renderGrowthSummaryResponsive(
+  card: Node,
   pet: PetStatus | null,
-  evolution: PetEvolutionPayload | null,
-  mode: PreviewMode
-): PetEvolutionPayload | null {
-  if (mode === "real") {
-    return evolution ?? synthesizeEvolutionFromPet(pet);
+  layout: GrowthPageLayout
+): void {
+  const panel = layout.growthCard;
+  RuntimeUI.createLabel(card, {
+    name: "GrowthTitleResponsive",
+    text: "宠物成长状态",
+    x: 0,
+    y: panel.titleY,
+    width: Math.min(360, panel.width - 40),
+    height: 34,
+    fontSize: layout.compact ? 22 : 24,
+    color: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(card, {
+    name: "GrowthSubtitleResponsive",
+    text: pet ? "这里会展示当前成长阶段、状态和经验。" : "先创建宠物，再查看成长信息。",
+    x: 0,
+    y: panel.subtitleY,
+    width: Math.min(440, panel.width - 30),
+    height: 28,
+    fontSize: layout.compact ? 14 : 16,
+    color: SUBTEXT_COLOR,
+  });
+
+  const summarySection = RuntimeUI.createCard(card, {
+    name: "GrowthSummarySectionResponsive",
+    x: 0,
+    y: panel.sectionY,
+    width: panel.width - 28,
+    height: panel.sectionHeight,
+    color: SECTION_BG_COLOR,
+    innerColor: new Color(255, 255, 255, 140),
+    borderColor: UiTokens.colors.borderSoft,
+    radius: 24,
+  });
+
+  if (!pet) {
+    RuntimeUI.createLabel(summarySection, {
+      name: "GrowthEmptyTitleResponsive",
+      text: "暂无宠物成长数据",
+      x: 0,
+      y: 16,
+      width: Math.min(320, panel.width - 64),
+      height: 30,
+      fontSize: layout.compact ? 20 : 22,
+      color: WAIT_COLOR,
+    });
+    RuntimeUI.createLabel(summarySection, {
+      name: "GrowthEmptyHintResponsive",
+      text: "完成首次宠物创建后，这里会显示成长阶段、经验和进化条件。",
+      x: 0,
+      y: -24,
+      width: Math.min(390, panel.width - 56),
+      height: 52,
+      fontSize: layout.compact ? 14 : 16,
+      color: SUBTEXT_COLOR,
+    });
+    return;
   }
 
-  return synthesizeEvolutionFromPet(resolvePreviewPet(pet, mode));
+  const lines = [
+    `成长阶段：${resolveStageLabel(pet.stage)}`,
+    `等级：Lv.${pet.level}`,
+    `经验值：${pet.experience}`,
+    `饥饿度：${pet.hunger}%`,
+    `心情值：${pet.mood}%`,
+    `状态：${pet.status === false ? "异常" : "正常"}`,
+  ].join("\n");
+
+  RuntimeUI.createLabel(summarySection, {
+    name: "GrowthSummaryTextResponsive",
+    text: lines,
+    x: 0,
+    y: 4,
+    width: Math.min(390, panel.width - 62),
+    height: panel.sectionHeight - 24,
+    fontSize: layout.compact ? 16 : 19,
+    color: TITLE_COLOR,
+  });
+}
+
+function renderRecentFeedbackResponsive(
+  card: Node,
+  feedback: PetGrowthFeedback | null,
+  layout: GrowthPageLayout
+): void {
+  const panel = layout.growthCard;
+  RuntimeUI.createLabel(card, {
+    name: "GrowthFeedbackTitleResponsive",
+    text: "最近成长反馈",
+    x: 0,
+    y: panel.feedbackTitleY,
+    width: 240,
+    height: 28,
+    fontSize: layout.compact ? 18 : 20,
+    color: TITLE_COLOR,
+  });
+
+  const feedbackSection = RuntimeUI.createCard(card, {
+    name: "GrowthFeedbackSectionResponsive",
+    x: 0,
+    y: panel.feedbackSectionY,
+    width: panel.width - 28,
+    height: panel.feedbackSectionHeight,
+    color: SECTION_BG_COLOR,
+    innerColor: new Color(255, 255, 255, 140),
+    borderColor: UiTokens.colors.borderSoft,
+    radius: 24,
+  });
+
+  if (!feedback) {
+    RuntimeUI.createLabel(feedbackSection, {
+      name: "GrowthFeedbackEmptyResponsive",
+      text: "最近还没有新的成长反馈。完成一次喂养或作业提交后，再回来查看这里。",
+      x: 0,
+      y: 0,
+      width: Math.min(390, panel.width - 54),
+      height: 52,
+      fontSize: layout.compact ? 14 : 16,
+      color: MUTED_COLOR,
+    });
+    return;
+  }
+
+  const sourceLabel = feedback.source === "pet_feed" ? "喂养成功" : "作业提交成功";
+  RuntimeUI.createBadge(feedbackSection, {
+    name: "GrowthFeedbackSourceResponsive",
+    text: sourceLabel,
+    x: 0,
+    y: panel.feedbackSectionHeight / 2 - 22,
+    width: Math.min(160, panel.width - 80),
+    height: 30,
+    fontSize: 14,
+    color: WAIT_COLOR,
+    textColor: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(feedbackSection, {
+    name: "GrowthFeedbackMessageResponsive",
+    text: feedback.message,
+    x: 0,
+    y: layout.compact ? -2 : 0,
+    width: Math.min(390, panel.width - 58),
+    height: 48,
+    fontSize: layout.compact ? 14 : 16,
+    color: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(feedbackSection, {
+    name: "GrowthFeedbackTimeResponsive",
+    text: formatFeedbackTime(feedback.timestamp),
+    x: 0,
+    y: -36,
+    width: Math.min(390, panel.width - 58),
+    height: 18,
+    fontSize: 13,
+    color: MUTED_COLOR,
+  });
+}
+
+function renderEvolutionSummaryResponsive(
+  card: Node,
+  pet: PetStatus | null,
+  evolution: PetEvolutionPayload | null,
+  evolutionError: string | undefined,
+  isPreviewMode: boolean,
+  layout: GrowthPageLayout
+): void {
+  const panel = layout.evolutionCard;
+  RuntimeUI.createLabel(card, {
+    name: "EvolutionTitleResponsive",
+    text: "进化条件",
+    x: 0,
+    y: panel.titleY,
+    width: 260,
+    height: 34,
+    fontSize: layout.compact ? 22 : 24,
+    color: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(card, {
+    name: "EvolutionSubtitleResponsive",
+    text: isPreviewMode ? "当前处于开发预览模式。" : "这里会显示当前阶段、下一阶段和条件判断。",
+    x: 0,
+    y: panel.subtitleY,
+    width: Math.min(400, panel.width - 30),
+    height: 28,
+    fontSize: layout.compact ? 13 : 15,
+    color: isPreviewMode ? WAIT_COLOR : SUBTEXT_COLOR,
+  });
+
+  const evolutionSection = RuntimeUI.createCard(card, {
+    name: "EvolutionSummarySectionResponsive",
+    x: 0,
+    y: panel.sectionY,
+    width: panel.width - 28,
+    height: panel.sectionHeight,
+    color: SECTION_BG_COLOR,
+    innerColor: new Color(255, 255, 255, 140),
+    borderColor: UiTokens.colors.borderSoft,
+    radius: 24,
+  });
+
+  if (!pet) {
+    RuntimeUI.createLabel(evolutionSection, {
+      name: "EvolutionEmptyResponsive",
+      text: "当前没有可用的进化信息",
+      x: 0,
+      y: 20,
+      width: 320,
+      height: 28,
+      fontSize: layout.compact ? 19 : 21,
+      color: WAIT_COLOR,
+    });
+    RuntimeUI.createLabel(evolutionSection, {
+      name: "EvolutionEmptyHintResponsive",
+      text: "先创建宠物，再刷新状态查看正式进化条件。",
+      x: 0,
+      y: -20,
+      width: Math.min(360, panel.width - 42),
+      height: 44,
+      fontSize: layout.compact ? 14 : 16,
+      color: SUBTEXT_COLOR,
+    });
+    return;
+  }
+
+  if (!evolution) {
+    RuntimeUI.createLabel(evolutionSection, {
+      name: "EvolutionFallbackStateResponsive",
+      text: "当前缺少足够数据，仅显示保守提示",
+      x: 0,
+      y: 48,
+      width: 360,
+      height: 28,
+      fontSize: layout.compact ? 18 : 20,
+      color: WAIT_COLOR,
+    });
+    RuntimeUI.createLabel(evolutionSection, {
+      name: "EvolutionFallbackHintResponsive",
+      text:
+        evolutionError?.trim() ||
+        "宠物状态已同步，但进化接口暂未返回可判断的完整信息，请稍后刷新再查看。",
+      x: 0,
+      y: -2,
+      width: Math.min(390, panel.width - 48),
+      height: 64,
+      fontSize: layout.compact ? 14 : 16,
+      color: SUBTEXT_COLOR,
+    });
+    return;
+  }
+
+  const levelSatisfied = pet.level >= evolution.requirements.level;
+  const daySatisfied = evolution.days_until_evolution <= 0;
+  const growthRequirementText =
+    evolution.requirements.growth > 0
+      ? `成长要求：目标 ${evolution.requirements.growth}`
+      : "成长要求：当前无需额外成长值判断";
+  const overallStatus = resolveOverallEvolutionStatus(levelSatisfied, daySatisfied, evolution);
+
+  const lines = [
+    `当前阶段：${evolution.current_visual}`,
+    `下一阶段：${evolution.next_visual}`,
+    `等级要求：Lv.${evolution.requirements.level}（${levelSatisfied ? "已满足" : "未满足"}）`,
+    growthRequirementText,
+    `进化时机：${daySatisfied ? "已满足" : `距离进化 ${evolution.days_until_evolution} 天`}`,
+  ].join("\n");
+
+  RuntimeUI.createLabel(evolutionSection, {
+    name: "EvolutionInfoTextResponsive",
+    text: lines,
+    x: 0,
+    y: 42,
+    width: Math.min(390, panel.width - 54),
+    height: panel.sectionHeight - 100,
+    fontSize: layout.compact ? 15 : 17,
+    color: TITLE_COLOR,
+  });
+
+  const badgeColor =
+    overallStatus.kind === "ready"
+      ? READY_COLOR
+      : overallStatus.kind === "waiting"
+        ? WAIT_COLOR
+        : new Color(110, 128, 152, 255);
+  RuntimeUI.createBadge(evolutionSection, {
+    name: "EvolutionStatusBadgeResponsive",
+    text: overallStatus.title,
+    x: 0,
+    y: -72,
+    width: Math.min(300, panel.width - 72),
+    height: 42,
+    fontSize: layout.compact ? 16 : 18,
+    color: badgeColor,
+    textColor: TITLE_COLOR,
+  });
+
+  RuntimeUI.createLabel(evolutionSection, {
+    name: "EvolutionSummaryTextResponsive",
+    text: overallStatus.message,
+    x: 0,
+    y: -110,
+    width: Math.min(390, panel.width - 48),
+    height: 44,
+    fontSize: layout.compact ? 13 : 15,
+    color: SUBTEXT_COLOR,
+  });
+}
+
+function renderFooterActionsResponsive(
+  card: Node,
+  actions: PetGrowthViewActions,
+  context?: object,
+  layout?: GrowthPageLayout
+): void {
+  const panel = layout?.evolutionCard ?? layout?.growthCard;
+  const compact = layout?.compact ?? false;
+  const refreshButton = RuntimeUI.createGradientButton(card, {
+    name: "RefreshGrowthButtonResponsive",
+    text: "刷新状态",
+    x: compact ? -86 : -104,
+    y: panel?.footerY ?? -188,
+    width: compact ? 140 : 160,
+    height: compact ? 44 : 50,
+    color: PRIMARY_ACTION_COLOR,
+    fontSize: compact ? 16 : 18,
+    selected: true,
+  });
+  refreshButton.button.node.on(Button.EventType.CLICK, () => void actions.onRefresh(), context);
+
+  const backButton = RuntimeUI.createGradientButton(card, {
+    name: "BackGrowthButtonResponsive",
+    text: "返回总览",
+    x: compact ? 86 : 104,
+    y: panel?.footerY ?? -188,
+    width: compact ? 140 : 160,
+    height: compact ? 44 : 50,
+    color: SECONDARY_ACTION_COLOR,
+    textColor: TITLE_COLOR,
+    fontSize: compact ? 16 : 18,
+    selected: false,
+  });
+  backButton.button.node.on(Button.EventType.CLICK, actions.onBackToOverview, context);
+}
+
+function renderPreviewModeControlsResponsive(
+  growthCard: Node,
+  currentMode: PreviewMode,
+  actions: PetGrowthViewActions,
+  context?: object,
+  layout?: GrowthPageLayout
+): void {
+  const panel = layout?.growthCard;
+  RuntimeUI.createLabel(growthCard, {
+    name: "PreviewModeTitleResponsive",
+    text: `开发预览：${resolvePreviewModeLabel(currentMode)}`,
+    x: 0,
+    y: panel?.previewTitleY ?? -200,
+    width: Math.min(240, (panel?.width ?? 360) - 40),
+    height: 18,
+    fontSize: 14,
+    color: WAIT_COLOR,
+  });
+
+  RuntimeUI.createPillTabs(growthCard, {
+    name: "PetGrowthPreviewTabsResponsive",
+    x: 0,
+    y: panel?.previewTabY ?? -220,
+    width: Math.min(420, (panel?.width ?? 360) - 48),
+    height: panel?.previewTabHeight ?? 24,
+    tabs: [
+      { name: "Real", text: "真实", active: currentMode === "real" },
+      { name: "Stage1", text: "一阶段", active: currentMode === "stage1" },
+      { name: "Stage2", text: "二阶段", active: currentMode === "stage2" },
+      { name: "Unknown", text: "未知", active: currentMode === "unknown" },
+      { name: "Countdown", text: "倒计时", active: currentMode === "countdown" },
+    ],
+    activeColor: READY_COLOR,
+    inactiveColor: new Color(247, 238, 227, 255),
+    activeTextColor: TITLE_COLOR,
+    inactiveTextColor: SUBTEXT_COLOR,
+    fontSize: 13,
+    gap: 6,
+    padding: 6,
+    onSelect: (index: number) => {
+      const mode: PreviewMode =
+        index === 0 ? "real" : index === 1 ? "stage1" : index === 2 ? "stage2" : index === 3 ? "unknown" : "countdown";
+      setPreviewMode(mode);
+      actions.onPreviewModeChange();
+    },
+  });
+}
+
+function resolveOverallEvolutionStatus(
+  levelSatisfied: boolean,
+  daySatisfied: boolean,
+  evolution: PetEvolutionPayload
+): { kind: "ready" | "waiting" | "partial"; title: string; message: string } {
+  if (daySatisfied && levelSatisfied) {
+    return {
+      kind: "ready",
+      title: "已满足进化条件",
+      message: "当前已满足可判断条件。若后端还有额外隐藏条件，以后端真实状态为准。",
+    };
+  }
+
+  if (!levelSatisfied) {
+    return {
+      kind: "waiting",
+      title: "未满足进化条件",
+      message: `当前等级未达到 Lv.${evolution.requirements.level}，请继续完成喂养或作业提交后再查看。`,
+    };
+  }
+
+  return {
+    kind: "partial",
+    title: "条件未完全满足或数据暂未齐全",
+    message: "等级条件已满足，但成长值相关字段暂不足以精确判断，请结合进化时机和后端返回继续观察。",
+  };
+}
+
+function resolvePreviewPet(pet: PetStatus | null, mode: PreviewMode): PetStatus | null {
+  if (!pet) {
+    return null;
+  }
+
+  if (mode === "stage1") {
+    return {
+      ...pet,
+      level: 1,
+      experience: 20,
+      mood: 70,
+      hunger: 80,
+      stage: "stage_1",
+      next_evolve_days: 4,
+    };
+  }
+
+  if (mode === "stage2") {
+    return {
+      ...pet,
+      level: 2,
+      experience: 90,
+      mood: 88,
+      hunger: 76,
+      stage: "stage_2",
+      next_evolve_days: 0,
+    };
+  }
+
+  if (mode === "unknown") {
+    return {
+      ...pet,
+      experience: 45,
+      stage: "unknown",
+      next_evolve_days: undefined,
+    };
+  }
+
+  if (mode === "countdown") {
+    return {
+      ...pet,
+      level: Math.max(2, pet.level),
+      experience: 75,
+      stage: pet.stage ?? "stage_1",
+      next_evolve_days: 1,
+    };
+  }
+
+  return pet;
 }
 
 function synthesizeEvolutionFromPet(pet: PetStatus | null): PetEvolutionPayload | null {
@@ -425,14 +1083,11 @@ function synthesizeEvolutionFromPet(pet: PetStatus | null): PetEvolutionPayload 
 
   const currentStage = resolveStageIndex(pet.stage);
   const nextStage = Math.min(currentStage + 1, 4);
-  const currentVisual = resolveStageLabel(pet.stage);
-  const nextVisual = resolveNextStageLabel(pet.stage);
-
   return {
     current_stage: currentStage,
-    current_visual: currentVisual,
+    current_visual: resolveStageLabel(pet.stage),
     next_stage: nextStage,
-    next_visual: nextVisual,
+    next_visual: resolveNextStageLabel(pet.stage),
     requirements: {
       level: Math.max(2, pet.level + 1),
       growth: currentStage * 50,
@@ -443,14 +1098,14 @@ function synthesizeEvolutionFromPet(pet: PetStatus | null): PetEvolutionPayload 
 
 function resolveStageIndex(stage?: string | null): number {
   const normalized = stage?.trim().toLowerCase();
-  if (normalized === "stage_2" || normalized === "stage2" || normalized === "2") {
-    return 2;
+  if (normalized === "stage_4" || normalized === "stage4" || normalized === "4") {
+    return 4;
   }
   if (normalized === "stage_3" || normalized === "stage3" || normalized === "3") {
     return 3;
   }
-  if (normalized === "stage_4" || normalized === "stage4" || normalized === "4") {
-    return 4;
+  if (normalized === "stage_2" || normalized === "stage2" || normalized === "2") {
+    return 2;
   }
   return 1;
 }
@@ -458,7 +1113,7 @@ function resolveStageIndex(stage?: string | null): number {
 function resolveStageLabel(stage?: string | null): string {
   const normalized = stage?.trim().toLowerCase();
   if (!normalized) {
-    return "成长期";
+    return "成长中";
   }
   if (normalized === "stage_1" || normalized === "stage1" || normalized === "1") {
     return "第一阶段";
@@ -466,7 +1121,10 @@ function resolveStageLabel(stage?: string | null): string {
   if (normalized === "stage_2" || normalized === "stage2" || normalized === "2") {
     return "第二阶段";
   }
-  return stage ?? "成长期";
+  if (normalized === "stage_3" || normalized === "stage3" || normalized === "3") {
+    return "第三阶段";
+  }
+  return stage ?? "成长中";
 }
 
 function resolveNextStageLabel(stage?: string | null): string {
@@ -475,40 +1133,44 @@ function resolveNextStageLabel(stage?: string | null): string {
     return "第二阶段";
   }
   if (normalized === "stage_2" || normalized === "stage2" || normalized === "2") {
-    return "更高阶段（MVP 未开放）";
+    return "第三阶段";
   }
-  return "第一阶段";
+  if (normalized === "stage_3" || normalized === "stage3" || normalized === "3") {
+    return "更高阶段";
+  }
+  return "下一阶段";
 }
 
-function resolveEvolveHint(nextEvolveDays?: number | null): string {
-  if (typeof nextEvolveDays !== "number") {
-    return "进化提示：等级 + 资源达标后开放进化入口。";
+function formatFeedbackTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "刚刚同步";
   }
-  if (nextEvolveDays <= 0) {
-    return "进化提示：当前条件已满足，可进入正式进化流程。";
-  }
-  return `进化提示：距离下一次进化还有 ${nextEvolveDays} 天。`;
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `最近更新：${month}-${day} ${hours}:${minutes}`;
 }
 
-function isEvolutionReady(nextEvolveDays?: number | null): boolean {
-  return typeof nextEvolveDays === "number" && nextEvolveDays <= 0;
+function pad(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
 }
 
-function resolveEvolutionSummaryText(
-  previewMode: PreviewMode,
-  evolutionError?: string,
-  syntheticMode = false
-): string {
-  if (previewMode !== "real") {
-    return "这是本地模拟样本，只用于看文案。";
+function resolvePreviewModeLabel(mode: PreviewMode): string {
+  if (mode === "stage1") {
+    return "第一阶段";
   }
-  if (syntheticMode) {
-    return "这是前端推导的进化预览，不是真实数据。";
+  if (mode === "stage2") {
+    return "第二阶段";
   }
-  if (evolutionError) {
-    return `真实接口未拿到，先用前端推导兜底。${evolutionError}`;
+  if (mode === "unknown") {
+    return "未知阶段";
   }
-  return "这里显示的是后端真实进化信息。";
+  if (mode === "countdown") {
+    return "倒计时";
+  }
+  return "真实数据";
 }
 
 function getPreviewMode(): PreviewMode {
@@ -529,67 +1191,9 @@ function getPreviewMode(): PreviewMode {
 }
 
 function setPreviewMode(mode: PreviewMode): void {
-  storage.set(PREVIEW_MODE_KEY, mode);
-}
-
-function resolvePreviewModeLabel(mode: PreviewMode): string {
-  switch (mode) {
-    case "stage1":
-      return "1阶 / 3天";
-    case "stage2":
-      return "2阶 / 已满足";
-    case "unknown":
-      return "未知 / 无日期";
-    case "countdown":
-      return "倒计时 / 5天";
-    default:
-      return "真实数据";
-  }
-}
-
-function resolvePreviewPet(pet: PetStatus | null, mode: PreviewMode): PetStatus | null {
   if (mode === "real") {
-    return pet;
+    storage.remove(PREVIEW_MODE_KEY);
+    return;
   }
-
-  const base: PetStatus = pet ?? {
-    pet_id: "debug-pet-growth",
-    name: "Buddy",
-    level: 1,
-    hunger: 100,
-    mood: 100,
-    experience: 0,
-    status: true,
-    stage: "stage_1",
-    next_evolve_days: 3,
-  };
-
-  switch (mode) {
-    case "stage1":
-      return {
-        ...base,
-        stage: "stage_1",
-        next_evolve_days: 3,
-      };
-    case "stage2":
-      return {
-        ...base,
-        stage: "stage_2",
-        next_evolve_days: 0,
-      };
-    case "unknown":
-      return {
-        ...base,
-        stage: "mystery_stage",
-        next_evolve_days: undefined,
-      };
-    case "countdown":
-      return {
-        ...base,
-        stage: "stage_1",
-        next_evolve_days: 5,
-      };
-    default:
-      return base;
-  }
+  storage.set(PREVIEW_MODE_KEY, mode);
 }

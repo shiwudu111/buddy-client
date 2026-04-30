@@ -1,9 +1,19 @@
 import { appState } from "../app/AppState";
 import { apiClient } from "../network/ApiClient";
-import type { ApiResponse, PetEvolutionPayload, PetResourcesPayload, PetStatus } from "../types/api";
+import type {
+  ApiResponse,
+  PetDashboardPayload,
+  PetEvolutionPayload,
+  PetFeedPayload,
+  PetFeedResultPayload,
+  PetResourcesPayload,
+  PetStatus,
+} from "../types/api";
 
 class PetService {
-  async refreshCurrentPet(canCommit?: () => boolean): Promise<ApiResponse<PetStatus>> {
+  async refreshDashboard(
+    canCommit?: () => boolean
+  ): Promise<ApiResponse<PetStatus>> {
     const petId = appState.getPetId();
     if (!petId) {
       return {
@@ -12,18 +22,41 @@ class PetService {
       };
     }
 
-    const result = await apiClient.getPetStatus(petId);
-    if (result.success && result.data && (!canCommit || canCommit())) {
-      appState.setPetId(result.data.pet_id);
-      appState.setCurrentPet(result.data);
-      return result;
+    const dashboardResult = await apiClient.getPetDashboard(petId);
+    if (dashboardResult.success && dashboardResult.data && (!canCommit || canCommit())) {
+      this.applyDashboardPayload(dashboardResult.data);
+      return {
+        success: true,
+        data: dashboardResult.data.pet,
+        statusCode: dashboardResult.statusCode,
+      };
     }
 
-    if (result.statusCode === 404 && (!canCommit || canCommit())) {
+    const statusResult = await apiClient.getPetStatus(petId);
+    if (statusResult.success && statusResult.data && (!canCommit || canCommit())) {
+      appState.setPetId(statusResult.data.pet_id);
+      appState.setCurrentPet(statusResult.data);
+      if (!appState.getPetFoodInventory().length) {
+        appState.setPetFoodInventory([]);
+      }
+      return statusResult;
+    }
+
+    if (statusResult.statusCode === 404 && (!canCommit || canCommit())) {
       appState.clearPetState();
     }
 
-    return result;
+    return statusResult.success
+      ? statusResult
+      : {
+          success: false,
+          message: dashboardResult.message ?? statusResult.message,
+          statusCode: dashboardResult.statusCode ?? statusResult.statusCode,
+        };
+  }
+
+  async refreshCurrentPet(canCommit?: () => boolean): Promise<ApiResponse<PetStatus>> {
+    return this.refreshDashboard(canCommit);
   }
 
   async getCurrentPetEvolution(): Promise<ApiResponse<PetEvolutionPayload>> {
@@ -42,13 +75,46 @@ class PetService {
     return apiClient.createPet(name);
   }
 
-  async feedCurrentPet(): Promise<ApiResponse<PetResourcesPayload | PetStatus>> {
+  async feedCurrentPet(
+    payload?: PetFeedPayload
+  ): Promise<ApiResponse<PetFeedResultPayload | PetResourcesPayload>> {
     const petId = appState.getPetId();
     if (!petId) {
       return {
         success: false,
         message: "请先创建宠物",
       };
+    }
+
+    if (payload) {
+      const feedResult = await apiClient.feedPet(petId, payload);
+      if (feedResult.success && feedResult.data) {
+        appState.setCurrentPet(feedResult.data.pet);
+        appState.setPetFoodInventory(feedResult.data.foods ?? []);
+        return feedResult;
+      }
+
+      const fallbackResult = await apiClient.updatePetResources(petId, {
+        fullness_delta: 15,
+        mood_delta: 5,
+        growth_delta: 0,
+        reason: "manual_feed",
+      });
+
+      if (fallbackResult.success && fallbackResult.data) {
+        const currentPet = appState.getCurrentPet();
+        if (currentPet) {
+          appState.setCurrentPet({
+            ...currentPet,
+            hunger: fallbackResult.data.hunger,
+            mood: fallbackResult.data.mood,
+            experience: fallbackResult.data.experience,
+            status: fallbackResult.data.status,
+          });
+        }
+      }
+
+      return fallbackResult;
     }
 
     const updateResult = await apiClient.updatePetResources(petId, {
@@ -62,8 +128,6 @@ class PetService {
       return updateResult;
     }
 
-    // 喂养接口已经返回了最新资源值，先把本地宠物状态即时更新，
-    // 这样主界面能立刻看到变化，不必完全依赖后续状态接口是否有延迟。
     const currentPet = appState.getCurrentPet();
     if (currentPet && updateResult.data) {
       appState.setCurrentPet({
@@ -76,6 +140,15 @@ class PetService {
     }
 
     return updateResult;
+  }
+
+  private applyDashboardPayload(payload: PetDashboardPayload): void {
+    appState.setPetId(payload.pet.pet_id);
+    appState.setCurrentPet(payload.pet);
+    appState.setPetFoodInventory(payload.foods ?? []);
+    if (payload.recent_events?.length) {
+      appState.setMainEvents(payload.recent_events);
+    }
   }
 }
 

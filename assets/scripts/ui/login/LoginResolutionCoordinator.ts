@@ -1,4 +1,4 @@
-import { ResolutionPolicy, view } from "cc";
+import { ResolutionPolicy, screen, view } from "cc";
 
 // 文件整体作用：
 // 这是登录页的分辨率协调器。
@@ -33,7 +33,7 @@ export class LoginResolutionCoordinator {
 
   applyCurrentFrame(): void {
     // 按当前窗口是横屏还是竖屏，切到对应的登录页设计尺寸。
-    const frameSize = view.getFrameSize();
+    const frameSize = screen.windowSize;
     const isPortrait = frameSize.height > frameSize.width;
     const width = isPortrait ? 720 : 1280;
     const height = isPortrait ? 1280 : 720;

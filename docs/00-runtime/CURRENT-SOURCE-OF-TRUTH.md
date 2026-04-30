@@ -1,253 +1,213 @@
-# CURRENT-SOURCE-OF-TRUTH.md
+﻿# CURRENT-SOURCE-OF-TRUTH.md
 
-> 目的：给 Codex / Agent / Reviewer 一个“当前唯一执行真相”。
-> 规则：本文件只写“现在有效的执行口径”，不写历史讨论。
-> 任何任务包、代码改动、审查结论，都必须以本文件为第一优先级。
-> 若与历史文档冲突，以本文件 + 当前冻结验收口径为准。
+> 鐩殑锛氱粰 Codex / Agent / Reviewer 涓€涓€滃綋鍓嶅敮涓€鎵ц鐪熺浉鈥?> 瑙勫垯锛氭湰鏂囦欢鍙啓鐜板湪鏈夋晥鐨勬墽琛屽彛寰勶紝涓嶅啓鍘嗗彶璁ㄨ
+> 鑻ヤ笌鍘嗗彶鏂囨。鍐茬獊锛屼互鏈枃浠?+ 褰撳墠鍐荤粨楠屾敹鍙ｅ緞涓哄噯
 
 ---
 
 ## 0. Meta
 
 - Repo: `buddy-client`
-- Phase: `MVP 主链路收口阶段`
-- Updated At: `2026-04-15`
-- Owner: `<your-name>`
-- Effective Until: `被下一版 CURRENT-SOURCE-OF-TRUTH 替代前持续有效`
+- Phase: `瀛︾敓绔富鐣岄潰鏀圭増 + 鍙ｇ伯璧勬簮绯荤粺鑱旇皟鍑嗗 / 鍓嶇钀藉湴鎺ㄨ繘`
+- Updated At: `2026-04-21`
+- Owner: `current-collab`
+- Effective Until: `琚笅涓€鐗?CURRENT-SOURCE-OF-TRUTH 鏇夸唬鍓嶆寔缁湁鏁坄
 
 ---
 
 ## 1. Current Project Goal
 
-当前目标不是扩新模块，而是把现有主链路收口到：
+褰撳墠鐩爣涓嶆槸缁х画鎵╂柊妯″潡锛岃€屾槸锛?- 淇濇寔 MVP 涓婚摼璺ǔ瀹氬彲楠屾敹
+- 鏄庣‘褰撳墠宸插畬鎴愬姛鑳界殑姝ｅ紡鎵ц鍙ｅ緞
+- 鍦ㄤ笉鐮村潖涓婚摼璺殑鍓嶆彁涓嬫帹杩涘鐢熺涓荤晫闈㈡敼鐗堜笌璧勬簮绯荤粺鑱旇皟锛屼互鍙婁富椤靛墠绔３瀛愯惤鍦?
+褰撳墠鍞竴鎬荤洰鏍囷細
 
-- 可验收
-- 可回归
-- 可交付
-
-本轮唯一总目标：
-
-**把当前最关键主链路收口到可验收状态，并为下一阶段 `Pet 成长/进化 v1` 做好实施边界准备。**
+**鍦ㄤ笉鎵╁ぇ鑼冨洿鐨勫墠鎻愪笅锛岀淮鎸佸鐢熺 / 瀹堕暱绔富閾捐矾绋冲畾锛屽苟鎶?`Pet 鎴愰暱/杩涘寲 v1` 鍋氬埌鍔熻兘鍙獙鏀躲€?*
 
 ---
 
 ## 2. In Scope Now
 
-当前允许推进的内容只有：
+褰撳墠鍏佽鎺ㄨ繘鐨勫唴瀹瑰彧鏈夛細
 
-1. `Homework` 收口
-   - 提交
-   - 草稿
-   - 切科目
-   - 提交后刷新
-   - 返回总览
+1. 瀛︾敓绔富鐣岄潰鏀圭増
+   - 涓婚〉澹冲瓙閲嶅仛
+   - 瀹犵墿鍦烘櫙鍖洪噸鍋?   - 鍙充晶鏃ュ織鍖?   - 搴曢儴涓绘搷浣滃尯
 
-2. 家长端最小冒烟
-   - 绑定孩子
-   - 查看孩子状态
-   - 查看周报
-   - 刷新
-   - 退出登录
-   - 重新登录
+2. 鍙ｇ伯璧勬簮绯荤粺鑱旇皟鍑嗗
+   - `energy / health` 瀛楁鍙ｅ緞
+   - 鍙ｇ伯搴撳瓨鍙ｅ緞
+   - 浣滀笟濂栧姳鍙ｇ伯鍙ｅ緞
+   - 閫夌伯鍠傚吇鍙ｅ緞
 
-3. `Pet 成长/进化 v1` 实施准备
-   - 明确成长节点边界
-   - 明确状态字段落地范围
-   - 明确演出与正式业务的边界
-
-4. 入口与主链路回归
-   - `Login`
+3. `Pet 鎴愰暱/杩涘寲 v1`
+   - 瀛︾敓绔垚闀块〉灞曠ず
+   - 褰撳墠鐘舵€佸睍绀?   - 杩涘寲鏉′欢灞曠ず
+   - 鏈€杩戞垚闀垮弽棣堝睍绀?   - 涓?`鍠傚吇鎴愬姛`銆乣浣滀笟鎻愪氦鎴愬姛` 涓や釜瑙︾偣鐨勫眬閮ㄨ仈鍔?
+4. 涓婚摼璺洖褰?   - `Login`
    - `Main`
    - `Parent`
    - `Homework`
    - `First-pet`
 
+5. 鍗忎綔鏂囨。鍚屾
+   - 褰撳墠鐘舵€佹枃妗?   - 褰撳墠鎵ц鐪熺浉鏂囨。
+   - Main 棣栭〉 P0 缁撴瀯鏁存敼鎵ц鍗曪紙褰撳墠鐗堬級
+   - 褰撳墠楠屾敹娓呭崟
+
 ---
 
 ## 3. Explicitly Out of Scope Now
 
-本轮明确不碰：
-
-- `AI 对话 / 宠物对话`
-- 更复杂的宠物演出和抽卡包装
-- 非必要视觉扩展
-- 横向性能和监控大改
-- 新增入口层需求
-- 多 Scene 登录入口拆分
-- 多账号管理与多账号切换
-
+鏈樁娈垫槑纭笉鍋氾細
+- 鑱婂ぉ缁х画鎵╁姛鑳?- 鑱婂ぉ褰卞搷鎴愰暱
+- 瀹堕暱绔垚闀块〉鎴栨垚闀胯仈鍔?- 鏂扮殑瀵艰埅銆乼ab銆佺嫭绔嬪満鏅?- 姝ｅ紡閫夎泲 / 瀛靛寲绯荤粺
+- 绋€鏈夊害 / 鐗╃缁撴灉鎵胯
+- 澶嶆潅瀹犵墿婕斿嚭
+- 鏂扮殑鍚庣 mock / 鍋囨帴鍙?/ 浼瓧娈?- 鑷姩鍖栨祴璇曚綋绯讳笓椤?- UI 鏈€缁堣瑙夊畾鐗堜紭鍖?- 鍦?`energy / health / foods` 濂戠害鏈喕缁撴椂鎻愬墠瀹炵幇涓荤晫闈㈣祫婧愮郴缁?
 ---
 
 ## 4. Mainline Priority
 
-所有工作优先保证这条主链路不被破坏：
+鎵€鏈夊伐浣滀紭鍏堜繚璇佽繖鏉′富閾捐矾涓嶈鐮村潖锛?
+`鐧诲綍 -> 鍒涘缓瀹犵墿 -> 鎻愪氦浣滀笟 -> 瀹犵墿鐘舵€佸彉鍖?-> 瀹堕暱鏌ョ湅缁撴灉`
 
-`注册/登录 -> 创建宠物 -> 提交作业 -> 奖励/状态变化 -> 家长查看结果`
-
-任何新改动若影响主链路稳定性，应优先回退或延期，而不是继续叠加功能。
-
+濡傛灉鏂版敼鍔ㄥ奖鍝嶄富閾捐矾绋冲畾锛屽簲浼樺厛鍥為€€鎴栧仠姝紝鑰屼笉鏄户缁彔鍔犲姛鑳姐€?
 ---
 
 ## 5. Current Operational Truths
 
 ### 5.1 Login Truth
 
-当前登录入口按第一阶段新模型执行：
-
+褰撳墠鐧诲綍鍏ュ彛鎵ц鍙ｅ緞锛?
 `restore -> brandEntry -> roleSelect -> authForm(role, mode)`
 
-固定规则：
-
-1. `roleSelect -> authForm` 默认进入 `mode=login`
-2. 注册通过 `authForm` 内显式切换
-3. 登录成功后的真实身份以后端返回 `user.role` 为准
-4. `restore` 无会话或恢复失败，统一回到 `brandEntry`
-5. `restoreSuccess` 第一阶段不自动进 `Main`，而是回到 `brandEntry` 并带可续用账号
-6. `authForm` 点击返回时，统一回到 `brandEntry`
-
-当前第一阶段：
-- 不新增后端接口
-- 不改 `Main.scene` 内部逻辑
-- 不拆多个 Cocos Scene
+鍥哄畾瑙勫垯锛?- `roleSelect -> authForm` 榛樿杩涘叆 `mode=login`
+- 鐧诲綍鎴愬姛鍚庣殑鐪熷疄韬唤浠ュ悗绔繑鍥?`user.role` 涓哄噯
+- `restore` 鏃犱細璇濇垨鎭㈠澶辫触鏃剁粺涓€鍥炲埌 `brandEntry`
+- 涓嶆媶澶氫釜 Cocos Scene
 
 ### 5.2 Parent Binding Truth
 
-当前正式联调口径按以下规则执行：
-
-- `1 个家长 <-> 1 个孩子`
-- 双家长绑定同一孩子 **不是当前已支持能力**
-- 状态码语义：
-  - `404`: 孩子不存在
-  - `409`: 孩子已被其他家长绑定，或当前家长已绑定其他孩子
-  - `403`: 当前登录用户不是家长
-
-说明：
-- 若历史文档出现“双家长可绑定同一孩子”，本轮不作为执行标准。
-- 该能力如需恢复，必须先重新冻结业务权威与验收口径。
-
+褰撳墠姝ｅ紡鑱旇皟鍙ｅ緞锛?
+- `1 涓闀?<-> 1 涓瀛恅
+- 鍙屽闀跨粦瀹氬悓涓€涓瀛愪笉鏄綋鍓嶅凡鏀寔鑳藉姏
+- 鐘舵€佺爜璇箟锛?  - `404`锛氬瀛愪笉瀛樺湪
+  - `409`锛氬瀛愬凡琚叾浠栧闀跨粦瀹氾紝鎴栧綋鍓嶅闀垮凡缁戝畾鍏朵粬瀛╁瓙
+  - `403`锛氬綋鍓嶇櫥褰曠敤鎴蜂笉鏄闀?
 ### 5.3 First Pet Truth
 
-当前 MVP 对首次宠物创建的正式业务结果只有一个：
+褰撳墠 MVP 瀵归娆″疇鐗╁垱寤虹殑姝ｅ紡涓氬姟缁撴灉鍙湁锛?
+`鏃犲疇鐗╁鐢熼娆¤繘鍏?-> 鍒涘缓瀹犵墿 -> 杩涘叆涓婚摼璺痐
 
-`无宠物学生首次进入 -> 创建宠物 -> 进入成长主链路`
-
-只承诺：
-- 无宠物判定
-- 首次创建入口
-- 输入名称
-- 调用创建接口
-- 创建成功进入主链路
-- 创建失败可提示 / 回退 / 重试
-
-当前不承诺：
-- 蛋型
-- 稀有度
-- 物种
+褰撳墠涓嶆壙璇猴細
+- 铔嬬被鍨?- 绋€鏈夊害
+- 鐗╃
 - hatchSeed
-- 孵化结果可复现
-- 选蛋决定最终结果
+- 瀛靛寲缁撴灉鍙鐜?
+浠讳綍宸叉湁鈥滈€夎泲 / 瀛靛寲鈥濇紨鍑猴紝涓€寰嬭涓哄師鍨嬫垨鍏抽棴鑳藉姏锛屼笉杩涘叆姝ｅ紡楠屾敹銆?
+### 5.4 Chat Truth
 
-任何已有“选蛋 / 孵化”演出，统一视为：
-- 原型演出
-- 默认关闭，或挂在 feature flag 下
-- 不进入正式验收
-- 不得反向定义正式数据模型
+瀛︾敓绔亰澶?v1 宸插畬鎴愬苟鏀跺彛銆?
+褰撳墠姝ｅ紡鍙ｅ緞锛?- 鑱婂ぉ鍏ュ彛鍦?`Main` 瀛︾敓绔富鐣岄潰鍐?- 鑱婂ぉ鍙湪褰撳墠杩愯浼氳瘽鍐呬繚鐣?- 閫€鍑虹櫥褰曞悗娓呯┖
+- 鍏抽棴娴忚鍣ㄥ悗閲嶆柊鍚姩涓嶈嚜鍔ㄥ洖鐏屾棫鑱婂ぉ
+- 鑱婂ぉ涓嶄細褰卞搷瀹犵墿鎴愰暱
+- `chat/history` 鎺ュ彛褰撳墠涓嶄綔涓哄惎鍔ㄨ嚜鍔ㄦ仮澶嶄富娴佺▼
 
-### 5.4 Module Boundary Truth
+### 5.5 Pet Growth Truth
 
-- `LoginController` 保持薄控制器，不继续堆认证细节和布局细节
-- `LoginFlowCoordinator` 负责流程迁移与 step / role / mode 管理
-- `LoginAuthCoordinator` 负责登录 / 注册 / 恢复会话
-- 首次宠物创建流程不得继续堆进 `MainController`
-- 首次宠物流程应独立为 `PetOnboarding` / `FirstPetFlow` 或同级模块
+`Pet 鎴愰暱/杩涘寲 v1` 褰撳墠姝ｅ紡鍙ｅ緞锛?- 鍙仛瀛︾敓绔?- 鍙仛鎴愰暱椤靛睍绀轰笌灞€閮ㄨ仈鍔?- 鍙帴涓や釜鎴愬姛瑙︾偣锛?  - `鍠傚吇鎴愬姛`
+  - `浣滀笟鎻愪氦鎴愬姛`
+- 鏈€杩戞垚闀垮弽棣堝彧鎻忚堪鏈€杩戜竴娆＄粨鏋?- 涓嶆壂鎻忓巻鍙蹭綔涓?- 涓嶅洖鏀惧巻鍙蹭簨浠?- 涓嶄吉閫犳垚闀垮閲忔暟鍊?- 褰撳墠鎴愰暱椤靛姛鑳藉彲楠屾敹锛屼絾鐣岄潰瑙傛劅涓嶄綔涓烘湰闃舵鏈€缁堣瑙夊畾鐗堟爣鍑?
+### 5.6 Main Interface Truth
+- 瀛︾敓绔富鐣岄潰鏀圭増浠?`index.html` 浣滀负褰撳墠瑙嗚鍙傝€?- 涓婚〉闇€瑕佺湡瀹炲彛绮祫婧愮郴缁熸敮鎾戯紝涓嶆帴鍙楀墠绔吉搴撳瓨
+- `energy / health` 浣滀负涓嬩竴闃舵閲嶈鐘舵€佸瓧娈碉紝闇€瑕佷笌鍚庣鍐荤粨鍙ｅ緞瀵归綈
+- 涓荤晫闈㈣仈璋冨簲浼樺厛浣跨敤鏈鏂板鐨?`Main 棣栭〉 P0 缁撴瀯鏁存敼鎵ц鍗曪紙褰撳墠鐗堬級`
+- 涓婚〉褰撳墠鎵ц鍙ｅ緞鏄?`app-shell + frame + top/main/bottom + left/center/right`锛屼笉鍐嶆妸鏁撮〉缂╂斁寮?SafeFrame 褰撴垚棣栭〉鑸炲彴鍩哄噯
+- 涓婚〉绗竴鐗堝凡鎺ュ叆鐘舵€佸崱銆佸疇鐗╁満鏅€佹渶杩戜簨浠躲€佸簱瀛樻槑缁嗕笌閫夌伯鍠傚吇寮瑰眰锛屽悗缁彧鍦ㄥ悓涓€鏉′富椤甸摼璺笂鏀跺彛浼樺寲
+- 瀹犵墿鍦烘櫙瀹瑰櫒宸叉敼鎴愮湡姝ｇ殑 `scene` 鐖惰妭鐐癸紝瀹犵墿涓讳綋銆佹皵娉°€佸悕瀛楃墝鍜屽簳鏉块兘鎸傚叆 scene
+- 褰撳墠瀛︾敓绔椤靛凡缁忔敹鍙ｅ埌鍙傝€冮〉鐨勫悓绫婚鏋讹紝涓嶅啀鏄棫鐗堟暣椤电缉鏀惧３瀛愶紱鍚庣画鍙厑璁稿仛鍚岄摼璺唴鐨勭粏鑺傛敹鍙?- 褰撳墠涓婚〉瑙嗚鍙兘瑙嗕负鈥滅涓€鐗堝姛鑳藉３瀛?+ 鍒濇鏆栬壊鍦烘櫙鈥濓紝涓嶈兘瑙嗕负鈥滄帴杩戝弬鑰冪瀹屾垚鎬佲€?- 褰撳墠瑙嗚宸紓宸插崟鐙矇娣€涓恒€奙ain 棣栭〉 P0 缁撴瀯鏁存敼鎵ц鍗曪紙褰撳墠鐗堬級銆嬶紝鍚庣画鎸?P0 / P1 / P2 鎵ц锛屼笉鍐嶉潬闆舵暎寰皟鍗曚釜鍏冪礌鎺ㄨ繘
 
 ---
 
 ## 6. Current Acceptance Floor
 
-本轮最低完成标准：
+鏈樁娈垫渶浣庡畬鎴愭爣鍑嗭細
 
-1. `Homework` 主链路验证通过
-2. 家长端最小冒烟验证通过
-3. `Pet 成长/进化 v1` 边界冻结清楚
-4. 入口与主链路没有新增阻断问题
-5. 不再新增入口层需求，不再扩散到非必要模块
-
+1. 瀛︾敓绔亰澶?v1 鍔熻兘閫氳繃
+2. Homework 涓婚摼璺€氳繃
+3. 瀹堕暱绔渶灏忎富閾捐矾閫氳繃
+4. `Pet 鎴愰暱/杩涘寲 v1` 鍔熻兘鍙獙鏀?5. 瀛︾敓绔富鐣岄潰 P0 缁撴瀯鏁存敼鎵ц鍗曞凡寤虹珛
+6. 褰撳墠鐘舵€佹枃妗ｄ笌鎵ц鍙ｅ緞鏂囨。宸插悓姝?
 ---
 
 ## 7. Risk Rules
 
-以下改动默认高风险，必须在任务包中显式说明：
-
-- 会写回共享单例并可能跨会话污染状态的改动
-- 会改变登录态恢复逻辑的改动
-- 会改变家长绑定口径的改动
-- 会把前端演出升格为正式业务的改动
-- 会让 `MainController` 继续承担 onboarding 逻辑的改动
-- 会新增接口、改字段语义、改状态码语义的改动
-
+浠ヤ笅鏀瑰姩榛樿楂橀闄╋紝蹇呴』鍏堝仠骞惰褰曢樆濉烇細
+- 闇€瑕佷慨鏀瑰悗绔崗璁墠鑳藉畬鎴愬綋鍓嶆垚闀块〉鏍稿績灞曠ず
+- 闇€瑕佹妸鑱婂ぉ绾冲叆鎴愰暱鑱斿姩
+- 闇€瑕侀噸鏋?homework 涓讳氦娴佺▼
+- 闇€瑕佹柊澧炶法妯″潡 shared 绫诲瀷鎴栧叏灞€鐘舵€佺鐞?- 闇€瑕佹敼鍔ㄥ鐢熺涓诲鑸粨鏋?- 闇€瑕佹妸褰撳墠鍔熻兘鐗堥〉闈㈢洿鎺ュ綋鎴愭渶缁堣瑙夌増浜や粯
+- 闇€瑕佸湪 `energy / health / foods` 濂戠害鏈喕缁撴椂鎻愬墠瀹炵幇涓荤晫闈㈣祫婧愮郴缁?
 ---
 
 ## 8. Allowed Decision Pattern
 
-Codex / Agent 遇到不明确时，按下面顺序决策：
-
-1. 先看本文件
-2. 再看当前任务包
-3. 再看当前验收清单
-4. 仍不明确时：
-   - 不脑补需求
-   - 不扩范围
-   - 在交付中标注 `Needs Owner Decision`
+Codex / Agent 閬囧埌涓嶆槑纭椂锛屾寜涓嬮潰椤哄簭鍐崇瓥锛?1. 鍏堢湅鏈枃浠?2. 鍐嶇湅褰撳墠浠诲姟鍖呮垨 `PLAN.md`
+3. 鍐嶇湅褰撳墠楠屾敹娓呭崟
+4. 浠嶄笉鏄庣‘鏃讹細
+   - 涓嶈剳琛ラ渶姹?   - 涓嶆墿鑼冨洿
+   - 鍦ㄤ氦浠樹腑鏍囨敞 `Needs Owner Decision`
 
 ---
 
 ## 9. Forbidden Behaviors
 
-禁止：
-
-- 把历史讨论当当前标准
-- 顺手扩视觉
-- 顺手重构无关模块
-- 顺手补新交互分支
-- 用前端演出反推业务真相
-- 在未冻结契约上自行新增字段
-- 因为“顺手更合理”而跨模块改动
+绂佹锛?- 鎶婂巻鍙茶璁哄綋褰撳墠鏍囧噯
+- 椤烘墜鎵╄瑙夈€佹墿浜や簰銆佹墿妯″潡
+- 鐢ㄥ墠绔紨鍑哄弽鎺ㄦ寮忎笟鍔?- 鍦ㄦ湭鍐荤粨濂戠害涓婅嚜琛屾柊澧炲瓧娈?- 鍥犱负鈥滄洿鍚堢悊鈥濊€岃法妯″潡鏀瑰姩
+- 榛樿鎶婂綋鍓嶆垚闀块〉鍔熻兘鐗堝綋鏈€缁堣瑙夌増
 
 ---
 
 ## 10. Active Test Data Requirement
 
-所有联调 / 回归必须优先使用固定测试数据：
-
-- 学生端正常登录账号
-- 学生端已有宠物账号
-- 学生端无宠物账号
-- 家长端未绑定账号
-- 家长端已绑定账号
-- 绑定冲突验证账号
-
-若环境切换、数据重建、账号失效，先更新测试数据表，再执行回归。
+鎵€鏈夎仈璋?/ 鍥炲綊浼樺厛浣跨敤鍥哄畾娴嬭瘯鏁版嵁锛?- 瀛︾敓绔甯哥櫥褰曡处鍙?- 瀛︾敓绔凡鏈夊疇鐗╄处鍙?- 瀛︾敓绔棤瀹犵墿璐﹀彿
+- 瀹堕暱绔湭缁戝畾璐﹀彿
+- 瀹堕暱绔凡缁戝畾璐﹀彿
+- 缁戝畾鍐茬獊楠岃瘉璐﹀彿
 
 ---
 
 ## 11. Change Protocol
 
-以下情况必须更新本文件后，任务才可继续：
-
-- 家长绑定正式口径变化
-- 登录入口状态机变化
-- 首次宠物创建正式语义变化
-- Sprint 重点变化
-- 验收标准变化
-- Out of Scope 列表变化
-
+浠ヤ笅鎯呭喌蹇呴』鍏堟洿鏂版湰鏂囦欢锛屽啀缁х画鎵ц锛?- 鑱婂ぉ鏄惁鎭㈠鑷姩鍘嗗彶
+- 鑱婂ぉ鏄惁褰卞搷鎴愰暱
+- 鎴愰暱椤垫槸鍚﹁繘鍏ユ渶缁堣瑙変紭鍖栭樁娈?- Parent 鍙ｅ緞鍙樺寲
+- Sprint 閲嶇偣鍙樺寲
+- 楠屾敹鏍囧噯鍙樺寲
+- 涓荤晫闈㈡敼鐗堝绾﹀喕缁撴儏鍐靛彉鍖?
 ---
 
 ## 12. Current Owner Notes
 
-本轮 Codex 执行原则：
+鏈疆鎵ц鍘熷垯锛?- 浠ユ敹鍙ｅ拰楠屾敹涓虹洰鏍囷紝涓嶄互鈥滄洿婕備寒鈥濇垨鈥滄洿瀹屾暣鈥濅负鐩爣
+- 鍔熻兘鍙獙鏀朵笉绛変簬瑙嗚鏈€缁堝畾鐗?- 褰撳墠鎴愰暱椤佃鎰熼棶棰樺簲鍗曠嫭寮€ UI 浼樺寲浠诲姟澶勭悊锛屼笉娣峰叆褰撳墠鍔熻兘浠诲姟
 
-- 以收口为目标，不以“更漂亮 / 更完整 / 更通用”为目标
-- 以验收通过为目标，不以“理论最优架构”为目标
-- 以局部最小改动完成任务，不搞横向清扫式重构
+## 2026-04-20 Truth Update
+- The active execution path now includes responsive layout metrics, theme tokens, upgraded runtime UI primitives, and an app-shell/frame-based Main render root.
+- The child top bar has been upgraded into a responsive combined shell with pill tabs and compact-mode controls.
+- Compact child overview now suppresses the always-on right event panel instead of keeping the old fixed three-column feel.
+- Main child overview panels and action bar now derive sizes and placement from layout metrics instead of pure fixed coordinates.
+- Main child scene panel and compact event panel now derive title, card, and summary spacing from layout metrics.
+- PetGrowthView is aligned with the same warm responsive card system as the main shell.
+- The legacy child branch inside MainController's renderGlobalActions is gone; only the parent header action shell remains there.
+- The main overview scene bubble, name tag, and right-side summary cards now use the shared product component set instead of bare boxes.
+- The main overview scene backdrop layers and the pet hero proportions were tightened again to better match the reference composition.
+
+## 2026-04-21 Truth Update
+- Main now uses a layered responsive layout strategy instead of a single fixed board.
+- The rendering layers are separated into backdrop, shell, safe area, and interaction entry.
+- The shell aspect is chosen from viewport breakpoints and interpolates between them, so tablet and phone screens can share the same screen logic.
+- The internal reference entry button is positioned inside the safe area, which keeps the layout extensible for future content without hardcoding the screen size.
+- Future Main collaboration must keep using `viewport + breakpoint + safe area` and should not reintroduce a fixed 4:3 or fixed 16:9 board as the only layout model.

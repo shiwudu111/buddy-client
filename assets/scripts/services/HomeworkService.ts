@@ -5,11 +5,12 @@ import type {
   ApiResponse,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
+  HomeworkSubmitResultPayload,
   HomeworkSubmitPayload,
 } from "../types/api";
 
 class HomeworkService {
-  async submit(input: HomeworkSubmitPayload): Promise<ApiResponse<{ expReward: number }>> {
+  async submit(input: HomeworkSubmitPayload): Promise<ApiResponse<HomeworkSubmitResultPayload>> {
     return apiClient.submitHomework(input);
   }
 

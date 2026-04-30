@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>电子宠物乐园 - 宠物主页</title>
+  <style>
+    :root {
+      --bg-primary: #FBF2E8;
+      --bg-secondary: #F7E9D8;
+      --brand: #F79B34;
+      --gold: #F4B74F;
+      --mint: #72D39A;
+      --blue: #7E94F0;
+      --purple: #B79BEF;
+      --pink: #F4A0B5;
+      --music: #F0B347;
+      --text-primary: #6E4A33;
+      --text-secondary: #9C7B63;
+      --text-light: #FFFFFF;
+      --border-soft: #EBCFB4;
+      --border-inner: #F2DDC8;
+      --shadow: 0 14px 28px rgba(187, 129, 62, 0.10), 0 6px 12px rgba(187, 129, 62, 0.07);
+      --inner-shadow: inset 0 0 0 2px rgba(255,255,255,0.45);
+      --radius-xl: 32px;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-pill: 999px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      background:
+        radial-gradient(circle at top left, #fff7ef 0%, transparent 32%),
+        radial-gradient(circle at bottom right, #fce6ce 0%, transparent 26%),
+        linear-gradient(180deg, #FDF5EC 0%, #F8EBDD 100%);
+      color: var(--text-primary);
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .app-shell {
+      width: min(1280px, 100%);
+      aspect-ratio: 4 / 3;
+      min-height: 720px;
+      background: linear-gradient(180deg, var(--bg-primary), #F9EEDF);
+      border: 2px solid var(--border-soft);
+      border-radius: 38px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      padding: 18px;
+    }
+
+    .app-shell::before,
+    .app-shell::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+      border-radius: 50%;
+      opacity: 0.35;
+    }
+
+    .app-shell::before {
+      width: 240px;
+      height: 240px;
+      left: -70px;
+      top: -70px;
+      background: radial-gradient(circle, #FFE8C8 0%, transparent 70%);
+    }
+
+    .app-shell::after {
+      width: 300px;
+      height: 300px;
+      right: -90px;
+      bottom: -110px;
+      background: radial-gradient(circle, #FFD8C4 0%, transparent 72%);
+    }
+
+    .frame {
+      height: 100%;
+      border-radius: 30px;
+      border: 2px solid rgba(255,255,255,0.55);
+      box-shadow: var(--inner-shadow);
+      padding: 18px 22px 18px;
+      display: grid;
+      grid-template-rows: 92px 1fr 132px;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .card {
+      background: rgba(255, 249, 241, 0.94);
+      border: 2px solid var(--border-soft);
+      border-radius: var(--radius-xl);
+      box-shadow: 0 8px 18px rgba(181, 127, 64, 0.08), inset 0 0 0 2px rgba(255,255,255,0.45);
+    }
+
+    .top-bar {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr auto;
+      align-items: center;
+      gap: 18px;
+      padding: 14px 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 60px;
+      height: 60px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, #FFBC60 0%, var(--brand) 100%);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      box-shadow: 0 8px 16px rgba(247, 155, 52, 0.28);
+      border: 2px solid rgba(255,255,255,0.52);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.05;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .brand p {
+      margin: 6px 0 0;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .nav {
+      justify-self: center;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      background: rgba(255,255,255,0.45);
+      border: 1px solid var(--border-inner);
+      border-radius: var(--radius-pill);
+    }
+
+    .tab {
+      height: 48px;
+      padding: 0 20px;
+      border-radius: var(--radius-pill);
+      border: 0;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 16px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    .tab.active {
+      background: linear-gradient(180deg, #FFB54D 0%, var(--brand) 100%);
+      color: #fff;
+      box-shadow: 0 8px 14px rgba(247, 155, 52, 0.22);
+    }
+
+    .tab .icon,
+    .status-entry .icon,
+    .section-title .icon,
+    .stat-item .icon,
+    .badge,
+    .action-icon {
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .status-entry {
+      justify-self: end;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      height: 52px;
+      padding: 0 16px;
+      border-radius: var(--radius-pill);
+      border: 2px solid var(--border-soft);
+      background: linear-gradient(180deg, #FFF7F0 0%, #FFF0E2 100%);
+      font-weight: 700;
+      color: var(--text-primary);
+      box-shadow: 0 7px 14px rgba(174, 125, 70, 0.07);
+    }
+
+    .status-entry .icon {
+      width: 34px;
+      height: 34px;
+      background: rgba(126, 148, 240, 0.15);
+      color: var(--blue);
+      border-radius: 999px;
+      font-size: 16px;
+    }
+
+    .main-area {
+      display: grid;
+      grid-template-columns: 0.95fr 1.45fr 0.9fr;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .panel {
+      min-height: 0;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 2px;
+    }
+
+    .section-title h2,
+    .section-title h3 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .section-title .sub {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .section-title .icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      background: rgba(247, 155, 52, 0.14);
+      color: var(--brand);
+      font-size: 20px;
+      flex: 0 0 auto;
+    }
+
+    .level-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: var(--radius-pill);
+      background: rgba(247, 155, 52, 0.12);
+      color: var(--brand);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .stat-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 6px;
+    }
+
+    .stat-item {
+      background: linear-gradient(180deg, #FFF8F0 0%, #FFF3E9 100%);
+      border: 1.5px solid var(--border-inner);
+      border-radius: 22px;
+      padding: 14px;
+    }
+
+    .stat-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .stat-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .stat-item .icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 14px;
+      font-size: 18px;
+      color: #fff;
+      box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.45);
+    }
+
+    .icon-hunger { background: linear-gradient(180deg, #F8C567 0%, var(--gold) 100%); }
+    .icon-energy { background: linear-gradient(180deg, #8BE0AF 0%, var(--mint) 100%); }
+    .icon-mood { background: linear-gradient(180deg, #F8B4C5 0%, var(--pink) 100%); }
+
+    .stat-value {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-secondary);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 16px;
+      border-radius: var(--radius-pill);
+      background: #F2E4D7;
+      overflow: hidden;
+      position: relative;
+      box-shadow: inset 0 2px 4px rgba(133, 89, 47, 0.08);
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .progress-fill::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.25) 40%, rgba(255,255,255,0.05) 100%);
+    }
+
+    .progress-fill.hunger { width: 60%; background: linear-gradient(90deg, #F7C868 0%, var(--gold) 100%); }
+    .progress-fill.energy { width: 75%; background: linear-gradient(90deg, #91E4B4 0%, var(--mint) 100%); }
+    .progress-fill.mood { width: 80%; background: linear-gradient(90deg, #F6B1C2 0%, var(--pink) 100%); }
+    .progress-fill.xp { width: 68%; background: linear-gradient(90deg, #9AA9F7 0%, var(--blue) 100%); }
+
+    .center-panel {
+      position: relative;
+      overflow: hidden;
+      padding-bottom: 16px;
+    }
+
+    .xp-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .xp-meta {
+      flex: 1;
+    }
+
+    .xp-meta h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .xp-meta .value {
+      margin-top: 8px;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-secondary);
+    }
+
+    .mood-float {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #FFDCA8 0%, #FFC36F 100%);
+      box-shadow: 0 10px 18px rgba(244, 183, 79, 0.30);
+      color: #fff;
+      font-size: 24px;
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(255,255,255,0.55);
+      flex: 0 0 auto;
+    }
+
+    .scene {
+      flex: 1;
+      position: relative;
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(255,255,255,0.95) 0 10%, transparent 10.5%),
+        radial-gradient(circle at 26% 22%, rgba(255,255,255,0.88) 0 8%, transparent 8.5%),
+        radial-gradient(circle at 72% 17%, rgba(255,255,255,0.9) 0 10%, transparent 10.5%),
+        radial-gradient(circle at 81% 22%, rgba(255,255,255,0.82) 0 8%, transparent 8.5%),
+        radial-gradient(circle at 12% 68%, #F7DFA2 0 1.8%, transparent 1.9%),
+        radial-gradient(circle at 19% 74%, #9BDFA3 0 2.3%, transparent 2.4%),
+        radial-gradient(circle at 76% 70%, #F3A8C4 0 1.8%, transparent 1.9%),
+        radial-gradient(circle at 84% 75%, #A0DDB6 0 2.1%, transparent 2.2%),
+        linear-gradient(180deg, #FFF7F3 0%, #FFF4E3 54%, #F9E8CC 55%, #F4E1BD 100%);
+      border: 1.5px solid var(--border-inner);
+      overflow: hidden;
+      padding: 14px 14px 10px;
+      min-height: 0;
+    }
+
+    .scene::before {
+      content: "✦  ✧  ✦";
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(244, 183, 79, 0.8);
+      font-size: 18px;
+      letter-spacing: 10px;
+    }
+
+    .grass {
+      position: absolute;
+      bottom: 66px;
+      left: 0;
+      right: 0;
+      height: 56px;
+      background:
+        radial-gradient(circle at 9% 90%, #72D39A 0 13px, transparent 14px),
+        radial-gradient(circle at 18% 100%, #8CDDAD 0 12px, transparent 13px),
+        radial-gradient(circle at 72% 100%, #A7E6BE 0 15px, transparent 16px),
+        radial-gradient(circle at 86% 92%, #6FCA95 0 14px, transparent 15px);
+      opacity: 0.7;
+    }
+
+    .flower {
+      position: absolute;
+      bottom: 88px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow:
+        0 -8px 0 0 #fff,
+        0 8px 0 0 #fff,
+        -8px 0 0 0 #fff,
+        8px 0 0 0 #fff,
+        0 0 0 5px #F7B8C8 inset;
+      opacity: 0.95;
+    }
+
+    .flower.one { left: 18%; }
+    .flower.two { right: 14%; bottom: 92px; transform: scale(0.85); }
+
+    .pet-wrap {
+      position: absolute;
+      left: 50%;
+      bottom: 76px;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .pet {
+      position: relative;
+      width: 210px;
+      height: 220px;
+    }
+
+    .ear {
+      position: absolute;
+      top: 16px;
+      width: 56px;
+      height: 70px;
+      background: linear-gradient(180deg, #FFBE75 0%, #F79B34 100%);
+      border: 2px solid rgba(110, 74, 51, 0.10);
+      border-radius: 48px 48px 28px 28px;
+      z-index: 0;
+    }
+
+    .ear::after {
+      content: "";
+      position: absolute;
+      inset: 11px 13px 20px;
+      background: rgba(255, 233, 210, 0.95);
+      border-radius: 40px 40px 22px 22px;
+    }
+
+    .ear.left { left: 26px; transform: rotate(-12deg); }
+    .ear.right { right: 26px; transform: rotate(12deg); }
+
+    .body {
+      position: absolute;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: 182px;
+      height: 186px;
+      background: linear-gradient(180deg, #FFC36F 0%, #F79B34 78%);
+      border-radius: 50% 50% 42% 42%;
+      border: 2px solid rgba(110, 74, 51, 0.08);
+      box-shadow: inset 0 -10px 0 rgba(220, 132, 27, 0.10);
+      z-index: 1;
+    }
+
+    .face {
+      position: absolute;
+      left: 50%;
+      top: 34px;
+      transform: translateX(-50%);
+      width: 138px;
+      height: 122px;
+      background: #FFE8C7;
+      border-radius: 50% 50% 48% 48%;
+    }
+
+    .eye {
+      position: absolute;
+      top: 49px;
+      width: 14px;
+      height: 22px;
+      border-radius: 999px;
+      background: #6E4A33;
+    }
+
+    .eye.left { left: 42px; }
+    .eye.right { right: 42px; }
+
+    .blush {
+      position: absolute;
+      top: 72px;
+      width: 24px;
+      height: 14px;
+      border-radius: 999px;
+      background: rgba(244, 160, 181, 0.58);
+      filter: blur(1px);
+    }
+
+    .blush.left { left: 20px; }
+    .blush.right { right: 20px; }
+
+    .nose {
+      position: absolute;
+      top: 67px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 14px;
+      height: 11px;
+      background: #8A5A45;
+      border-radius: 50% 50% 60% 60%;
+    }
+
+    .mouth {
+      position: absolute;
+      left: 50%;
+      top: 82px;
+      transform: translateX(-50%);
+      width: 38px;
+      height: 18px;
+      border-bottom: 4px solid #8A5A45;
+      border-radius: 0 0 30px 30px;
+    }
+
+    .paw {
+      position: absolute;
+      bottom: 14px;
+      width: 44px;
+      height: 30px;
+      background: #FFE8C7;
+      border-radius: 24px;
+    }
+
+    .paw.left { left: 36px; }
+    .paw.right { right: 36px; }
+
+    .belly {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      width: 88px;
+      height: 78px;
+      background: rgba(255, 236, 211, 0.92);
+      border-radius: 48px 48px 38px 38px;
+    }
+
+    .sparkle {
+      position: absolute;
+      font-size: 18px;
+      color: rgba(247, 155, 52, 0.9);
+      text-shadow: 0 0 10px rgba(255,255,255,0.55);
+    }
+
+    .sparkle.s1 { left: 18px; top: 78px; }
+    .sparkle.s2 { right: 10px; top: 92px; }
+    .sparkle.s3 { right: 22px; top: 26px; }
+
+    .name-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 98px;
+      height: 42px;
+      padding: 0 22px;
+      border-radius: var(--radius-pill);
+      background: linear-gradient(180deg, #FFB34A 0%, var(--brand) 100%);
+      color: #fff;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      box-shadow: 0 10px 18px rgba(247, 155, 52, 0.25);
+      border: 2px solid rgba(255,255,255,0.48);
+    }
+
+    .scene-note {
+      position: absolute;
+      top: 18px;
+      right: 16px;
+      padding: 8px 14px;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--border-inner);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      backdrop-filter: blur(4px);
+    }
+
+    .log-bubble {
+      margin-top: 8px;
+      background: linear-gradient(180deg, #FFF8F0 0%, #FFF1E6 100%);
+      border: 1.5px solid var(--border-inner);
+      border-radius: 24px;
+      padding: 18px 16px;
+      color: var(--text-primary);
+      font-size: 16px;
+      line-height: 1.6;
+      position: relative;
+      min-height: 132px;
+    }
+
+    .log-bubble::after {
+      content: "";
+      position: absolute;
+      left: 20px;
+      bottom: -10px;
+      width: 18px;
+      height: 18px;
+      background: #FFF1E6;
+      border-right: 1.5px solid var(--border-inner);
+      border-bottom: 1.5px solid var(--border-inner);
+      transform: rotate(45deg);
+    }
+
+    .sleep-card {
+      margin-top: auto;
+      padding: 14px 16px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, #F3F6FF 0%, #ECEFFD 100%);
+      border: 1.5px solid rgba(126, 148, 240, 0.18);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--blue);
+    }
+
+    .sleep-card .moon {
+      width: 44px;
+      height: 44px;
+      border-radius: 16px;
+      background: rgba(126, 148, 240, 0.16);
+      display: grid;
+      place-items: center;
+      font-size: 21px;
+      flex: 0 0 auto;
+    }
+
+    .sleep-card strong {
+      display: block;
+      font-size: 16px;
+      color: #5D73D5;
+      margin-bottom: 4px;
+    }
+
+    .sleep-card span {
+      font-size: 13px;
+      color: #7D8EE1;
+    }
+
+    .bottom-bar {
+      padding: 14px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .action-btn {
+      border: 0;
+      border-radius: 24px;
+      background: #fff9f1;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 92px;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.52), 0 10px 18px rgba(160, 112, 50, 0.08);
+      cursor: default;
+      border: 1.5px solid var(--border-inner);
+    }
+
+    .action-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      color: #fff;
+      font-size: 24px;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.38);
+    }
+
+    .action-btn span {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+    }
+
+    .feed    .action-icon { background: linear-gradient(180deg, #F7C769 0%, var(--gold) 100%); }
+    .play    .action-icon { background: linear-gradient(180deg, #D1BBFF 0%, var(--purple) 100%); }
+    .bath    .action-icon { background: linear-gradient(180deg, #8FE2B2 0%, var(--mint) 100%); }
+    .sleep   .action-icon { background: linear-gradient(180deg, #A4B2FF 0%, var(--blue) 100%); }
+    .music   .action-icon { background: linear-gradient(180deg, #F7C769 0%, var(--music) 100%); }
+    .heart   .action-icon { background: linear-gradient(180deg, #F8B7C6 0%, var(--pink) 100%); }
+
+    .footer-tip {
+      position: absolute;
+      left: 26px;
+      bottom: 24px;
+      font-size: 12px;
+      color: rgba(156, 123, 99, 0.8);
+      z-index: 2;
+    }
+
+    @media (max-width: 1100px) {
+      body { padding: 12px; }
+      .app-shell { min-height: 660px; }
+      .frame { grid-template-rows: 84px 1fr 124px; }
+      .main-area { grid-template-columns: 0.95fr 1.25fr 0.85fr; }
+      .bottom-bar { gap: 10px; }
+      .action-btn span { font-size: 16px; }
+    }
+
+    @media (max-width: 920px) {
+      .app-shell {
+        aspect-ratio: auto;
+        min-height: auto;
+      }
+      .frame {
+        grid-template-rows: auto auto auto;
+      }
+      .top-bar {
+        grid-template-columns: 1fr;
+        justify-items: stretch;
+      }
+      .nav { justify-self: start; }
+      .status-entry { justify-self: start; }
+      .main-area {
+        grid-template-columns: 1fr;
+      }
+      .bottom-bar {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .scene { min-height: 380px; }
+      .footer-tip {
+        position: static;
+        margin-top: 12px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .bottom-bar {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .brand h1 { font-size: 24px; }
+      .section-title h2, .section-title h3, .xp-meta h2 { font-size: 22px; }
+      .pet { transform: scale(0.9); transform-origin: center bottom; }
+      .pet-wrap { bottom: 56px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell" aria-label="电子宠物乐园宠物主页">
+    <div class="frame">
+      <header class="top-bar card">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">🐹</div>
+          <div>
+            <h1>电子宠物乐园</h1>
+            <p>你的专属萌宠世界</p>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="顶部导航">
+          <button class="tab active">宠物主页</button>
+          <button class="tab"><span class="icon">🎒</span>背包</button>
+          <button class="tab"><span class="icon">🔔</span>在级</button>
+        </nav>
+
+        <div class="status-entry" aria-label="状态切换入口">
+          <span class="icon">🌙</span>
+          <span>睡关 ▾</span>
+        </div>
+      </header>
+
+      <section class="main-area" aria-label="主内容区">
+        <aside class="panel card">
+          <div class="section-title">
+            <div>
+              <h2>等级 Lv.7</h2>
+              <div class="sub">状态信息一眼可读</div>
+            </div>
+            <div class="icon">⭐</div>
+          </div>
+
+          <div class="level-chip">今日状态：愉快陪伴中</div>
+
+          <div class="stat-list">
+            <article class="stat-item">
+              <div class="stat-head">
+                <div class="stat-label">
+                  <span class="icon icon-hunger">🍎</span>
+                  <span>饥饿度</span>
+                </div>
+                <div class="stat-value">60 / 100</div>
+              </div>
+              <div class="progress-track" aria-label="饥饿度60%">
+                <div class="progress-fill hunger"></div>
+              </div>
+            </article>
+
+            <article class="stat-item">
+              <div class="stat-head">
+                <div class="stat-label">
+                  <span class="icon icon-energy">⚡</span>
+                  <span>体力值</span>
+                </div>
+                <div class="stat-value">75 / 100</div>
+              </div>
+              <div class="progress-track" aria-label="体力值75%">
+                <div class="progress-fill energy"></div>
+              </div>
+            </article>
+
+            <article class="stat-item">
+              <div class="stat-head">
+                <div class="stat-label">
+                  <span class="icon icon-mood">❤</span>
+                  <span>心情值</span>
+                </div>
+                <div class="stat-value">80 / 100</div>
+              </div>
+              <div class="progress-track" aria-label="心情值80%">
+                <div class="progress-fill mood"></div>
+              </div>
+            </article>
+          </div>
+        </aside>
+
+        <section class="panel card center-panel">
+          <div class="xp-card">
+            <div class="xp-meta">
+              <h2>经验值</h2>
+              <div class="progress-track" aria-label="经验值340/500">
+                <div class="progress-fill xp"></div>
+              </div>
+              <div class="value">340 / 500</div>
+            </div>
+            <div class="mood-float" aria-label="开心状态">😊</div>
+          </div>
+
+          <div class="scene" aria-label="宠物展示区">
+            <div class="scene-note">轻场景陪伴中</div>
+            <div class="grass"></div>
+            <div class="flower one"></div>
+            <div class="flower two"></div>
+
+            <div class="pet-wrap">
+              <div class="pet" aria-label="小橘，Q版熊系仓鼠系宠物，橙色，坐姿正面，开心表情">
+                <div class="sparkle s1">✦</div>
+                <div class="sparkle s2">✧</div>
+                <div class="sparkle s3">✦</div>
+                <div class="ear left"></div>
+                <div class="ear right"></div>
+                <div class="body">
+                  <div class="face">
+                    <div class="eye left"></div>
+                    <div class="eye right"></div>
+                    <div class="blush left"></div>
+                    <div class="blush right"></div>
+                    <div class="nose"></div>
+                    <div class="mouth"></div>
+                  </div>
+                  <div class="belly"></div>
+                  <div class="paw left"></div>
+                  <div class="paw right"></div>
+                </div>
+              </div>
+              <div class="name-tag">小橘</div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel card">
+          <div class="section-title">
+            <div>
+              <h3>互动日志</h3>
+              <div class="sub">最近一条行为记录</div>
+            </div>
+            <div class="icon">📄</div>
+          </div>
+
+          <div class="log-bubble">
+            小橘在夜晚睡的真甜…<br>
+            呼吸轻轻的，耳朵也慢慢垂下来啦。<br>
+            现在正处于安稳的陪伴时光。
+          </div>
+
+          <div class="sleep-card">
+            <div class="moon">🌙</div>
+            <div>
+              <strong>静态陪伴场景</strong>
+              <span>当前主界面以状态查看和温柔互动为主</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="bottom-bar card" aria-label="主操作按钮">
+        <button class="action-btn feed">
+          <div class="action-icon">🍽</div>
+          <span>喂食</span>
+        </button>
+        <button class="action-btn play">
+          <div class="action-icon">🎮</div>
+          <span>玩耍</span>
+        </button>
+        <button class="action-btn bath">
+          <div class="action-icon">🚿</div>
+          <span>洗澡</span>
+        </button>
+        <button class="action-btn sleep">
+          <div class="action-icon">🌙</div>
+          <span>睡觉</span>
+        </button>
+        <button class="action-btn music">
+          <div class="action-icon">♪</div>
+          <span>听歌</span>
+        </button>
+        <button class="action-btn heart">
+          <div class="action-icon">❤</div>
+          <span>宠心</span>
+        </button>
+      </section>
+    </div>
+
+    <div class="footer-tip">适配方向：横版平板 / iPad · 4:3 视觉比例</div>
+  </main>
+</body>
+</html>

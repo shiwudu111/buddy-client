@@ -107,7 +107,9 @@ export function resolveLoginLayout(
     logoArea: {
       width: preset.logoArea.width,
       height: preset.logoArea.height,
-      x: (preset.logoArea.x ?? 0) + metrics.width * (preset.logoArea.xFactor ?? 0),
+      x:
+        ("x" in preset.logoArea ? preset.logoArea.x : 0) +
+        metrics.width * ("xFactor" in preset.logoArea ? preset.logoArea.xFactor : 0),
       y: metrics.height * preset.logoArea.yFactor,
     },
     brandEntry: {
