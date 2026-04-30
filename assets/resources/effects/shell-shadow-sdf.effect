@@ -1,0 +1,109 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: sprite-vs:vert
+      frag: sprite-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        alphaThreshold: { value: 0.0 }
+        u_shadowSize: { value: [1024.0, 768.0] }
+        u_shellSize: { value: [960.0, 680.0] }
+        u_radiusPx: { value: 38.0 }
+        u_sigmaFar: { value: 24.0 }
+        u_sigmaNear: { value: 10.0 }
+        u_shadowOpacity: { value: 1.0 }
+}%
+
+CCProgram sprite-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+  #if SAMPLE_FROM_RT
+    #include <common/common-define>
+  #endif
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec4 color;
+  out vec2 uv0;
+
+  vec4 vert () {
+    vec4 pos = vec4(a_position, 1);
+
+    #if USE_LOCAL
+      pos = cc_matWorld * pos;
+    #endif
+
+    #if USE_PIXEL_ALIGNMENT
+      pos = cc_matView * pos;
+      pos.xyz = floor(pos.xyz);
+      pos = cc_matProj * pos;
+    #else
+      pos = cc_matViewProj * pos;
+    #endif
+
+    uv0 = a_texCoord;
+    #if SAMPLE_FROM_RT
+      CC_HANDLE_RT_SAMPLE_FLIP(uv0);
+    #endif
+    color = a_color;
+
+    return pos;
+  }
+}%
+
+CCProgram sprite-fs %{
+  precision highp float;
+  #include <builtin/internal/alpha-test>
+
+  in vec4 color;
+  in vec2 uv0;
+
+  uniform Params {
+    vec2 u_shadowSize;
+    vec2 u_shellSize;
+    float u_radiusPx;
+    float u_sigmaFar;
+    float u_sigmaNear;
+    float u_shadowOpacity;
+  };
+
+  float roundedRectSdf(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - (b - vec2(r));
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+  }
+
+  float gaussianShadow(float d, float sigma) {
+    float denom = max(2.0 * sigma * sigma, 0.0001);
+    return exp(-(d * d) / denom);
+  }
+
+  vec4 frag () {
+    vec2 posPx = (uv0 - vec2(0.5, 0.5)) * u_shadowSize;
+    vec2 halfShell = u_shellSize * 0.5;
+    float sdf = roundedRectSdf(posPx, halfShell, u_radiusPx);
+    float outsideMask = step(0.0, sdf);
+    float distancePx = max(sdf, 0.0);
+
+    float farShadow = gaussianShadow(distancePx, u_sigmaFar) * 0.18;
+    float nearShadow = gaussianShadow(distancePx, u_sigmaNear) * 0.12;
+    float alpha = outsideMask * (farShadow + nearShadow) * u_shadowOpacity * color.a;
+
+    vec4 o = vec4(color.rgb, alpha);
+    ALPHA_TEST(o);
+    return o;
+  }
+}%

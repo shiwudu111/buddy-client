@@ -1,0 +1,99 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: sprite-vs:vert
+      frag: sprite-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        alphaThreshold: { value: 0.0 }
+        shapeRect: { value: [0.0, 0.0, 120.0, 48.0] }
+        topColor: { value: [0.93, 0.76, 0.23, 1.0], editor: { type: color } }
+        bottomColor: { value: [0.96, 0.63, 0.28, 1.0], editor: { type: color } }
+        glossColor: { value: [1.0, 0.98, 0.91, 0.22], editor: { type: color } }
+        glossRange: { value: [0.66, 0.98, 0.15, 0.0] }
+}%
+
+CCProgram sprite-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+  in vec3 a_position;
+  in vec4 a_color;
+
+  out vec4 v_color;
+  out float v_gradientT;
+
+  uniform GradientProps {
+    vec4 shapeRect;
+    vec4 topColor;
+    vec4 bottomColor;
+    vec4 glossColor;
+    vec4 glossRange;
+  };
+
+  vec4 vert () {
+    vec4 pos = vec4(a_position, 1.0);
+    float bottomY = shapeRect.y;
+    float height = max(shapeRect.w, 1.0);
+    v_gradientT = clamp((a_position.y - bottomY) / height, 0.0, 1.0);
+
+    #if USE_LOCAL
+      pos = cc_matWorld * pos;
+    #endif
+
+    #if USE_PIXEL_ALIGNMENT
+      pos = cc_matView * pos;
+      pos.xyz = floor(pos.xyz);
+      pos = cc_matProj * pos;
+    #else
+      pos = cc_matViewProj * pos;
+    #endif
+
+    v_color = a_color;
+    return pos;
+  }
+}%
+
+CCProgram sprite-fs %{
+  precision highp float;
+  #include <builtin/internal/alpha-test>
+
+  in vec4 v_color;
+  in float v_gradientT;
+  uniform GradientProps {
+    vec4 shapeRect;
+    vec4 topColor;
+    vec4 bottomColor;
+    vec4 glossColor;
+    vec4 glossRange;
+  };
+
+  vec4 frag () {
+    float t = clamp(v_gradientT, 0.0, 1.0);
+    vec4 base = mix(bottomColor, topColor, t);
+
+    float glossStart = glossRange.x;
+    float glossEnd = glossRange.y;
+    float glossSoftness = max(glossRange.z, 0.0001);
+    float glossBand =
+      smoothstep(glossStart - glossSoftness, glossStart, t) *
+      (1.0 - smoothstep(glossEnd, glossEnd + glossSoftness, t));
+
+    vec3 rgb = mix(base.rgb, glossColor.rgb, glossBand * glossColor.a);
+    vec4 o = vec4(rgb * v_color.rgb, base.a * v_color.a);
+    ALPHA_TEST(o);
+    return o;
+  }
+}%

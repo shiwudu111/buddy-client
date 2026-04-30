@@ -1,0 +1,95 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: sprite-vs:vert
+      frag: sprite-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        cloudColor: { value: [1.0, 1.0, 1.0, 0.86], editor: { type: color } }
+        shapeSize: { value: [256.0, 160.0, 0.0, 0.0] }
+        circleA: { value: [90.0, 86.0, 64.0, 0.0] }
+        circleB: { value: [156.0, 68.0, 48.0, 0.0] }
+        cloudParams: { value: [14.0, 0.0, 0.0, 0.0] }
+}%
+
+CCProgram sprite-vs %{
+  precision highp float;
+
+  #include <builtin/uniforms/cc-global>
+
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec4 v_color;
+  out vec2 v_localPos;
+
+  vec4 vert () {
+    vec4 pos = vec4(a_position, 1.0);
+
+    // 把 Sprite 的本地顶点坐标传给片元。
+    // UI Sprite 的本地坐标通常以节点中心为原点。
+    v_localPos = a_position.xy;
+    v_color = a_color;
+
+    #if USE_LOCAL
+      pos = cc_matWorld * pos;
+    #endif
+
+    return cc_matViewProj * pos;
+  }
+}%
+
+CCProgram sprite-fs %{
+  precision highp float;
+
+  in vec4 v_color;
+  in vec2 v_localPos;
+
+  uniform CloudSoft {
+    vec4 cloudColor;
+    vec4 shapeSize;
+    vec4 circleA;
+    vec4 circleB;
+    vec4 cloudParams;
+  };
+
+  float sdCircle(vec2 p, vec2 center, float radius) {
+    return length(p - center) - radius;
+  }
+
+  vec4 frag () {
+    // v_localPos 是中心原点：
+    // 左下约为 (-width / 2, -height / 2)
+    // 右上约为 ( width / 2,  height / 2)
+    //
+    // MainController 传入的 circleA / circleB 是左下角原点，
+    // 所以这里把本地坐标转换成左下角原点。
+    vec2 p = v_localPos + shapeSize.xy * 0.5;
+
+    float d1 = sdCircle(p, circleA.xy, circleA.z);
+    float d2 = sdCircle(p, circleB.xy, circleB.z);
+
+    // 两个圆的并集。
+    float d = min(d1, d2);
+
+    // 硬边调试：圆内白色，圆外透明。
+    float alpha = 1.0 - step(0.0, d);
+
+    return vec4(1.0, 1.0, 1.0, alpha);
+  }
+}%
