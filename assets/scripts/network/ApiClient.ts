@@ -7,7 +7,10 @@ import type {
   ChatHistoryPayload,
   ChatReplyPayload,
   ChatSendPayload,
+  DiaryPayload,
+  HomeworkSubmitPayload,
   HomeworkSubmitResultPayload,
+  HomeworkUploadResult,
   ChildPetPayload,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
@@ -15,9 +18,13 @@ import type {
   PetDashboardPayload,
   PetFeedPayload,
   PetEvolutionPayload,
+  PetActionResultPayload,
+  PetEventsPayload,
   PetFeedResultPayload,
   PetResourcesPayload,
   PetStatus,
+  UseInventoryItemPayload,
+  UseInventoryItemResultPayload,
   WeeklyReportPayload,
 } from "../types/api";
 
@@ -64,8 +71,10 @@ class ApiClient {
     options: RequestOptions = {}
   ): Promise<ApiResponse<T>> {
     try {
+      const isFormDataBody =
+        typeof FormData !== "undefined" && options.body instanceof FormData;
       const headers: Record<string, string> = {
-        "Content-Type": "application/json",
+        ...(isFormDataBody ? {} : { "Content-Type": "application/json" }),
         ...(options.headers as Record<string, string> | undefined),
       };
 
@@ -82,7 +91,11 @@ class ApiClient {
       let payload: ApiResponse<T> = { success: response.ok };
       if (raw) {
         try {
-          payload = JSON.parse(raw) as ApiResponse<T>;
+          const parsed = JSON.parse(raw) as ApiResponse<T> | T;
+          payload =
+            parsed && typeof parsed === "object" && "success" in parsed
+              ? (parsed as ApiResponse<T>)
+              : { success: response.ok, data: parsed as T };
         } catch {
           payload = {
             success: response.ok,
@@ -98,6 +111,7 @@ class ApiClient {
         return {
           success: false,
           message: payload.message ?? `HTTP ${response.status}`,
+          code: payload.code,
           data: payload.data,
           statusCode: response.status,
         };
@@ -182,6 +196,24 @@ class ApiClient {
     return this.request<PetDashboardPayload>(`/pets/${petId}/dashboard`);
   }
 
+  async getPetEvents(petId: string, limit = 20): Promise<ApiResponse<PetEventsPayload>> {
+    const query = new URLSearchParams({
+      limit: String(limit),
+    });
+    return this.request<PetEventsPayload>(
+      `/pets/${encodeURIComponent(petId)}/events?${query.toString()}`
+    );
+  }
+
+  async getPetLogs(petId: string, options: { days: number }): Promise<ApiResponse<DiaryPayload>> {
+    const query = new URLSearchParams({
+      days: String(options.days),
+    });
+    return this.request<DiaryPayload>(
+      `/pets/${encodeURIComponent(petId)}/logs?${query.toString()}`
+    );
+  }
+
   async sendChat(input: ChatSendPayload): Promise<ApiResponse<ChatReplyPayload>> {
     return this.request<ChatReplyPayload>("/chat", {
       method: "POST",
@@ -229,11 +261,49 @@ class ApiClient {
     });
   }
 
-  async submitHomework(input: {
-    subject: string;
-    content: string;
-    imageUrl?: string;
-  }): Promise<ApiResponse<HomeworkSubmitResultPayload>> {
+  async useInventoryItem(
+    petId: string,
+    payload: UseInventoryItemPayload
+  ): Promise<ApiResponse<UseInventoryItemResultPayload>> {
+    return this.request<UseInventoryItemResultPayload>(
+      `/pets/${encodeURIComponent(petId)}/inventory/use`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  async sleepPet(petId: string): Promise<ApiResponse<PetActionResultPayload>> {
+    return this.request<PetActionResultPayload>(`/pets/${petId}/sleep`, {
+      method: "POST",
+    });
+  }
+
+  async playPet(petId: string): Promise<ApiResponse<PetActionResultPayload>> {
+    return this.request<PetActionResultPayload>(`/pets/${petId}/play`, {
+      method: "POST",
+    });
+  }
+
+  async carePet(petId: string): Promise<ApiResponse<PetActionResultPayload>> {
+    return this.request<PetActionResultPayload>(`/pets/${petId}/care`, {
+      method: "POST",
+    });
+  }
+
+  async uploadHomeworkImage(file: File | Blob): Promise<ApiResponse<HomeworkUploadResult>> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return this.request<HomeworkUploadResult>("/homeworks/uploads", {
+      method: "POST",
+      body: formData,
+    });
+  }
+
+  async submitHomework(
+    input: HomeworkSubmitPayload
+  ): Promise<ApiResponse<HomeworkSubmitResultPayload>> {
     return this.request<HomeworkSubmitResultPayload>("/homeworks/submit", {
       method: "POST",
       body: JSON.stringify(input),
@@ -255,6 +325,15 @@ class ApiClient {
 
   async getHomeworkStatus(): Promise<ApiResponse<HomeworkTodayStatus>> {
     return this.request<HomeworkTodayStatus>("/homeworks/status");
+  }
+
+  async resetTodayHomeworkForDev(petId?: string | null): Promise<ApiResponse<{ message?: string }>> {
+    return this.request<{ message?: string }>("/homeworks/dev/reset-today", {
+      method: "POST",
+      body: JSON.stringify({
+        ...(petId ? { petId } : {}),
+      }),
+    });
   }
 
   async bindChild(

@@ -2,6 +2,7 @@ import { STORAGE_KEYS, storage } from "../core/storage";
 import type {
   AuthUser,
   ChatConversationItem,
+  DiaryDay,
   HomeworkHistoryPayload,
   HomeworkTodayStatus,
   MainEventEntry,
@@ -18,6 +19,7 @@ class AppState {
   private recentPetGrowthFeedback: PetGrowthFeedback | null = null;
   private petFoodInventory: PetFoodInventoryItem[] = [];
   private mainEventLog: MainEventEntry[] = [];
+  private diaryDays: DiaryDay[] = [];
   private chatHistory: ChatConversationItem[] = [];
   private suppressNextChatHistoryBootstrap = false;
 
@@ -85,6 +87,7 @@ class AppState {
     this.recentPetGrowthFeedback = null;
     this.petFoodInventory = [];
     this.mainEventLog = [];
+    this.diaryDays = [];
     storage.remove(STORAGE_KEYS.petId);
     if (this.currentUser?.petId) {
       this.currentUser = {
@@ -157,6 +160,24 @@ class AppState {
     this.mainEventLog = [];
   }
 
+  getDiaryDays(): DiaryDay[] {
+    return this.diaryDays.map((day) => ({
+      ...day,
+      entries: [...day.entries],
+    }));
+  }
+
+  setDiaryDays(items: DiaryDay[]): void {
+    this.diaryDays = items.map((day) => ({
+      ...day,
+      entries: [...day.entries],
+    }));
+  }
+
+  clearDiaryDays(): void {
+    this.diaryDays = [];
+  }
+
   getChatHistory(): ChatConversationItem[] {
     return [...this.chatHistory];
   }
@@ -189,6 +210,7 @@ class AppState {
     this.recentPetGrowthFeedback = null;
     this.petFoodInventory = [];
     this.mainEventLog = [];
+    this.diaryDays = [];
     this.chatHistory = [];
     this.suppressNextChatHistoryBootstrap = true;
     storage.remove(STORAGE_KEYS.user);

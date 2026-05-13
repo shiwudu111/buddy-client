@@ -6,6 +6,7 @@
   Graphics,
   HorizontalTextAlignment,
   ImageAsset,
+  Label,
   Mask,
   Material,
   Node,
@@ -14,6 +15,7 @@
   Size,
   Sprite,
   SpriteFrame,
+  ScrollView,
   Texture2D,
   UITransform,
   Vec2,
@@ -24,8 +26,18 @@
 import { appState } from "../../app/AppState";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
+import { homeworkService } from "../../services/HomeworkService";
+import { petService } from "../../services/PetService";
+import type { DailyBasicFoodPayload, HomeworkSubject, OfflineDecaySummary, PetFoodInventoryItem } from "../../types/api";
+import { formatHomeworkHistory } from "../../utils/format";
 import { ScreenController } from "../common/base/ScreenController";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
+import { HomeworkCenterCoordinator } from "../homework/HomeworkCenterCoordinator";
+import {
+  renderHomeworkCenter,
+  type HomeworkCenterLayoutTuning,
+  type HomeworkCenterViewRefs,
+} from "../homework/HomeworkCenterView";
 
 const { ccclass } = _decorator;
 
@@ -57,6 +69,14 @@ const MAIN_BG_GLOW_BOTTOM_RIGHT_PATH = "ui/main/background/main_bg_glow_br/sprit
 // 使用现成云朵贴图替换运行时拼形云，并按 stage 尺寸动态缩放。
 const MAIN_STAGE_CLOUD_PATH = "ui/main/background/云朵/spriteFrame";
 
+// 主舞台背景资源路径。
+// 这张图只铺在中部 Stage 区域，不覆盖顶栏和底栏。
+const MAIN_STAGE_SCENE_BACKGROUND_PATH = "ui/main/background/主界面背景/spriteFrame";
+
+// 主舞台角色静态展示资源。
+// 当前只作为 Milestone 5 收尾的学生端静态视觉层，不接业务宠物状态。
+const MAIN_CHARACTER_RESTING_FOX_PATH = "ui/main/character/九尾狐休息中/spriteFrame";
+
 // 径向 LUT 采样效果资源路径。
 // 它让柔光贴图更像“散开的光”，而不是普通平面贴图。
 const RADIAL_LUT_EFFECT_PATH = "effects/radial-lut";
@@ -76,10 +96,10 @@ const DEBUG_PANEL_WIDTH = 260;
 
 // 调试面板的高度。
 // 这个高度控制弹窗整体的纵向占位。
-const DEBUG_PANEL_HEIGHT = 484;
+const DEBUG_PANEL_HEIGHT = 300;
 
 // 调试面板中每个切换按钮的宽度。
-// 对应“渐变底色 / 左上柔光 / 右下柔光”等开关。
+// 对应“渐变底色 / Shader 测试块”等保留开关。
 const DEBUG_TOGGLE_WIDTH = 196;
 
 // 调试面板中每个切换按钮的高度。
@@ -89,6 +109,10 @@ const DEBUG_TOGGLE_HEIGHT = 34;
 // 调试面板中按钮之间的垂直间距。
 // 控制开关之间的呼吸感。
 const DEBUG_TOGGLE_GAP = 8;
+
+// 核心互动的前端最小点击间隔。
+// 后端仍应保留限频或业务冷却；这里主要避免单个客户端误触连发。
+const CORE_PET_ACTION_COOLDOWN_MS = 300;
 
 // 美术调参页的窗口名。
 // 固定名字可以避免每次点击都弹出一堆重复窗口。
@@ -272,10 +296,107 @@ type ArtTuningState = {
   rightCardOffsetYRatio: number;
   rightCardWidthScale: number;
   rightCardHeightScale: number;
+  sideCardStageInsetRatio: number;
+  sideCardBaseWidthRatio: number;
+  sideCardBaseHeightRatio: number;
+  sideCardVerticalGuardRatio: number;
+  leftStatusTitleYRatio: number;
+  leftStatusTitleFontScale: number;
+  leftStatusPawXRatio: number;
+  leftStatusPawYOffset: number;
+  leftStatusPawScale: number;
+  leftStatusLevelYRatio: number;
+  leftStatusLevelPillXRatio: number;
+  leftStatusLevelPillWidthRatio: number;
+  leftStatusLevelPillHeightRatio: number;
+  leftStatusLevelBadgeXRatio: number;
+  leftStatusLevelBadgeWidthRatio: number;
+  leftStatusLevelBadgeHeightRatio: number;
+  leftStatusLevelTextXRatio: number;
+  leftStatusLevelTextFontScale: number;
+  leftStatusDividerYRatio: number;
+  leftStatusDividerWidthRatio: number;
+  leftStatusRowsTopGapRatio: number;
+  leftStatusRowsGapRatio: number;
+  leftStatusRowIconXRatio: number;
+  leftStatusRowIconSizeRatio: number;
+  leftStatusRowLabelXRatio: number;
+  leftStatusRowValueXRatio: number;
+  leftStatusRowBarXRatio: number;
+  leftStatusRowBarWidthRatio: number;
+  leftStatusRowBarHeightScale: number;
+  leftStatusRowLabelFontScale: number;
+  leftStatusRowValueFontScale: number;
+  leftStatusFlowerXRatio: number;
+  leftStatusFlowerYOffset: number;
+  leftStatusFlowerScale: number;
+  rightLogTitleYRatio: number;
+  rightLogTitleFontScale: number;
+  rightLogPawXRatio: number;
+  rightLogPawYOffset: number;
+  rightLogPawScale: number;
+  rightLogTextXRatio: number;
+  rightLogTextTopRatio: number;
+  rightLogLineGapRatio: number;
+  rightLogTextWidthRatio: number;
+  rightLogTextHeightScale: number;
+  rightLogTextFontScale: number;
+  rightLogDividerYRatio: number;
+  rightLogDividerWidthRatio: number;
+  rightLogTipXRatio: number;
+  rightLogTipYRatio: number;
+  rightLogTipWidthRatio: number;
+  rightLogTipHeightRatio: number;
+  rightLogTipRadiusRatio: number;
+  rightLogTipGlossYRatio: number;
+  rightLogTipGlossWidthRatio: number;
+  rightLogTipGlossHeightRatio: number;
+  rightLogTipIconXRatio: number;
+  rightLogTipIconYRatio: number;
+  rightLogTipIconSizeRatio: number;
+  rightLogTipTitleXRatio: number;
+  rightLogTipTitleYRatio: number;
+  rightLogTipTitleWidthRatio: number;
+  rightLogTipTitleFontScale: number;
+  rightLogTipBodyXRatio: number;
+  rightLogTipBodyYRatio: number;
+  rightLogTipBodyWidthRatio: number;
+  rightLogTipBodyHeightRatio: number;
+  rightLogTipBodyFontScale: number;
+  rightLogFlowerXRatio: number;
+  rightLogFlowerYOffset: number;
+  rightLogFlowerScale: number;
   bottomDockOffsetXRatio: number;
   bottomDockOffsetYRatio: number;
   bottomDockWidthScale: number;
   bottomDockHeightScale: number;
+  homeworkOverlayOffsetXRatio: number;
+  homeworkOverlayOffsetYRatio: number;
+  homeworkOverlayWidthScale: number;
+  homeworkOverlayHeightScale: number;
+  homeworkOverlayScale: number;
+  homeworkWorkCardX: number;
+  homeworkWorkCardY: number;
+  homeworkWorkCardWidth: number;
+  homeworkWorkCardHeight: number;
+  homeworkRewardCardX: number;
+  homeworkRewardCardY: number;
+  homeworkRewardCardWidth: number;
+  homeworkRewardCardHeight: number;
+  homeworkPanelAlpha: number;
+  homeworkPanelInnerAlpha: number;
+  homeworkPanelBorderWidth: number;
+  homeworkPanelRadius: number;
+  homeworkPanelGradientAlpha: number;
+  homeworkPanelGradientRange: number;
+  homeworkPanelGradientColorR: number;
+  homeworkPanelGradientColorG: number;
+  homeworkPanelGradientColorB: number;
+  stageBackgroundScale: number;
+  stageBackgroundWidthScale: number;
+  stageBackgroundHeightScale: number;
+  stageBackgroundOffsetXRatio: number;
+  stageBackgroundOffsetYRatio: number;
   cloudYRatio: number;
   cloudBaseWidthRatio: number;
   leftCloudXRatio: number;
@@ -290,6 +411,12 @@ type ArtTuningState = {
   safeZoneWidthRatio: number;
   safeZoneHeightRatio: number;
   safeZoneYRatio: number;
+  foxCharacterScale: number;
+  foxCharacterOffsetXRatio: number;
+  foxCharacterOffsetYRatio: number;
+  foxShadowAlpha: number;
+  foxShadowWidthScale: number;
+  foxShadowHeightScale: number;
   grassYRatio: number;
 };
 
@@ -313,6 +440,40 @@ type ArtDebugBridge = {
 };
 
 type TopBarNavTab = "petHome" | "bag" | "journal";
+
+type BottomDockAction = "feed" | "play" | "bath" | "sleep" | "music" | "care";
+
+type CorePetAction = "sleep" | "play" | "care";
+
+type MainInteractionEntry = {
+  title: string;
+  detail: string;
+  createdAt: string;
+};
+
+type MainPetDisplayStatus =
+  | "待同步"
+  | "饥饿"
+  | "疲惫"
+  | "低落"
+  | "休息中"
+  | "玩耍中"
+  | "状态良好";
+
+type LocalPetMode = "resting" | null;
+
+type MainViewModel = {
+  petName: string;
+  levelBadgeText: string;
+  levelText: string;
+  satiety: number | null;
+  stamina: number | null;
+  mood: number | null;
+  foods: PetFoodInventoryItem[];
+  displayStatus: MainPetDisplayStatus;
+  isDashboardReady: boolean;
+  statusValueText: string;
+};
 
 type ArtDebugHostWindow = Window &
   typeof globalThis & {
@@ -424,10 +585,107 @@ const ART_TUNING_DEFAULTS: ArtTuningState = {
   rightCardOffsetYRatio: 0,
   rightCardWidthScale: 1,
   rightCardHeightScale: 1,
+  sideCardStageInsetRatio: 0.025,
+  sideCardBaseWidthRatio: 0.255,
+  sideCardBaseHeightRatio: 0.9,
+  sideCardVerticalGuardRatio: 1.2,
+  leftStatusTitleYRatio: 0.105,
+  leftStatusTitleFontScale: 0.116,
+  leftStatusPawXRatio: 0.33,
+  leftStatusPawYOffset: 4,
+  leftStatusPawScale: 1,
+  leftStatusLevelYRatio: 0.255,
+  leftStatusLevelPillXRatio: 0.17,
+  leftStatusLevelPillWidthRatio: 0.68,
+  leftStatusLevelPillHeightRatio: 0.145,
+  leftStatusLevelBadgeXRatio: 0.235,
+  leftStatusLevelBadgeWidthRatio: 0.285,
+  leftStatusLevelBadgeHeightRatio: 0.19,
+  leftStatusLevelTextXRatio: 0.19,
+  leftStatusLevelTextFontScale: 0.087,
+  leftStatusDividerYRatio: 0.45,
+  leftStatusDividerWidthRatio: 0.82,
+  leftStatusRowsTopGapRatio: 0.14,
+  leftStatusRowsGapRatio: 0.18,
+  leftStatusRowIconXRatio: 0.345,
+  leftStatusRowIconSizeRatio: 0.19,
+  leftStatusRowLabelXRatio: 0.095,
+  leftStatusRowValueXRatio: 0.31,
+  leftStatusRowBarXRatio: 0.155,
+  leftStatusRowBarWidthRatio: 0.61,
+  leftStatusRowBarHeightScale: 0.32,
+  leftStatusRowLabelFontScale: 0.068,
+  leftStatusRowValueFontScale: 0.059,
+  leftStatusFlowerXRatio: 0.37,
+  leftStatusFlowerYOffset: 28,
+  leftStatusFlowerScale: 1,
+  rightLogTitleYRatio: 0.105,
+  rightLogTitleFontScale: 0.116,
+  rightLogPawXRatio: 0.33,
+  rightLogPawYOffset: 4,
+  rightLogPawScale: 1,
+  rightLogTextXRatio: -0.01,
+  rightLogTextTopRatio: 0.255,
+  rightLogLineGapRatio: 0.112,
+  rightLogTextWidthRatio: 0.86,
+  rightLogTextHeightScale: 0.78,
+  rightLogTextFontScale: 0.074,
+  rightLogDividerYRatio: 0.61,
+  rightLogDividerWidthRatio: 0.82,
+  rightLogTipXRatio: 0,
+  rightLogTipYRatio: -0.24,
+  rightLogTipWidthRatio: 0.86,
+  rightLogTipHeightRatio: 0.245,
+  rightLogTipRadiusRatio: 0.22,
+  rightLogTipGlossYRatio: 0.25,
+  rightLogTipGlossWidthRatio: 0.72,
+  rightLogTipGlossHeightRatio: 0.22,
+  rightLogTipIconXRatio: -0.31,
+  rightLogTipIconYRatio: 0,
+  rightLogTipIconSizeRatio: 0.74,
+  rightLogTipTitleXRatio: 0.14,
+  rightLogTipTitleYRatio: 0.19,
+  rightLogTipTitleWidthRatio: 0.56,
+  rightLogTipTitleFontScale: 0.069,
+  rightLogTipBodyXRatio: 0.14,
+  rightLogTipBodyYRatio: -0.19,
+  rightLogTipBodyWidthRatio: 0.58,
+  rightLogTipBodyHeightRatio: 0.48,
+  rightLogTipBodyFontScale: 0.052,
+  rightLogFlowerXRatio: 0.37,
+  rightLogFlowerYOffset: 28,
+  rightLogFlowerScale: 1,
   bottomDockOffsetXRatio: 0,
   bottomDockOffsetYRatio: 0,
   bottomDockWidthScale: 1,
   bottomDockHeightScale: 1,
+  homeworkOverlayOffsetXRatio: 0,
+  homeworkOverlayOffsetYRatio: 0,
+  homeworkOverlayWidthScale: 1,
+  homeworkOverlayHeightScale: 1,
+  homeworkOverlayScale: 1,
+  homeworkWorkCardX: -290,
+  homeworkWorkCardY: 0,
+  homeworkWorkCardWidth: 600,
+  homeworkWorkCardHeight: 500,
+  homeworkRewardCardX: 292,
+  homeworkRewardCardY: 0,
+  homeworkRewardCardWidth: 500,
+  homeworkRewardCardHeight: 500,
+  homeworkPanelAlpha: 236,
+  homeworkPanelInnerAlpha: 244,
+  homeworkPanelBorderWidth: 2,
+  homeworkPanelRadius: 24,
+  homeworkPanelGradientAlpha: 82,
+  homeworkPanelGradientRange: 0.72,
+  homeworkPanelGradientColorR: 255,
+  homeworkPanelGradientColorG: 252,
+  homeworkPanelGradientColorB: 247,
+  stageBackgroundScale: 1,
+  stageBackgroundWidthScale: 1,
+  stageBackgroundHeightScale: 1,
+  stageBackgroundOffsetXRatio: 0,
+  stageBackgroundOffsetYRatio: 0,
   cloudYRatio: 0.33,
   cloudBaseWidthRatio: 0.28,
   leftCloudXRatio: -0.25,
@@ -442,6 +700,12 @@ const ART_TUNING_DEFAULTS: ArtTuningState = {
   safeZoneWidthRatio: 0.4,
   safeZoneHeightRatio: 0.585,
   safeZoneYRatio: 0.018,
+  foxCharacterScale: 1,
+  foxCharacterOffsetXRatio: 0,
+  foxCharacterOffsetYRatio: 0,
+  foxShadowAlpha: 28,
+  foxShadowWidthScale: 1,
+  foxShadowHeightScale: 1,
   grassYRatio: -0.305,
 };
 
@@ -535,6 +799,249 @@ const ART_TUNING_FIELDS: ArtTuningField[] = [
     min: 0.6,
     max: 1.4,
     step: 0.01,
+  },
+  {
+    key: "homeworkOverlayOffsetXRatio",
+    section: "作业弹层",
+    label: "整体水平位置",
+    description: "控制作业弹层整体相对主视口宽度的水平偏移。",
+    min: -0.25,
+    max: 0.25,
+    step: 0.005,
+  },
+  {
+    key: "homeworkOverlayOffsetYRatio",
+    section: "作业弹层",
+    label: "整体垂直位置",
+    description: "控制作业弹层整体相对主视口高度的垂直偏移。",
+    min: -0.25,
+    max: 0.25,
+    step: 0.005,
+  },
+  {
+    key: "homeworkOverlayWidthScale",
+    section: "作业弹层",
+    label: "覆盖宽度",
+    description: "控制作业弹层宿主区域的覆盖宽度。",
+    min: 0.75,
+    max: 1.35,
+    step: 0.01,
+  },
+  {
+    key: "homeworkOverlayHeightScale",
+    section: "作业弹层",
+    label: "覆盖高度",
+    description: "控制作业弹层宿主区域的覆盖高度，用来压住场景栏和底部栏。",
+    min: 0.75,
+    max: 1.45,
+    step: 0.01,
+  },
+  {
+    key: "homeworkOverlayScale",
+    section: "作业弹层",
+    label: "整体缩放",
+    description: "在自适应缩放基础上继续放大或缩小左右两个分屏卡片。",
+    min: 0.75,
+    max: 1.25,
+    step: 0.01,
+  },
+  {
+    key: "homeworkWorkCardX",
+    section: "作业弹层",
+    label: "左卡 X",
+    description: "控制提交学习任务卡片的水平位置。",
+    min: -420,
+    max: -120,
+    step: 1,
+  },
+  {
+    key: "homeworkWorkCardY",
+    section: "作业弹层",
+    label: "左卡 Y",
+    description: "控制提交学习任务卡片的垂直位置。",
+    min: -100,
+    max: 100,
+    step: 1,
+  },
+  {
+    key: "homeworkWorkCardWidth",
+    section: "作业弹层",
+    label: "左卡宽度",
+    description: "控制提交学习任务卡片宽度。",
+    min: 480,
+    max: 720,
+    step: 1,
+  },
+  {
+    key: "homeworkWorkCardHeight",
+    section: "作业弹层",
+    label: "左卡高度",
+    description: "控制提交学习任务卡片高度。",
+    min: 400,
+    max: 620,
+    step: 1,
+  },
+  {
+    key: "homeworkRewardCardX",
+    section: "作业弹层",
+    label: "右卡 X",
+    description: "控制奖励反馈卡片的水平位置。",
+    min: 120,
+    max: 430,
+    step: 1,
+  },
+  {
+    key: "homeworkRewardCardY",
+    section: "作业弹层",
+    label: "右卡 Y",
+    description: "控制奖励反馈卡片的垂直位置。",
+    min: -100,
+    max: 100,
+    step: 1,
+  },
+  {
+    key: "homeworkRewardCardWidth",
+    section: "作业弹层",
+    label: "右卡宽度",
+    description: "控制奖励反馈卡片宽度。",
+    min: 380,
+    max: 640,
+    step: 1,
+  },
+  {
+    key: "homeworkRewardCardHeight",
+    section: "作业弹层",
+    label: "右卡高度",
+    description: "控制奖励反馈卡片高度。",
+    min: 400,
+    max: 620,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelAlpha",
+    section: "作业弹层",
+    label: "卡片描边透明度",
+    description: "控制左右作业卡片描边层透明度，不影响卡片主体底色。",
+    min: 0,
+    max: 255,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelBorderWidth",
+    section: "作业弹层",
+    label: "卡片描边粗细",
+    description: "控制左右作业卡片描边线宽，描边层独立于卡片主体。",
+    min: 0,
+    max: 12,
+    step: 0.5,
+  },
+  {
+    key: "homeworkPanelRadius",
+    section: "作业弹层",
+    label: "卡片圆角",
+    description: "控制左右作业卡片主体和描边层的圆角大小。",
+    min: 0,
+    max: 48,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelInnerAlpha",
+    section: "作业弹层",
+    label: "卡片主体透明度",
+    description: "控制左右作业卡片主体底色透明度，数值越低越透。",
+    min: 0,
+    max: 255,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelGradientAlpha",
+    section: "作业弹层",
+    label: "渐变遮挡透明度",
+    description: "控制左右作业卡片外侧渐变遮挡层的最大透明度。",
+    min: 0,
+    max: 180,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelGradientRange",
+    section: "作业弹层",
+    label: "渐变遮挡范围",
+    description: "0 为全宽线性渐变；1 为外侧三分之一满遮挡后渐变；2 为外侧三分之二满遮挡后渐变。",
+    min: 0,
+    max: 2,
+    step: 0.01,
+  },
+  {
+    key: "homeworkPanelGradientColorR",
+    section: "作业弹层",
+    label: "渐变颜色 R",
+    description: "控制渐变遮挡层颜色的红色通道。",
+    min: 0,
+    max: 255,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelGradientColorG",
+    section: "作业弹层",
+    label: "渐变颜色 G",
+    description: "控制渐变遮挡层颜色的绿色通道。",
+    min: 0,
+    max: 255,
+    step: 1,
+  },
+  {
+    key: "homeworkPanelGradientColorB",
+    section: "作业弹层",
+    label: "渐变颜色 B",
+    description: "控制渐变遮挡层颜色的蓝色通道。",
+    min: 0,
+    max: 255,
+    step: 1,
+  },
+  {
+    key: "stageBackgroundScale",
+    section: "舞台背景",
+    label: "背景缩放",
+    description: "在等比 cover 的基础上继续缩放 Stage 背景图。",
+    min: 0.5,
+    max: 2,
+    step: 0.01,
+  },
+  {
+    key: "stageBackgroundWidthScale",
+    section: "舞台背景",
+    label: "背景宽度缩放",
+    description: "单独控制 Stage 背景图的宽度缩放。",
+    min: 0.5,
+    max: 2,
+    step: 0.01,
+  },
+  {
+    key: "stageBackgroundHeightScale",
+    section: "舞台背景",
+    label: "背景高度缩放",
+    description: "单独控制 Stage 背景图的高度缩放。",
+    min: 0.5,
+    max: 2,
+    step: 0.01,
+  },
+  {
+    key: "stageBackgroundOffsetXRatio",
+    section: "舞台背景",
+    label: "背景水平位置",
+    description: "按 Stage 内容宽度比例移动背景图。",
+    min: -0.5,
+    max: 0.5,
+    step: 0.005,
+  },
+  {
+    key: "stageBackgroundOffsetYRatio",
+    section: "舞台背景",
+    label: "背景垂直位置",
+    description: "按 Stage 内容高度比例移动背景图。",
+    min: -0.5,
+    max: 0.5,
+    step: 0.005,
   },
   {
     key: "topBarHeightRatio",
@@ -1312,73 +1819,703 @@ const ART_TUNING_FIELDS: ArtTuningField[] = [
   },
   {
     key: "leftCardOffsetXRatio",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "左卡水平位置",
-    description: "控制左卡相对主视口基准位置的水平偏移。",
+    description: "控制左卡在主舞台区域内的水平偏移，最终会被限制在主舞台内。",
     min: -0.2,
     max: 0.2,
     step: 0.01,
   },
   {
     key: "leftCardOffsetYRatio",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "左卡垂直位置",
-    description: "控制左卡相对主视口基准位置的垂直偏移。",
+    description: "控制左卡在主舞台区域内的垂直偏移，最终会被限制在主舞台内。",
     min: -0.2,
     max: 0.2,
     step: 0.01,
   },
   {
     key: "leftCardWidthScale",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "左卡宽度",
-    description: "控制左卡相对基准宽度的缩放。",
+    description: "控制左卡相对当前侧栏基准宽度的缩放。",
     min: 0.6,
     max: 1.4,
     step: 0.01,
   },
   {
     key: "leftCardHeightScale",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "左卡高度",
-    description: "控制左卡相对基准高度的缩放。",
+    description: "控制左卡相对当前侧栏基准高度的缩放。",
     min: 0.6,
-    max: 1.4,
+    max: 2,
     step: 0.01,
   },
   {
     key: "rightCardOffsetXRatio",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "右卡水平位置",
-    description: "控制右卡相对主视口基准位置的水平偏移。",
+    description: "控制右卡在主舞台区域内的水平偏移，最终会被限制在主舞台内。",
     min: -0.2,
     max: 0.2,
     step: 0.01,
   },
   {
     key: "rightCardOffsetYRatio",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "右卡垂直位置",
-    description: "控制右卡相对主视口基准位置的垂直偏移。",
+    description: "控制右卡在主舞台区域内的垂直偏移，最终会被限制在主舞台内。",
     min: -0.2,
     max: 0.2,
     step: 0.01,
   },
   {
     key: "rightCardWidthScale",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "右卡宽度",
-    description: "控制右卡相对基准宽度的缩放。",
+    description: "控制右卡相对当前侧栏基准宽度的缩放。",
     min: 0.6,
     max: 1.4,
     step: 0.01,
   },
   {
     key: "rightCardHeightScale",
-    section: "主视口布局",
+    section: "左右卡片",
     label: "右卡高度",
-    description: "控制右卡相对基准高度的缩放。",
+    description: "控制右卡相对当前侧栏基准高度的缩放。",
     min: 0.6,
+    max: 2,
+    step: 0.01,
+  },
+  {
+    key: "sideCardStageInsetRatio",
+    section: "左右卡片",
+    label: "舞台内边距",
+    description: "控制左右卡片与主舞台可见边界之间的安全距离。",
+    min: 0.01,
+    max: 0.08,
+    step: 0.002,
+  },
+  {
+    key: "sideCardBaseWidthRatio",
+    section: "左右卡片",
+    label: "侧卡基准宽度",
+    description: "控制左右卡片未单独缩放前的基础宽度比例。",
+    min: 0.18,
+    max: 0.34,
+    step: 0.005,
+  },
+  {
+    key: "sideCardBaseHeightRatio",
+    section: "左右卡片",
+    label: "侧卡基准高度",
+    description: "控制左右卡片未单独缩放前的基础高度比例。",
+    min: 0.68,
+    max: 0.98,
+    step: 0.005,
+  },
+  {
+    key: "sideCardVerticalGuardRatio",
+    section: "左右卡片",
+    label: "上下安全缝",
+    description: "控制左右卡片与主舞台上下边界之间额外保留的安全距离。",
+    min: 0.4,
+    max: 2.6,
+    step: 0.05,
+  },
+  {
+    key: "leftStatusTitleYRatio",
+    section: "左卡细调",
+    label: "标题纵向",
+    description: "控制小橘状态标题相对卡片顶部的纵向比例。",
+    min: 0.06,
+    max: 0.18,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusTitleFontScale",
+    section: "左卡细调",
+    label: "标题字号",
+    description: "控制小橘状态标题的字号比例。",
+    min: 0.08,
+    max: 0.16,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusPawXRatio",
+    section: "左卡细调",
+    label: "标题爪印横距",
+    description: "控制标题左右爪印离中心的横向距离。",
+    min: 0.22,
+    max: 0.44,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusPawYOffset",
+    section: "左卡细调",
+    label: "标题爪印纵向",
+    description: "控制标题左右爪印相对标题的纵向偏移。",
+    min: -24,
+    max: 24,
+    step: 1,
+  },
+  {
+    key: "leftStatusPawScale",
+    section: "左卡细调",
+    label: "标题爪印缩放",
+    description: "控制标题左右爪印整体大小。",
+    min: 0.55,
+    max: 1.8,
+    step: 0.01,
+  },
+  {
+    key: "leftStatusLevelYRatio",
+    section: "左卡细调",
+    label: "等级区纵向",
+    description: "控制等级胶囊和 Lv 徽章的整体纵向比例。",
+    min: 0.18,
+    max: 0.36,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusLevelPillXRatio",
+    section: "左卡细调",
+    label: "等级胶囊横向",
+    description: "控制等级胶囊相对卡片中心的水平位置。",
+    min: -0.02,
+    max: 0.32,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusLevelPillWidthRatio",
+    section: "左卡细调",
+    label: "等级胶囊宽度",
+    description: "控制等级胶囊的宽度比例。",
+    min: 0.42,
+    max: 0.86,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusLevelPillHeightRatio",
+    section: "左卡细调",
+    label: "等级胶囊高度",
+    description: "控制等级胶囊的高度比例。",
+    min: 0.08,
+    max: 0.22,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusLevelBadgeXRatio",
+    section: "左卡细调",
+    label: "Lv 徽章横向",
+    description: "控制 Lv.7 花形徽章离左边缘的横向比例。",
+    min: 0.12,
+    max: 0.36,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusLevelBadgeWidthRatio",
+    section: "左卡细调",
+    label: "Lv 徽章宽度比例",
+    description: "控制 Lv.7 花形徽章按卡片宽度计算的大小上限。",
+    min: 0.18,
+    max: 0.38,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusLevelBadgeHeightRatio",
+    section: "左卡细调",
+    label: "Lv 徽章高度比例",
+    description: "控制 Lv.7 花形徽章按卡片高度计算的大小上限。",
+    min: 0.12,
+    max: 0.26,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusLevelTextXRatio",
+    section: "左卡细调",
+    label: "等级文字横向",
+    description: "控制等级文字的水平位置。",
+    min: 0.02,
+    max: 0.34,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusLevelTextFontScale",
+    section: "左卡细调",
+    label: "等级文字字号",
+    description: "控制等级文字的字号比例。",
+    min: 0.06,
+    max: 0.12,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusDividerYRatio",
+    section: "左卡细调",
+    label: "虚线纵向",
+    description: "控制左卡分隔虚线相对卡片顶部的纵向比例。",
+    min: 0.34,
+    max: 0.58,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusDividerWidthRatio",
+    section: "左卡细调",
+    label: "虚线宽度",
+    description: "控制左卡分隔虚线的整体宽度。",
+    min: 0.56,
+    max: 0.95,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowsTopGapRatio",
+    section: "左卡细调",
+    label: "状态区起点",
+    description: "控制第一条状态行与虚线之间的距离。",
+    min: 0.06,
+    max: 0.22,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusRowsGapRatio",
+    section: "左卡细调",
+    label: "状态行间距",
+    description: "控制三条状态行之间的纵向间距。",
+    min: 0.1,
+    max: 0.26,
+    step: 0.002,
+  },
+  {
+    key: "leftStatusRowIconXRatio",
+    section: "左卡细调",
+    label: "状态图标横向",
+    description: "控制三条状态图标的统一水平位置。",
+    min: 0.22,
+    max: 0.44,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowIconSizeRatio",
+    section: "左卡细调",
+    label: "状态图标大小",
+    description: "控制三条状态图标底圆和图案的统一大小。",
+    min: 0.13,
+    max: 0.26,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowLabelXRatio",
+    section: "左卡细调",
+    label: "状态文字横向",
+    description: "控制饱腹值 / 体力值 / 心情值文字的水平位置。",
+    min: 0.02,
+    max: 0.2,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowValueXRatio",
+    section: "左卡细调",
+    label: "状态数值横向",
+    description: "控制 60/100 等数值文字的水平位置。",
+    min: 0.2,
+    max: 0.42,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowBarXRatio",
+    section: "左卡细调",
+    label: "进度条横向",
+    description: "控制三条进度条的统一水平位置。",
+    min: 0.02,
+    max: 0.3,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowBarWidthRatio",
+    section: "左卡细调",
+    label: "进度条宽度",
+    description: "控制三条进度条的统一宽度。",
+    min: 0.42,
+    max: 0.76,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowBarHeightScale",
+    section: "左卡细调",
+    label: "进度条厚度",
+    description: "控制三条进度条相对图标尺寸的厚度。",
+    min: 0.2,
+    max: 0.5,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusRowLabelFontScale",
+    section: "左卡细调",
+    label: "状态文字字号",
+    description: "控制状态名称文字的字号比例。",
+    min: 0.048,
+    max: 0.09,
+    step: 0.001,
+  },
+  {
+    key: "leftStatusRowValueFontScale",
+    section: "左卡细调",
+    label: "状态数值字号",
+    description: "控制状态数值文字的字号比例。",
+    min: 0.044,
+    max: 0.08,
+    step: 0.001,
+  },
+  {
+    key: "leftStatusFlowerXRatio",
+    section: "左卡细调",
+    label: "底部花朵横向",
+    description: "控制左卡底部花朵装饰的水平位置。",
+    min: 0.18,
+    max: 0.48,
+    step: 0.005,
+  },
+  {
+    key: "leftStatusFlowerYOffset",
+    section: "左卡细调",
+    label: "底部花朵纵向",
+    description: "控制左卡底部花朵装饰离卡片底部的距离。",
+    min: 6,
+    max: 58,
+    step: 1,
+  },
+  {
+    key: "leftStatusFlowerScale",
+    section: "左卡细调",
+    label: "底部花朵缩放",
+    description: "控制左卡底部花朵装饰的整体大小。",
+    min: 0.45,
+    max: 1.4,
+    step: 0.01,
+  },
+  {
+    key: "rightLogTitleYRatio",
+    section: "右卡细调",
+    label: "标题纵向",
+    description: "控制互动日志标题相对卡片顶部的纵向比例。",
+    min: 0.06,
+    max: 0.18,
+    step: 0.002,
+  },
+  {
+    key: "rightLogTitleFontScale",
+    section: "右卡细调",
+    label: "标题字号",
+    description: "控制互动日志标题的字号比例。",
+    min: 0.08,
+    max: 0.16,
+    step: 0.002,
+  },
+  {
+    key: "rightLogPawXRatio",
+    section: "右卡细调",
+    label: "标题爪印横距",
+    description: "控制标题左右爪印离中心的横向距离。",
+    min: 0.22,
+    max: 0.44,
+    step: 0.005,
+  },
+  {
+    key: "rightLogPawYOffset",
+    section: "右卡细调",
+    label: "标题爪印纵向",
+    description: "控制标题左右爪印相对标题的纵向偏移。",
+    min: -24,
+    max: 24,
+    step: 1,
+  },
+  {
+    key: "rightLogPawScale",
+    section: "右卡细调",
+    label: "标题爪印缩放",
+    description: "控制标题左右爪印整体大小。",
+    min: 0.55,
+    max: 1.8,
+    step: 0.01,
+  },
+  {
+    key: "rightLogTextXRatio",
+    section: "右卡细调",
+    label: "日志文字横向",
+    description: "控制三行日志正文的统一水平位置。",
+    min: -0.2,
+    max: 0.2,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTextTopRatio",
+    section: "右卡细调",
+    label: "日志文字起点",
+    description: "控制第一行日志正文相对卡片顶部的纵向比例。",
+    min: 0.16,
+    max: 0.42,
+    step: 0.002,
+  },
+  {
+    key: "rightLogLineGapRatio",
+    section: "右卡细调",
+    label: "日志行间距",
+    description: "控制三行日志正文之间的行距。",
+    min: 0.07,
+    max: 0.18,
+    step: 0.002,
+  },
+  {
+    key: "rightLogTextWidthRatio",
+    section: "右卡细调",
+    label: "日志文字宽度",
+    description: "控制日志正文 Label 的宽度比例。",
+    min: 0.56,
+    max: 0.98,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTextHeightScale",
+    section: "右卡细调",
+    label: "日志文字高度",
+    description: "控制每行日志正文 Label 相对行距的高度。",
+    min: 0.45,
+    max: 1.2,
+    step: 0.01,
+  },
+  {
+    key: "rightLogTextFontScale",
+    section: "右卡细调",
+    label: "日志文字字号",
+    description: "控制日志正文文字字号比例。",
+    min: 0.052,
+    max: 0.095,
+    step: 0.001,
+  },
+  {
+    key: "rightLogDividerYRatio",
+    section: "右卡细调",
+    label: "虚线纵向",
+    description: "控制右卡分隔虚线相对卡片顶部的纵向比例。",
+    min: 0.46,
+    max: 0.72,
+    step: 0.002,
+  },
+  {
+    key: "rightLogDividerWidthRatio",
+    section: "右卡细调",
+    label: "虚线宽度",
+    description: "控制右卡分隔虚线的整体宽度。",
+    min: 0.56,
+    max: 0.95,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipXRatio",
+    section: "右卡细调",
+    label: "功能卡横向",
+    description: "控制底部功能卡相对卡片中心的水平位置。",
+    min: -0.2,
+    max: 0.2,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipYRatio",
+    section: "右卡细调",
+    label: "功能卡纵向",
+    description: "控制底部功能卡相对卡片中心的纵向比例。",
+    min: -0.42,
+    max: -0.08,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipWidthRatio",
+    section: "右卡细调",
+    label: "功能卡宽度",
+    description: "控制底部功能卡的宽度比例。",
+    min: 0.58,
+    max: 0.98,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipHeightRatio",
+    section: "右卡细调",
+    label: "功能卡高度",
+    description: "控制底部功能卡的高度比例。",
+    min: 0.14,
+    max: 0.34,
+    step: 0.002,
+  },
+  {
+    key: "rightLogTipRadiusRatio",
+    section: "右卡细调",
+    label: "功能卡圆角",
+    description: "控制底部功能卡的圆角比例。",
+    min: 0.12,
+    max: 0.36,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipGlossYRatio",
+    section: "右卡细调",
+    label: "功能卡高光纵向",
+    description: "控制底部功能卡顶部高光的纵向位置。",
+    min: 0.08,
+    max: 0.42,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipGlossWidthRatio",
+    section: "右卡细调",
+    label: "功能卡高光宽度",
+    description: "控制底部功能卡高光的宽度比例。",
+    min: 0.35,
+    max: 0.95,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipGlossHeightRatio",
+    section: "右卡细调",
+    label: "功能卡高光高度",
+    description: "控制底部功能卡高光的高度比例。",
+    min: 0.08,
+    max: 0.38,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipIconXRatio",
+    section: "右卡细调",
+    label: "云朵图标横向",
+    description: "控制底部功能卡内云朵图标的水平位置。",
+    min: -0.46,
+    max: -0.12,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipIconYRatio",
+    section: "右卡细调",
+    label: "云朵图标纵向",
+    description: "控制底部功能卡内云朵图标的纵向位置。",
+    min: -0.2,
+    max: 0.2,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipIconSizeRatio",
+    section: "右卡细调",
+    label: "云朵图标大小",
+    description: "控制底部功能卡内云朵图标的大小比例。",
+    min: 0.45,
+    max: 1.05,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipTitleXRatio",
+    section: "右卡细调",
+    label: "功能标题横向",
+    description: "控制静态陪伴场景标题的水平位置。",
+    min: -0.02,
+    max: 0.32,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipTitleYRatio",
+    section: "右卡细调",
+    label: "功能标题纵向",
+    description: "控制静态陪伴场景标题的纵向位置。",
+    min: 0.02,
+    max: 0.34,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipTitleWidthRatio",
+    section: "右卡细调",
+    label: "功能标题宽度",
+    description: "控制静态陪伴场景标题 Label 的宽度比例。",
+    min: 0.36,
+    max: 0.76,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipTitleFontScale",
+    section: "右卡细调",
+    label: "功能标题字号",
+    description: "控制静态陪伴场景标题的字号比例。",
+    min: 0.05,
+    max: 0.09,
+    step: 0.001,
+  },
+  {
+    key: "rightLogTipBodyXRatio",
+    section: "右卡细调",
+    label: "功能说明横向",
+    description: "控制底部功能卡说明文字的水平位置。",
+    min: -0.02,
+    max: 0.32,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipBodyYRatio",
+    section: "右卡细调",
+    label: "功能说明纵向",
+    description: "控制底部功能卡说明文字的纵向位置。",
+    min: -0.34,
+    max: 0.02,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipBodyWidthRatio",
+    section: "右卡细调",
+    label: "功能说明宽度",
+    description: "控制底部功能卡说明文字 Label 的宽度比例。",
+    min: 0.36,
+    max: 0.78,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipBodyHeightRatio",
+    section: "右卡细调",
+    label: "功能说明高度",
+    description: "控制底部功能卡说明文字 Label 的高度比例。",
+    min: 0.28,
+    max: 0.72,
+    step: 0.005,
+  },
+  {
+    key: "rightLogTipBodyFontScale",
+    section: "右卡细调",
+    label: "功能说明字号",
+    description: "控制底部功能卡说明文字字号比例。",
+    min: 0.038,
+    max: 0.07,
+    step: 0.001,
+  },
+  {
+    key: "rightLogFlowerXRatio",
+    section: "右卡细调",
+    label: "底部花朵横向",
+    description: "控制右卡底部花朵装饰的水平位置。",
+    min: 0.18,
+    max: 0.48,
+    step: 0.005,
+  },
+  {
+    key: "rightLogFlowerYOffset",
+    section: "右卡细调",
+    label: "底部花朵纵向",
+    description: "控制右卡底部花朵装饰离卡片底部的距离。",
+    min: 6,
+    max: 58,
+    step: 1,
+  },
+  {
+    key: "rightLogFlowerScale",
+    section: "右卡细调",
+    label: "底部花朵缩放",
+    description: "控制右卡底部花朵装饰的整体大小。",
+    min: 0.45,
     max: 1.4,
     step: 0.01,
   },
@@ -1519,30 +2656,84 @@ const ART_TUNING_FIELDS: ArtTuningField[] = [
   },
   {
     key: "safeZoneWidthRatio",
-    section: "舞台",
-    label: "安全区宽度比例",
-    description: "控制宠物安全区相对舞台宽度的占比。",
+    section: "小狐狸",
+    label: "狐狸基准宽度",
+    description: "控制小狐狸展示安全区相对舞台宽度的占比。",
     min: 0.28,
     max: 0.52,
     step: 0.01,
   },
   {
     key: "safeZoneHeightRatio",
-    section: "舞台",
-    label: "安全区高度比例",
-    description: "控制宠物安全区相对舞台高度的占比。",
+    section: "小狐狸",
+    label: "狐狸基准高度",
+    description: "控制小狐狸展示安全区相对舞台高度的占比。",
     min: 0.42,
     max: 0.7,
     step: 0.01,
   },
   {
     key: "safeZoneYRatio",
-    section: "舞台",
-    label: "安全区纵向比例",
-    description: "控制宠物安全区整体上移或下移。",
+    section: "小狐狸",
+    label: "狐狸基准纵向",
+    description: "控制小狐狸展示安全区整体上移或下移。",
     min: -0.06,
     max: 0.12,
     step: 0.005,
+  },
+  {
+    key: "foxCharacterScale",
+    section: "小狐狸",
+    label: "狐狸整体缩放",
+    description: "控制中间小狐狸贴图的整体视觉大小。",
+    min: 0.55,
+    max: 1.35,
+    step: 0.01,
+  },
+  {
+    key: "foxCharacterOffsetXRatio",
+    section: "小狐狸",
+    label: "狐狸水平位置",
+    description: "按舞台宽度比例微调小狐狸水平位置。",
+    min: -0.18,
+    max: 0.18,
+    step: 0.005,
+  },
+  {
+    key: "foxCharacterOffsetYRatio",
+    section: "小狐狸",
+    label: "狐狸垂直位置",
+    description: "按舞台高度比例微调小狐狸垂直位置。",
+    min: -0.18,
+    max: 0.18,
+    step: 0.005,
+  },
+  {
+    key: "foxShadowAlpha",
+    section: "小狐狸",
+    label: "狐狸阴影透明度",
+    description: "控制小狐狸脚下椭圆阴影的可见强度。",
+    min: 0,
+    max: 90,
+    step: 1,
+  },
+  {
+    key: "foxShadowWidthScale",
+    section: "小狐狸",
+    label: "狐狸阴影宽度",
+    description: "控制小狐狸脚下椭圆阴影的横向大小。",
+    min: 0.55,
+    max: 1.6,
+    step: 0.01,
+  },
+  {
+    key: "foxShadowHeightScale",
+    section: "小狐狸",
+    label: "狐狸阴影高度",
+    description: "控制小狐狸脚下椭圆阴影的纵向厚度。",
+    min: 0.45,
+    max: 1.6,
+    step: 0.01,
   },
   {
     key: "grassYRatio",
@@ -1564,6 +2755,8 @@ export class MainController extends ScreenController {
   private backgroundGlowTopLeftSpriteFrame: SpriteFrame | null = null;
   private backgroundGlowBottomRightSpriteFrame: SpriteFrame | null = null;
   private stageCloudSpriteFrame: SpriteFrame | null = null;
+  private stageSceneBackgroundSpriteFrame: SpriteFrame | null = null;
+  private mainCharacterRestingFoxSpriteFrame: SpriteFrame | null = null;
   private radialGlowEffectAsset: EffectAsset | null = null;
   private shellShadowSpriteFrame: SpriteFrame | null = null;
   private mainViewportShadowSpriteFrame: SpriteFrame | null = null;
@@ -1588,6 +2781,34 @@ export class MainController extends ScreenController {
   private showShaderDebugBlock = false;
   private artTuning: ArtTuningState = { ...ART_TUNING_DEFAULTS };
   private activeTopBarNavTab: TopBarNavTab = "petHome";
+  private interactionEntries: MainInteractionEntry[] = [
+    {
+      title: "等待主页同步",
+      detail: "Main 将优先读取 dashboard / appState 作为正式状态来源。",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  private backendFeedBlocked = false;
+  private feedRequestSeq = 0;
+  private dashboardRequestSeq = 0;
+  private dashboardLoading = false;
+  private dashboardRefreshPromise: Promise<boolean> | null = null;
+  private dashboardFailureLogged = false;
+  private feedRequestInFlight = false;
+  private inventoryUseRequestInFlight = false;
+  private activePetAction: CorePetAction | null = null;
+  private corePetActionCooldownUntil = 0;
+  private journalEventsLoading = false;
+  private journalEventsLoaded = false;
+  private journalSyncMessage: string | null = null;
+  private isFoodSelectionPanelOpen = false;
+  private isHomeworkCenterOpen = false;
+  private homeworkCenterRefs: HomeworkCenterViewRefs | null = null;
+  private homeworkCenterCoordinator = new HomeworkCenterCoordinator();
+  private homeworkDevResetting = false;
+  private homeworkDevResetMessage: string | null = null;
+  private lastOfflineDecay: OfflineDecaySummary | null = null;
+  private localPetMode: LocalPetMode = null;
 
   onLoad(): void {
     this.hydrateArtTuningFromStorage();
@@ -1605,6 +2826,7 @@ export class MainController extends ScreenController {
   async start(): Promise<void> {
     this.render();
     await this.redirectToLoginWhenSessionMissing();
+    await this.tryRefreshMainDashboard();
   }
 
   private async redirectToLoginWhenSessionMissing(): Promise<void> {
@@ -1632,6 +2854,186 @@ export class MainController extends ScreenController {
     this.renderBackdrop(root, layout);
     this.renderShell(root, layout);
     this.renderBackgroundDebugEntry(root, layout);
+  }
+
+  private async tryRefreshMainDashboard(): Promise<boolean> {
+    if (this.dashboardLoading) {
+      return this.dashboardRefreshPromise ?? false;
+    }
+    if (!appState.getCurrentUser() || !appState.getPetId()) {
+      return false;
+    }
+
+    const requestSeq = this.dashboardRequestSeq + 1;
+    this.dashboardRequestSeq = requestSeq;
+    this.dashboardLoading = true;
+    const refreshTask = (async (): Promise<boolean> => {
+      try {
+        const result = await petService.refreshDashboard(() => requestSeq === this.dashboardRequestSeq);
+        if (requestSeq !== this.dashboardRequestSeq) {
+          return false;
+        }
+        if (result.success) {
+          this.localPetMode = null;
+          this.lastOfflineDecay = result.offlineDecay ?? null;
+          this.dashboardFailureLogged = false;
+          this.appendMainInteraction(
+            result.dailyBasicFood?.granted ? "每日基础口粮" : "主页数据已同步",
+            this.resolveDashboardSyncDetail(result.offlineDecay, result.dailyBasicFood)
+          );
+          this.render();
+          return true;
+        }
+
+        if (!this.dashboardFailureLogged) {
+          this.dashboardFailureLogged = true;
+          this.appendMainInteraction(
+            "主页同步失败",
+            result.message ? `${result.message}；当前保留已有状态。` : "dashboard 暂不可用，当前保留已有状态。"
+          );
+          this.render();
+        }
+        return false;
+      } catch {
+        if (requestSeq === this.dashboardRequestSeq && !this.dashboardFailureLogged) {
+          this.dashboardFailureLogged = true;
+          this.appendMainInteraction("主页同步失败", "dashboard 请求异常，当前保留已有状态。");
+          this.render();
+        }
+        return false;
+      } finally {
+        if (requestSeq === this.dashboardRequestSeq) {
+          this.dashboardLoading = false;
+        }
+      }
+    })();
+
+    this.dashboardRefreshPromise = refreshTask;
+    try {
+      return await refreshTask;
+    } finally {
+      if (this.dashboardRefreshPromise === refreshTask) {
+        this.dashboardRefreshPromise = null;
+      }
+    }
+  }
+
+  private resolveMainViewModel(): MainViewModel {
+    const pet = appState.getCurrentPet();
+    const foods = appState.getPetFoodInventory();
+    const satiety = this.normalizeStatusValue(pet?.hunger);
+    const stamina = this.normalizeStatusValue(pet?.energy);
+    const mood = this.normalizeStatusValue(pet?.mood);
+    const level =
+      typeof pet?.level === "number" && Number.isFinite(pet.level)
+        ? Math.max(0, Math.floor(pet.level))
+        : null;
+    const displayStatus = this.resolveDisplayStatus(
+      pet?.display_status ?? pet?.status,
+      satiety,
+      stamina,
+      mood
+    );
+
+    return {
+      petName: pet?.name?.trim() || "待同步",
+      levelBadgeText: level === null ? "--" : `Lv.${level}`,
+      levelText: level === null ? "等级 待同步" : `等级 Lv.${level}`,
+      satiety,
+      stamina,
+      mood,
+      foods,
+      displayStatus,
+      isDashboardReady: Boolean(pet),
+      statusValueText: displayStatus,
+    };
+  }
+
+  private normalizeStatusValue(value: unknown): number | null {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return null;
+    }
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }
+
+  private resolveDisplayStatus(
+    status: unknown,
+    satiety: number | null,
+    stamina: number | null,
+    mood: number | null
+  ): MainPetDisplayStatus {
+    if (this.localPetMode === "resting") {
+      return "休息中";
+    }
+    const serverStatus = this.mapServerStatus(status);
+    if (serverStatus) {
+      return serverStatus;
+    }
+    if (satiety !== null && satiety < 30) {
+      return "饥饿";
+    }
+    if (stamina !== null && stamina < 30) {
+      return "疲惫";
+    }
+    if (mood !== null && mood < 40) {
+      return "低落";
+    }
+    if (satiety === null && stamina === null && mood === null) {
+      return "待同步";
+    }
+    return "状态良好";
+  }
+
+  private mapServerStatus(status: unknown): MainPetDisplayStatus | null {
+    if (typeof status === "boolean") {
+      return status ? "状态良好" : null;
+    }
+    if (typeof status !== "string") {
+      return null;
+    }
+
+    const normalized = status.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (["rest", "resting", "sleep", "sleeping", "休息", "休息中", "睡觉"].includes(normalized)) {
+      return "休息中";
+    }
+    if (["play", "playing", "玩耍", "玩耍中"].includes(normalized)) {
+      return "玩耍中";
+    }
+    if (["hungry", "hunger", "starving", "饥饿"].includes(normalized)) {
+      return "饥饿";
+    }
+    if (["tired", "fatigue", "fatigued", "low_energy", "疲惫"].includes(normalized)) {
+      return "疲惫";
+    }
+    if (["sad", "down", "low_mood", "低落"].includes(normalized)) {
+      return "低落";
+    }
+    if (["idle", "good", "normal", "active", "healthy", "ok", "状态良好"].includes(normalized)) {
+      return "状态良好";
+    }
+    return null;
+  }
+
+  private resolveStatusIcon(status: MainPetDisplayStatus): string {
+    switch (status) {
+      case "饥饿":
+        return "🍚";
+      case "疲惫":
+      case "休息中":
+        return "Zz";
+      case "玩耍中":
+        return "☆";
+      case "低落":
+        return "♡";
+      case "状态良好":
+        return "✓";
+      case "待同步":
+      default:
+        return "...";
+    }
   }
 
   private hydrateArtTuningFromStorage(): void {
@@ -1772,6 +3174,7 @@ export class MainController extends ScreenController {
       case "bottomDockTextColorR":
       case "bottomDockTextColorG":
       case "bottomDockTextColorB":
+      case "foxShadowAlpha":
         return { min: 0, max: 255 };
       case "mainViewportShadowSpreadRatio":
         return { min: 0, max: 0.2 };
@@ -1811,12 +3214,22 @@ export class MainController extends ScreenController {
         return { min: 0, max: 160 };
       case "leftCloudScale":
       case "rightCloudScale":
+      case "stageBackgroundScale":
+      case "stageBackgroundWidthScale":
+      case "stageBackgroundHeightScale":
+      case "foxCharacterScale":
+      case "foxShadowWidthScale":
+      case "foxShadowHeightScale":
         return { min: 0, max: 2 };
       case "leftCloudXRatio":
       case "rightCloudXRatio":
       case "cloudYRatio":
       case "rightCloudYOffsetRatio":
+      case "stageBackgroundOffsetXRatio":
+      case "stageBackgroundOffsetYRatio":
       case "safeZoneYRatio":
+      case "foxCharacterOffsetXRatio":
+      case "foxCharacterOffsetYRatio":
       case "grassYRatio":
       case "stageGroundLineYRatio":
       case "mainViewportOffsetXRatio":
@@ -1861,6 +3274,10 @@ export class MainController extends ScreenController {
       case "rightCardHeightScale":
       case "bottomDockWidthScale":
       case "bottomDockHeightScale":
+      case "sideCardStageInsetRatio":
+      case "sideCardBaseWidthRatio":
+      case "sideCardBaseHeightRatio":
+      case "sideCardVerticalGuardRatio":
       case "cloudBaseWidthRatio":
       case "safeZoneWidthRatio":
       case "safeZoneHeightRatio":
@@ -2032,6 +3449,24 @@ export class MainController extends ScreenController {
       }
 
       this.stageCloudSpriteFrame = spriteFrame;
+      this.render();
+    });
+    resources.load(MAIN_STAGE_SCENE_BACKGROUND_PATH, SpriteFrame, (error, spriteFrame) => {
+      if (error || !spriteFrame) {
+        console.warn("[MainController] failed to load stage scene background sprite", error);
+        return;
+      }
+
+      this.stageSceneBackgroundSpriteFrame = spriteFrame;
+      this.render();
+    });
+    resources.load(MAIN_CHARACTER_RESTING_FOX_PATH, SpriteFrame, (error, spriteFrame) => {
+      if (error || !spriteFrame) {
+        console.warn("[MainController] failed to load resting fox sprite", error);
+        return;
+      }
+
+      this.mainCharacterRestingFoxSpriteFrame = spriteFrame;
       this.render();
     });
     resources.load(CLOUD_SOFT_EFFECT_PATH, EffectAsset, (error, effectAsset) => {
@@ -2658,7 +4093,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(panel, {
       name: "DebugPanelSubtitle",
-      text: "背景开关 / 结构层开关 / shader 调试 / 参考页 / 美术调参",
+      text: "背景开关 / shader 调试 / 参考页 / 美术调参",
       x: 0,
       y: DEBUG_PANEL_HEIGHT / 2 - 50,
       width: DEBUG_PANEL_WIDTH - 30,
@@ -2684,75 +4119,10 @@ export class MainController extends ScreenController {
 
     this.renderBackgroundDebugToggle(
       panel,
-      "DebugToggleGlowTopLeft",
-      `左上柔光 ${this.showBackgroundGlowTopLeft ? "ON" : "OFF"}`,
-      0,
-      startY - DEBUG_TOGGLE_HEIGHT - DEBUG_TOGGLE_GAP,
-      this.showBackgroundGlowTopLeft,
-      () => {
-        this.showBackgroundGlowTopLeft = !this.showBackgroundGlowTopLeft;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      panel,
-      "DebugToggleGlowBottomRight",
-      `右下柔光 ${this.showBackgroundGlowBottomRight ? "ON" : "OFF"}`,
-      0,
-      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 2,
-      this.showBackgroundGlowBottomRight,
-      () => {
-        this.showBackgroundGlowBottomRight = !this.showBackgroundGlowBottomRight;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      panel,
-      "DebugToggleShellLayer",
-      `壳层 ${this.showShellLayer ? "ON" : "OFF"}`,
-      0,
-      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 3,
-      this.showShellLayer,
-      () => {
-        this.showShellLayer = !this.showShellLayer;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      panel,
-      "DebugToggleShellFrameLayer",
-      `ShellFrame ${this.showShellFrameLayer ? "ON" : "OFF"}`,
-      0,
-      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 4,
-      this.showShellFrameLayer,
-      () => {
-        this.showShellFrameLayer = !this.showShellFrameLayer;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      panel,
-      "DebugToggleMainViewportLayer",
-      `主视口 ${this.showMainViewportLayer ? "ON" : "OFF"}`,
-      0,
-      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 5,
-      this.showMainViewportLayer,
-      () => {
-        this.showMainViewportLayer = !this.showMainViewportLayer;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      panel,
       "DebugToggleShaderDebugBlock",
       `Shader测试块 ${this.showShaderDebugBlock ? "ON" : "OFF"}`,
       0,
-      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 6,
+      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP),
       this.showShaderDebugBlock,
       () => {
         this.showShaderDebugBlock = !this.showShaderDebugBlock;
@@ -2764,7 +4134,7 @@ export class MainController extends ScreenController {
       name: "DebugOpenReferencePage",
       text: "参考页面",
       x: 0,
-      y: startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 7,
+      y: startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 2,
       width: DEBUG_TOGGLE_WIDTH,
       height: DEBUG_TOGGLE_HEIGHT,
       color: new Color(94, 61, 39, 172),
@@ -2780,7 +4150,7 @@ export class MainController extends ScreenController {
       name: "DebugOpenArtTuningPage",
       text: "美术调参页",
       x: 0,
-      y: startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 8,
+      y: startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 3,
       width: DEBUG_TOGGLE_WIDTH,
       height: DEBUG_TOGGLE_HEIGHT,
       color: new Color(247, 155, 52, 214),
@@ -2808,32 +4178,6 @@ export class MainController extends ScreenController {
       this.showBackgroundGradient,
       () => {
         this.showBackgroundGradient = !this.showBackgroundGradient;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      root,
-      "DebugToggleGlowTopLeft",
-      `左上柔光 ${this.showBackgroundGlowTopLeft ? "ON" : "OFF"}`,
-      centerX,
-      startY - DEBUG_TOGGLE_HEIGHT - DEBUG_TOGGLE_GAP,
-      this.showBackgroundGlowTopLeft,
-      () => {
-        this.showBackgroundGlowTopLeft = !this.showBackgroundGlowTopLeft;
-        this.render();
-      }
-    );
-
-    this.renderBackgroundDebugToggle(
-      root,
-      "DebugToggleGlowBottomRight",
-      `右下柔光 ${this.showBackgroundGlowBottomRight ? "ON" : "OFF"}`,
-      centerX,
-      startY - (DEBUG_TOGGLE_HEIGHT + DEBUG_TOGGLE_GAP) * 2,
-      this.showBackgroundGlowBottomRight,
-      () => {
-        this.showBackgroundGlowBottomRight = !this.showBackgroundGlowBottomRight;
         this.render();
       }
     );
@@ -3014,8 +4358,30 @@ export class MainController extends ScreenController {
     const viewportOffsetUnitY = shellFrameHeight * 0.5;
     const viewportX = Math.round(this.getArtTuningValue("mainViewportOffsetXRatio") * viewportOffsetUnitX);
     const viewportY = Math.round(this.getArtTuningValue("mainViewportOffsetYRatio") * viewportOffsetUnitY);
-    const stageWidth = viewportWidth;
-    const stageHeight = viewportHeight;
+
+    // 主视口拆成两层：
+    // - MainViewportHost：整块布局坐标承载层，顶栏 / 底栏 / 中区都按它定位。
+    // - MainViewport：真正可见的 stage 底板，只覆盖左卡 + 中心 + 右卡这条中部区域。
+    const edgeInset = Math.max(12, Math.round(Math.min(viewportWidth, viewportHeight) * 0.018));
+    const hostGap = Math.max(8, Math.round(viewportWidth * 0.01));
+    const baseTopBarHeight = Math.max(
+      72,
+      Math.min(104, Math.round(viewportHeight * this.getArtTuningValue("topBarHeightRatio")))
+    );
+    const topBarHeight = Math.max(42, Math.round(baseTopBarHeight * this.getArtTuningValue("topBarHeightScale")));
+    const baseBottomDockHeight = Math.max(
+      112,
+      Math.min(136, Math.round(viewportHeight * this.getArtTuningValue("bottomDockHeightRatio")))
+    );
+    const bottomDockHeight = Math.max(
+      64,
+      Math.round(baseBottomDockHeight * this.getArtTuningValue("bottomDockHeightScale"))
+    );
+    const mainAreaTop = viewportHeight / 2 - edgeInset - topBarHeight - hostGap * 1.35;
+    const mainAreaBottom = -viewportHeight / 2 + edgeInset + bottomDockHeight + hostGap * 1.45;
+    const stageWidth = Math.max(1, viewportWidth - edgeInset * 2);
+    const stageHeight = Math.max(1, mainAreaTop - mainAreaBottom);
+    const stageY = Math.round((mainAreaTop + mainAreaBottom) / 2);
 
     // ShellFrame 是主舞台的第一道内框。
     // 这里要的是“描边空心”的框感，不是一个有实底的卡片。
@@ -3044,7 +4410,7 @@ export class MainController extends ScreenController {
     // 这些值改动后，最容易影响设计感知，适合美术和程序一起对调。
     // MainViewport 是主视口容器，负责控制可视范围和内部留白。
     // 它的存在让主舞台不会直接贴着 ShellFrame 边缘，层次更像参考页。
-    const viewportShadowBase = Math.min(viewportWidth, viewportHeight);
+    const viewportShadowBase = Math.min(stageWidth, stageHeight);
     const viewportShadowSpread = Math.max(
       14,
       Math.round(viewportShadowBase * this.getArtTuningValue("mainViewportShadowSpreadRatio"))
@@ -3052,8 +4418,8 @@ export class MainController extends ScreenController {
     const viewportShadowAlpha = Math.round(this.getArtTuningValue("mainViewportShadowAlpha"));
     if (this.showMainViewportLayer) {
       this.ensureMainViewportShadowAssetsForLayout({
-        viewportWidth,
-        viewportHeight,
+        viewportWidth: stageWidth,
+        viewportHeight: stageHeight,
         viewportRadius: mainViewportRadius,
         spread: viewportShadowSpread,
       });
@@ -3062,9 +4428,9 @@ export class MainController extends ScreenController {
         RuntimeUI.createSpriteFrame(shellFrameContainer, {
           name: "MainViewportShadow",
           x: viewportX,
-          y: viewportY,
-          width: viewportWidth + viewportShadowSpread * 2,
-          height: viewportHeight + viewportShadowSpread * 2,
+          y: viewportY + stageY,
+          width: stageWidth + viewportShadowSpread * 2,
+          height: stageHeight + viewportShadowSpread * 2,
           spriteFrame: this.mainViewportShadowSpriteFrame,
           color: new Color(SHELL_SHADOW_COLOR.r, SHELL_SHADOW_COLOR.g, SHELL_SHADOW_COLOR.b, viewportShadowAlpha),
         });
@@ -3072,34 +4438,44 @@ export class MainController extends ScreenController {
         RuntimeUI.createBox(shellFrameContainer, {
           name: "MainViewportShadowFallback",
           x: viewportX,
-          y: viewportY,
-          width: viewportWidth + Math.round(viewportShadowSpread * 0.8),
-          height: viewportHeight + Math.round(viewportShadowSpread * 0.8),
+          y: viewportY + stageY,
+          width: stageWidth + Math.round(viewportShadowSpread * 0.8),
+          height: stageHeight + Math.round(viewportShadowSpread * 0.8),
           color: new Color(187, 129, 62, Math.max(0, Math.round(viewportShadowAlpha * 0.18))),
           radius: mainViewportRadius,
         });
       }
     }
 
-    const viewportContainer = this.showMainViewportLayer
-      ? RuntimeUI.createCard(shellFrameContainer, {
+    const viewportContainer = new Node("MainViewportHost");
+    viewportContainer.setParent(shellFrameContainer);
+    viewportContainer.setPosition(viewportX, viewportY, 0);
+    const viewportContainerTransform =
+      viewportContainer.getComponent(UITransform) ?? viewportContainer.addComponent(UITransform);
+    viewportContainerTransform.setContentSize(viewportWidth, viewportHeight);
+
+    const stageArea = this.showMainViewportLayer
+      ? RuntimeUI.createCard(viewportContainer, {
           name: "MainViewport",
-          x: viewportX,
-          y: viewportY,
-          width: viewportWidth,
-          height: viewportHeight,
+          x: 0,
+          y: stageY,
+          width: stageWidth,
+          height: stageHeight,
           color: new Color(235, 207, 180, mainViewportAlpha),
           innerColor: new Color(255, 246, 237, Math.max(0, Math.round(mainViewportAlpha * 0.96))),
           radius: mainViewportRadius,
           borderThickness: 2,
           innerRadius: Math.max(0, mainViewportRadius - 2),
         })
-      : shellFrameContainer;
+      : new Node("StageArea");
+    if (!this.showMainViewportLayer) {
+      stageArea.setParent(viewportContainer);
+      stageArea.setPosition(0, stageY, 0);
+      const stageAreaTransform = stageArea.getComponent(UITransform) ?? stageArea.addComponent(UITransform);
+      stageAreaTransform.setContentSize(stageWidth, stageHeight);
+    }
 
-    // 主舞台不再单独套一层 MainStage 卡片。
-    // 这一版直接让舞台内容贴着 MainViewport 的内边界展开，
-    // 这样可以把可用舞台区放大，同时去掉中间那道额外结构线。
-	this.renderStageBase(viewportContainer, stageWidth, stageHeight, {
+	this.renderStageBase(stageArea, stageWidth, stageHeight, {
       borderThickness: 2,
       radius: mainViewportRadius,
     });
@@ -3115,7 +4491,7 @@ export class MainController extends ScreenController {
     // - width / height：决定光晕铺开的范围，越大越“散”
     // - y：决定光晕往上还是往下偏，影响层次重心
     // - color.a：决定气氛轻重，越高越明显，越低越克制
-    const ambientTopGlow = RuntimeUI.createRadialGlow(viewportContainer, {
+    const ambientTopGlow = RuntimeUI.createRadialGlow(stageArea, {
       name: "MainStageAmbientTopGlow",
       x: 0,
       y: Math.round(stageHeight * 0.08),
@@ -3128,7 +4504,7 @@ export class MainController extends ScreenController {
 
     // 下方暖光更接近“托底”的感觉。
     // 它比上方白光更低、更宽、更淡，主要是让主舞台和底层背景之间有一层柔和过渡。
-    const ambientBottomGlow = RuntimeUI.createRadialGlow(viewportContainer, {
+    const ambientBottomGlow = RuntimeUI.createRadialGlow(stageArea, {
       name: "MainStageAmbientBottomGlow",
       x: 0,
       y: -Math.round(stageHeight * 0.12),
@@ -3139,7 +4515,7 @@ export class MainController extends ScreenController {
     });
     ambientBottomGlow.setSiblingIndex(0);
 
-    this.renderPrimaryLayoutHosts(viewportContainer, viewportWidth, viewportHeight, stageWidth, stageHeight);
+    this.renderPrimaryLayoutHosts(viewportContainer, viewportWidth, viewportHeight, stageWidth, stageHeight, stageY);
   }
 
   private renderPrimaryLayoutHosts(
@@ -3147,7 +4523,8 @@ export class MainController extends ScreenController {
     viewportWidth: number,
     viewportHeight: number,
     stageWidth: number,
-    stageHeight: number
+    stageHeight: number,
+    stageY: number
   ): void {
     const hostLayer = new Node("PrimaryLayoutHostLayer");
     hostLayer.setParent(viewport);
@@ -3176,25 +4553,61 @@ export class MainController extends ScreenController {
       64,
       Math.round(baseBottomDockHeight * this.getArtTuningValue("bottomDockHeightScale"))
     );
-    const mainAreaTop = viewportHeight / 2 - edgeInset - topBarHeight - hostGap * 0.6;
-    const mainAreaBottom = -viewportHeight / 2 + edgeInset + bottomDockHeight + hostGap * 0.7;
-    const mainAreaHeight = Math.max(220, mainAreaTop - mainAreaBottom);
-    const baseSideHostHeight = Math.max(300, Math.min(496, Math.round(mainAreaHeight * 0.965)));
-    const baseSideHostWidth = Math.max(
-      198,
-      Math.min(300, Math.round((viewportWidth - edgeInset * 2 - hostGap * 2) * 0.275))
+    const stageInset = Math.max(
+      8,
+      Math.round(Math.min(stageWidth, stageHeight) * this.getArtTuningValue("sideCardStageInsetRatio"))
     );
-    const leftCardWidth = Math.max(120, Math.round(baseSideHostWidth * this.getArtTuningValue("leftCardWidthScale")));
+    const stageContentWidth = Math.max(1, stageWidth - stageInset * 2);
+    const stageContentHeight = Math.max(1, stageHeight - stageInset * 2);
+    const stageTop = stageY + stageHeight / 2 - stageInset;
+    const stageBottom = stageY - stageHeight / 2 + stageInset;
+    const verticalGuard = Math.max(
+      10,
+      Math.round(hostGap * this.getArtTuningValue("sideCardVerticalGuardRatio"))
+    );
+    const baseSideHostHeight = Math.max(
+      220,
+      Math.min(
+        stageContentHeight - verticalGuard,
+        Math.round(stageContentHeight * this.getArtTuningValue("sideCardBaseHeightRatio"))
+      )
+    );
+    const baseSideHostWidth = Math.max(
+      176,
+      Math.min(
+        320,
+        Math.round((stageContentWidth - hostGap * 2) * this.getArtTuningValue("sideCardBaseWidthRatio"))
+      )
+    );
+    const leftCardWidth = Math.max(
+      120,
+      Math.min(stageContentWidth - hostGap, Math.round(baseSideHostWidth * this.getArtTuningValue("leftCardWidthScale")))
+    );
+    const maxSideCardHeight = Math.max(120, stageHeight - Math.max(4, Math.round(stageInset * 0.35)));
+    const resolveSideCardHeight = (scale: number): number => {
+      if (scale <= 1) {
+        return Math.max(120, Math.round(baseSideHostHeight * scale));
+      }
+
+      const progress = Math.min(1, scale - 1);
+      return Math.max(
+        120,
+        Math.round(baseSideHostHeight + (maxSideCardHeight - baseSideHostHeight) * progress)
+      );
+    };
     const leftCardHeight = Math.max(
       120,
-      Math.round(baseSideHostHeight * this.getArtTuningValue("leftCardHeightScale"))
+      Math.min(maxSideCardHeight, resolveSideCardHeight(this.getArtTuningValue("leftCardHeightScale")))
     );
-    const rightCardWidth = Math.max(120, Math.round(baseSideHostWidth * this.getArtTuningValue("rightCardWidthScale")));
+    const rightCardWidth = Math.max(
+      120,
+      Math.min(stageContentWidth - hostGap, Math.round(baseSideHostWidth * this.getArtTuningValue("rightCardWidthScale")))
+    );
     const rightCardHeight = Math.max(
       120,
-      Math.round(baseSideHostHeight * this.getArtTuningValue("rightCardHeightScale"))
+      Math.min(maxSideCardHeight, resolveSideCardHeight(this.getArtTuningValue("rightCardHeightScale")))
     );
-    const baseSideHostY = Math.round((mainAreaTop + mainAreaBottom) / 2 + viewportHeight * 0.008);
+    const baseSideHostY = Math.round(stageY);
     const offsetUnitX = viewportWidth * 0.5;
     const offsetUnitY = viewportHeight * 0.5;
     const topBarX = Math.round(this.getArtTuningValue("topBarOffsetXRatio") * offsetUnitX);
@@ -3203,18 +4616,33 @@ export class MainController extends ScreenController {
       edgeInset -
       topBarHeight / 2 +
       this.getArtTuningValue("topBarOffsetYRatio") * offsetUnitY;
-    const leftCardX =
-      -viewportWidth / 2 +
-      edgeInset +
+    const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+    const leftCardMinX = -stageWidth / 2 + stageInset + leftCardWidth / 2;
+    const leftCardMaxX = stageWidth / 2 - stageInset - leftCardWidth / 2;
+    const rightCardMinX = -stageWidth / 2 + stageInset + rightCardWidth / 2;
+    const rightCardMaxX = stageWidth / 2 - stageInset - rightCardWidth / 2;
+    const stageOuterTop = stageY + stageHeight / 2 - Math.max(2, Math.round(stageInset * 0.18));
+    const stageOuterBottom = stageY - stageHeight / 2 + Math.max(2, Math.round(stageInset * 0.18));
+    const leftCardMinY = stageOuterBottom + leftCardHeight / 2;
+    const leftCardMaxY = stageOuterTop - leftCardHeight / 2;
+    const rightCardMinY = stageOuterBottom + rightCardHeight / 2;
+    const rightCardMaxY = stageOuterTop - rightCardHeight / 2;
+    const leftCardRawX =
+      -stageWidth / 2 +
+      stageInset +
       leftCardWidth / 2 +
       this.getArtTuningValue("leftCardOffsetXRatio") * offsetUnitX;
-    const leftCardY = baseSideHostY + this.getArtTuningValue("leftCardOffsetYRatio") * offsetUnitY;
-    const rightCardX =
-      viewportWidth / 2 -
-      edgeInset -
+    const leftCardRawY = baseSideHostY + this.getArtTuningValue("leftCardOffsetYRatio") * offsetUnitY;
+    const rightCardRawX =
+      stageWidth / 2 -
+      stageInset -
       rightCardWidth / 2 +
       this.getArtTuningValue("rightCardOffsetXRatio") * offsetUnitX;
-    const rightCardY = baseSideHostY + this.getArtTuningValue("rightCardOffsetYRatio") * offsetUnitY;
+    const rightCardRawY = baseSideHostY + this.getArtTuningValue("rightCardOffsetYRatio") * offsetUnitY;
+    const leftCardX = clamp(leftCardRawX, leftCardMinX, leftCardMaxX);
+    const leftCardY = clamp(leftCardRawY, leftCardMinY, leftCardMaxY);
+    const rightCardX = clamp(rightCardRawX, rightCardMinX, rightCardMaxX);
+    const rightCardY = clamp(rightCardRawY, rightCardMinY, rightCardMaxY);
     const bottomDockX = Math.round(this.getArtTuningValue("bottomDockOffsetXRatio") * offsetUnitX);
     const bottomDockY =
       -viewportHeight / 2 +
@@ -3222,14 +4650,16 @@ export class MainController extends ScreenController {
       bottomDockHeight / 2 +
       this.getArtTuningValue("bottomDockOffsetYRatio") * offsetUnitY;
 
-    this.renderLayoutHostGuide(hostLayer, {
+    this.renderSideCardStructure(hostLayer, {
       name: "LeftCardHost",
       x: leftCardX,
       y: leftCardY,
       width: leftCardWidth,
       height: leftCardHeight,
       radius: 24,
-      label: "LEFT CARD HOST",
+      title: "成长概览",
+      subtitle: "今日陪伴",
+      side: "left",
     });
 
     this.renderTopBarStructure(hostLayer, {
@@ -3239,14 +4669,22 @@ export class MainController extends ScreenController {
       height: topBarHeight,
     });
 
-    this.renderLayoutHostGuide(hostLayer, {
+    this.renderSideCardStructure(hostLayer, {
       name: "RightCardHost",
       x: rightCardX,
       y: rightCardY,
       width: rightCardWidth,
       height: rightCardHeight,
       radius: 24,
-      label: "RIGHT CARD HOST",
+      title: "陪伴记录",
+      subtitle: "轻量提醒",
+      side: "right",
+    });
+
+    this.renderActiveTabPlaceholder(hostLayer, {
+      stageY,
+      stageWidth,
+      stageHeight,
     });
 
     this.renderBottomDockStructure(hostLayer, {
@@ -3254,6 +4692,21 @@ export class MainController extends ScreenController {
       y: bottomDockY,
       width: bottomDockWidth,
       height: bottomDockHeight,
+    });
+
+    this.renderFoodSelectionPanel(hostLayer, {
+      stageY,
+      stageWidth,
+      stageHeight,
+    });
+
+    this.renderHomeworkCenterOverlay(hostLayer, {
+      stageY,
+      stageWidth,
+      stageHeight,
+      bottomDockY,
+      bottomDockWidth,
+      bottomDockHeight,
     });
   }
 
@@ -3275,6 +4728,851 @@ export class MainController extends ScreenController {
     });
   }
 
+  private handleTopBarTabSelect(tab: TopBarNavTab): void {
+    if (this.activeTopBarNavTab === tab) {
+      return;
+    }
+
+    this.activeTopBarNavTab = tab;
+    if (tab === "bag") {
+      this.appendMainInteraction("背包已打开", "当前展示 dashboard 同步到的口粮库存。");
+    } else if (tab === "journal") {
+      this.appendMainInteraction("日记已打开", "正在读取后端历史事件。");
+      void this.tryRefreshJournalEvents();
+    } else {
+      this.appendMainInteraction("回到宠物主页", "继续查看当前宠物舞台与互动状态。");
+    }
+    this.render();
+  }
+
+  private renderActiveTabPlaceholder(
+    parent: Node,
+    options: {
+      stageY: number;
+      stageWidth: number;
+      stageHeight: number;
+    }
+  ): void {
+    if (this.activeTopBarNavTab === "petHome") {
+      return;
+    }
+
+    const viewModel = this.resolveMainViewModel();
+    const isBag = this.activeTopBarNavTab === "bag";
+    const panelWidth = Math.max(300, Math.min(460, Math.round(options.stageWidth * 0.38)));
+    const panelHeight = Math.max(180, Math.min(270, Math.round(options.stageHeight * 0.42)));
+    const panel = RuntimeUI.createCard(parent, {
+      name: isBag ? "BagPlaceholderPanel" : "JournalPlaceholderPanel",
+      x: 0,
+      y: Math.round(options.stageY),
+      width: panelWidth,
+      height: panelHeight,
+      color: new Color(235, 207, 180, 226),
+      innerColor: new Color(255, 252, 247, 238),
+      radius: 24,
+      borderThickness: 2,
+      innerRadius: 22,
+    });
+
+    RuntimeUI.createLabel(panel, {
+      name: "PlaceholderTitle",
+      text: isBag ? "背包" : "日记",
+      x: 0,
+      y: Math.round(panelHeight * 0.32),
+      width: panelWidth - 42,
+      height: 34,
+      fontSize: Math.max(20, Math.min(28, Math.round(panelWidth * 0.07))),
+      color: new Color(126, 68, 32, 242),
+    });
+    if (isBag) {
+      this.renderBagPanelContent(panel, viewModel, panelWidth, panelHeight);
+      return;
+    }
+    this.renderJournalPanelContent(panel, panelWidth, panelHeight);
+  }
+
+  private renderBagPanelContent(
+    panel: Node,
+    viewModel: MainViewModel,
+    panelWidth: number,
+    panelHeight: number
+  ): void {
+    const foods = viewModel.foods;
+    if (!foods.length) {
+      this.renderFoodShortageGuide(panel, {
+        name: "BagFoodShortage",
+        y: -Math.round(panelHeight * 0.08),
+        width: panelWidth - 52,
+      });
+      return;
+    }
+
+    const rowTop = Math.round(panelHeight * 0.13);
+    const rowGap = Math.max(46, Math.round(panelHeight * 0.22));
+    foods.slice(0, 3).forEach((food, index) => {
+      const y = rowTop - index * rowGap;
+      const isAvailable = food.count > 0 && !this.inventoryUseRequestInFlight;
+      RuntimeUI.createBox(panel, {
+        name: `BagFood${index}IconBg`,
+        x: -Math.round(panelWidth * 0.36),
+        y,
+        width: 34,
+        height: 34,
+        color: new Color(255, 244, 226, 210),
+        radius: 17,
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `BagFood${index}Icon`,
+        text: this.resolveFoodIcon(food),
+        x: -Math.round(panelWidth * 0.36),
+        y,
+        width: 30,
+        height: 30,
+        fontSize: 18,
+        color: new Color(126, 68, 32, 226),
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `BagFood${index}Name`,
+        text: this.formatFoodName(food),
+        x: -Math.round(panelWidth * 0.17),
+        y: y + 12,
+        width: Math.round(panelWidth * 0.34),
+        height: 24,
+        fontSize: Math.max(13, Math.min(18, Math.round(panelWidth * 0.042))),
+        color: new Color(126, 68, 32, 228),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `BagFood${index}Effect`,
+        text: this.resolveFoodEffectText(food),
+        x: -Math.round(panelWidth * 0.17),
+        y: y - 12,
+        width: Math.round(panelWidth * 0.45),
+        height: 24,
+        fontSize: Math.max(11, Math.min(15, Math.round(panelWidth * 0.034))),
+        color: new Color(151, 105, 76, 220),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `BagFood${index}Count`,
+        text: `数量 ${food.count}`,
+        x: Math.round(panelWidth * 0.17),
+        y: y + 12,
+        width: Math.round(panelWidth * 0.18),
+        height: 24,
+        fontSize: Math.max(13, Math.min(18, Math.round(panelWidth * 0.04))),
+        color: new Color(151, 105, 76, 220),
+      });
+      const useButton = RuntimeUI.createButton(panel, {
+        name: `BagFood${index}UseButton`,
+        text: food.count <= 0 ? "已用完" : this.inventoryUseRequestInFlight ? "处理中" : "使用",
+        x: Math.round(panelWidth * 0.34),
+        y,
+        width: Math.round(panelWidth * 0.18),
+        height: 30,
+        color: isAvailable ? new Color(238, 145, 84, 230) : new Color(190, 178, 164, 160),
+        textColor: new Color(255, 255, 255, isAvailable ? 255 : 190),
+        fontSize: Math.max(12, Math.min(15, Math.round(panelWidth * 0.036))),
+        radius: 15,
+      });
+      useButton.button.transition = Button.Transition.NONE;
+      if (isAvailable) {
+        useButton.node.on(Button.EventType.CLICK, () => void this.handleFoodSelection(food), this);
+      }
+    });
+
+    if (foods.length > 3) {
+      RuntimeUI.createLabel(panel, {
+        name: "BagMoreText",
+        text: `还有 ${foods.length - 3} 种道具未显示`,
+        x: 0,
+        y: -Math.round(panelHeight * 0.38),
+        width: panelWidth - 60,
+        height: 20,
+        fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.032))),
+        color: new Color(151, 105, 76, 188),
+      });
+    }
+
+    if (!this.hasUsableFood(foods)) {
+      this.renderFoodShortageGuide(panel, {
+        name: "BagEmptyUsableFood",
+        y: -Math.round(panelHeight * 0.36),
+        width: panelWidth - 52,
+        compact: true,
+      });
+    }
+  }
+
+  private hasUsableFood(foods = appState.getPetFoodInventory()): boolean {
+    return foods.some((food) => food.count > 0);
+  }
+
+  private renderFoodShortageGuide(
+    parent: Node,
+    options: {
+      name: string;
+      y: number;
+      width: number;
+      compact?: boolean;
+    }
+  ): void {
+    const guideHeight = options.compact ? 58 : 86;
+    RuntimeUI.createCard(parent, {
+      name: `${options.name}Card`,
+      x: 0,
+      y: options.y,
+      width: options.width,
+      height: guideHeight,
+      color: new Color(255, 244, 226, 168),
+      innerColor: new Color(255, 252, 247, 160),
+      radius: 18,
+      borderThickness: 2,
+      innerRadius: 16,
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Text`,
+      text: "粮食不太够啦，完成一次学习任务可以获得新的口粮。",
+      x: -Math.round(options.width * 0.12),
+      y: options.y + (options.compact ? 12 : 18),
+      width: Math.round(options.width * 0.68),
+      height: options.compact ? 32 : 44,
+      fontSize: Math.max(12, Math.min(16, Math.round(options.width * 0.038))),
+      color: new Color(151, 105, 76, 218),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    const homeworkButton = RuntimeUI.createButton(parent, {
+      name: `${options.name}HomeworkButton`,
+      text: "去提交作业",
+      x: Math.round(options.width * 0.3),
+      y: options.y - (options.compact ? 14 : 18),
+      width: Math.max(102, Math.round(options.width * 0.28)),
+      height: 32,
+      color: new Color(238, 145, 84, 230),
+      textColor: new Color(255, 255, 255, 255),
+      fontSize: Math.max(12, Math.min(15, Math.round(options.width * 0.036))),
+      radius: 16,
+    });
+    homeworkButton.button.transition = Button.Transition.NONE;
+    homeworkButton.node.on(Button.EventType.CLICK, () => this.openHomeworkCenterFromFoodShortage(), this);
+  }
+
+  private renderJournalPanelContent(panel: Node, panelWidth: number, panelHeight: number): void {
+    const diaryDays = appState.getDiaryDays();
+    if (this.journalEventsLoading && !diaryDays.length) {
+      RuntimeUI.createLabel(panel, {
+        name: "JournalLoadingText",
+        text: "正在读取成长日记...",
+        x: 0,
+        y: -Math.round(panelHeight * 0.08),
+        width: panelWidth - 48,
+        height: Math.round(panelHeight * 0.34),
+        fontSize: Math.max(14, Math.min(18, Math.round(panelWidth * 0.044))),
+        color: new Color(151, 105, 76, 208),
+      });
+      return;
+    }
+    if (!diaryDays.length) {
+      RuntimeUI.createLabel(panel, {
+        name: "JournalEmptyText",
+        text: this.journalSyncMessage ?? (this.journalEventsLoaded ? "最近还没有成长记录" : "日记暂未同步，请稍后再试"),
+        x: 0,
+        y: -Math.round(panelHeight * 0.08),
+        width: panelWidth - 48,
+        height: Math.round(panelHeight * 0.34),
+        fontSize: Math.max(14, Math.min(18, Math.round(panelWidth * 0.044))),
+        color: new Color(151, 105, 76, 208),
+      });
+      return;
+    }
+
+    const scrollWidth = panelWidth - 44;
+    const scrollHeight = Math.max(88, Math.round(panelHeight * 0.58));
+    const scrollY = -Math.round(panelHeight * 0.04);
+    const scrollArea = RuntimeUI.createBox(panel, {
+      name: "JournalScrollArea",
+      x: 0,
+      y: scrollY,
+      width: scrollWidth,
+      height: scrollHeight,
+      color: new Color(255, 244, 226, 68),
+      radius: 16,
+    });
+    const mask = scrollArea.addComponent(Mask);
+    mask.enabled = true;
+
+    const scrollView = scrollArea.addComponent(ScrollView);
+    scrollView.horizontal = false;
+    scrollView.vertical = true;
+    scrollView.inertia = true;
+    scrollView.brake = 0.35;
+    scrollView.elastic = true;
+
+    const content = new Node("JournalScrollContent");
+    content.setParent(scrollArea);
+    const contentTransform = content.addComponent(UITransform);
+    const contentWidth = scrollWidth - 18;
+    const dayHeaderHeight = 24;
+    const entryHeight = 23;
+    const dayBottomGap = 12;
+    const contentPadding = 10;
+    const totalHeight = Math.max(
+      scrollHeight,
+      contentPadding * 2 +
+        diaryDays.reduce((sum, day) => {
+          return sum + dayHeaderHeight + day.entries.length * entryHeight + dayBottomGap;
+        }, 0)
+    );
+    contentTransform.setContentSize(contentWidth, totalHeight);
+
+    let cursorY = totalHeight / 2 - contentPadding;
+    diaryDays.forEach((day, dayIndex) => {
+      RuntimeUI.createLabel(content, {
+        name: `JournalDay${dayIndex}Title`,
+        text: `${day.dateText}  ${day.summary}`,
+        x: 0,
+        y: cursorY - dayHeaderHeight / 2,
+        width: contentWidth,
+        height: 22,
+        fontSize: Math.max(12, Math.min(16, Math.round(panelWidth * 0.038))),
+        color: new Color(126, 68, 32, 228),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+
+      cursorY -= dayHeaderHeight;
+      day.entries.forEach((entry, entryIndex) => {
+        RuntimeUI.createLabel(content, {
+          name: `JournalDay${dayIndex}Entry${entryIndex}`,
+          text: `${entry.timeText} ${entry.title}：${entry.detail}`,
+          x: 0,
+          y: cursorY - entryHeight / 2,
+          width: contentWidth,
+          height: 20,
+          fontSize: Math.max(10, Math.min(14, Math.round(panelWidth * 0.032))),
+          color: new Color(151, 105, 76, 208),
+          horizontalAlign: HorizontalTextAlignment.LEFT,
+        });
+        cursorY -= entryHeight;
+      });
+
+      cursorY -= dayBottomGap;
+    });
+    content.setPosition(Vec3.ZERO);
+    scrollView.content = content;
+    scrollView.scheduleOnce(() => {
+      if (scrollView.node.isValid) {
+        scrollView.scrollToTop(0);
+      }
+    }, 0);
+
+    const footerText = this.journalSyncMessage ?? (totalHeight > scrollHeight ? "上下拖动查看最近 7 天全部记录" : "");
+    if (footerText) {
+      RuntimeUI.createLabel(panel, {
+        name: "JournalFooterText",
+        text: footerText,
+        x: 0,
+        y: -Math.round(panelHeight * 0.38),
+        width: panelWidth - 60,
+        height: 20,
+        fontSize: Math.max(10, Math.min(13, Math.round(panelWidth * 0.03))),
+        color: new Color(151, 105, 76, 188),
+      });
+    }
+  }
+
+  private async tryRefreshJournalEvents(): Promise<void> {
+    if (this.journalEventsLoading || !appState.getCurrentUser() || !appState.getPetId()) {
+      return;
+    }
+
+    this.journalEventsLoading = true;
+    this.journalSyncMessage = null;
+    this.render();
+    try {
+      const result = await petService.loadPetDiary(7);
+      this.journalEventsLoaded = result.success;
+      if (!result.success) {
+        this.journalSyncMessage = appState.getDiaryDays().length
+          ? "同步失败，当前为上次记录"
+          : "日记暂未同步，请稍后再试";
+      }
+    } catch {
+      this.journalEventsLoaded = false;
+      this.journalSyncMessage = appState.getDiaryDays().length
+        ? "同步失败，当前为上次记录"
+        : "日记暂未同步，请稍后再试";
+    } finally {
+      this.journalEventsLoading = false;
+      if (this.activeTopBarNavTab === "journal") {
+        this.render();
+      }
+    }
+  }
+
+  private renderFoodSelectionPanel(
+    parent: Node,
+    options: {
+      stageY: number;
+      stageWidth: number;
+      stageHeight: number;
+    }
+  ): void {
+    if (!this.isFoodSelectionPanelOpen) {
+      return;
+    }
+
+    const foods = appState.getPetFoodInventory();
+    const availableFoods = foods.filter((food) => food.count > 0);
+    const panelWidth = Math.max(330, Math.min(500, Math.round(options.stageWidth * 0.44)));
+    const panelHeight = Math.max(230, Math.min(330, Math.round(options.stageHeight * 0.5)));
+    const panel = RuntimeUI.createCard(parent, {
+      name: "FoodSelectionPanel",
+      x: 0,
+      y: Math.round(options.stageY),
+      width: panelWidth,
+      height: panelHeight,
+      color: new Color(235, 207, 180, 238),
+      innerColor: new Color(255, 252, 247, 246),
+      radius: 24,
+      borderThickness: 2,
+      innerRadius: 22,
+    });
+
+    RuntimeUI.createLabel(panel, {
+      name: "FoodSelectionTitle",
+      text: "选择口粮",
+      x: 0,
+      y: Math.round(panelHeight * 0.36),
+      width: panelWidth - 80,
+      height: 32,
+      fontSize: Math.max(20, Math.min(28, Math.round(panelWidth * 0.06))),
+      color: new Color(126, 68, 32, 242),
+    });
+
+    const closeButton = RuntimeUI.createButton(panel, {
+      name: "FoodSelectionClose",
+      text: "关闭",
+      x: Math.round(panelWidth * 0.34),
+      y: Math.round(panelHeight * 0.36),
+      width: 68,
+      height: 28,
+      color: new Color(110, 74, 51, 130),
+      textColor: new Color(255, 255, 255, 255),
+      fontSize: 13,
+      radius: 14,
+    });
+    closeButton.button.transition = Button.Transition.NONE;
+    closeButton.node.on(
+      Button.EventType.CLICK,
+      () => {
+        this.isFoodSelectionPanelOpen = false;
+        this.render();
+      },
+      this
+    );
+
+    if (!availableFoods.length) {
+      this.renderFoodShortageGuide(panel, {
+        name: "FoodSelectionShortage",
+        y: -Math.round(panelHeight * 0.06),
+        width: panelWidth - 56,
+      });
+      return;
+    }
+
+    const headerY = Math.round(panelHeight * 0.2);
+    const headerColor = new Color(151, 105, 76, 210);
+    RuntimeUI.createLabel(panel, {
+      name: "FoodSelectionTypeHeader",
+      text: "food_type",
+      x: -Math.round(panelWidth * 0.25),
+      y: headerY,
+      width: Math.round(panelWidth * 0.28),
+      height: 22,
+      fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.033))),
+      color: headerColor,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    RuntimeUI.createLabel(panel, {
+      name: "FoodSelectionQualityHeader",
+      text: "food_quality",
+      x: 0,
+      y: headerY,
+      width: Math.round(panelWidth * 0.28),
+      height: 22,
+      fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.033))),
+      color: headerColor,
+    });
+    RuntimeUI.createLabel(panel, {
+      name: "FoodSelectionCountHeader",
+      text: "count",
+      x: Math.round(panelWidth * 0.27),
+      y: headerY,
+      width: Math.round(panelWidth * 0.16),
+      height: 22,
+      fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.033))),
+      color: headerColor,
+    });
+
+    const rowTop = Math.round(panelHeight * 0.08);
+    const rowGap = Math.max(36, Math.round(panelHeight * 0.16));
+    const rowWidth = Math.round(panelWidth * 0.82);
+    const rowHeight = Math.max(30, Math.round(rowGap * 0.74));
+    availableFoods.slice(0, 5).forEach((food, index) => {
+      const y = rowTop - index * rowGap;
+      RuntimeUI.createBox(panel, {
+        name: `FoodSelectionRowBg${index}`,
+        x: 0,
+        y,
+        width: rowWidth,
+        height: rowHeight,
+        color: new Color(255, 244, 226, this.feedRequestInFlight ? 108 : 184),
+        radius: Math.round(rowHeight / 2),
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `FoodSelectionType${index}`,
+        text: food.food_type,
+        x: -Math.round(panelWidth * 0.25),
+        y,
+        width: Math.round(panelWidth * 0.28),
+        height: 24,
+        fontSize: Math.max(13, Math.min(17, Math.round(panelWidth * 0.039))),
+        color: new Color(126, 68, 32, 230),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `FoodSelectionQuality${index}`,
+        text: food.food_quality,
+        x: 0,
+        y,
+        width: Math.round(panelWidth * 0.28),
+        height: 24,
+        fontSize: Math.max(13, Math.min(17, Math.round(panelWidth * 0.039))),
+        color: new Color(126, 68, 32, 220),
+      });
+      RuntimeUI.createLabel(panel, {
+        name: `FoodSelectionCount${index}`,
+        text: String(food.count),
+        x: Math.round(panelWidth * 0.27),
+        y,
+        width: Math.round(panelWidth * 0.16),
+        height: 24,
+        fontSize: Math.max(13, Math.min(17, Math.round(panelWidth * 0.039))),
+        color: new Color(151, 105, 76, 224),
+      });
+
+      const rowHitArea = RuntimeUI.createBox(panel, {
+        name: `FoodSelectionHit${index}`,
+        x: 0,
+        y,
+        width: rowWidth,
+        height: rowHeight,
+        color: new Color(255, 255, 255, 0),
+        radius: Math.round(rowHeight / 2),
+      });
+      const rowButton = rowHitArea.addComponent(Button);
+      rowButton.transition = Button.Transition.NONE;
+      rowHitArea.on(Button.EventType.CLICK, () => void this.handleFoodSelection(food), this);
+    });
+
+    if (availableFoods.length > 5) {
+      RuntimeUI.createLabel(panel, {
+        name: "FoodSelectionMore",
+        text: `还有 ${availableFoods.length - 5} 种口粮未显示`,
+        x: 0,
+        y: -Math.round(panelHeight * 0.38),
+        width: panelWidth - 60,
+        height: 20,
+        fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.032))),
+        color: new Color(151, 105, 76, 188),
+      });
+    }
+  }
+
+  private renderHomeworkCenterOverlay(
+    parent: Node,
+    options: {
+      stageY: number;
+      stageWidth: number;
+      stageHeight: number;
+      bottomDockY: number;
+      bottomDockWidth: number;
+      bottomDockHeight: number;
+    }
+  ): void {
+    this.homeworkCenterRefs = null;
+    if (!this.isHomeworkCenterOpen) {
+      return;
+    }
+
+    const host = new Node("HomeworkCenterOverlay");
+    host.setParent(parent);
+    const stageTop = options.stageY + options.stageHeight / 2;
+    const stageBottom = options.stageY - options.stageHeight / 2;
+    const bottomDockTop = options.bottomDockY + options.bottomDockHeight / 2;
+    const bottomDockBottom = options.bottomDockY - options.bottomDockHeight / 2;
+    const overlayTop = Math.max(stageTop, bottomDockTop);
+    const overlayBottom = Math.min(stageBottom, bottomDockBottom);
+    const overlayHeight =
+      (overlayTop - overlayBottom) * this.getArtTuningValue("homeworkOverlayHeightScale");
+    const overlayWidth =
+      Math.max(options.stageWidth, options.bottomDockWidth) *
+      this.getArtTuningValue("homeworkOverlayWidthScale");
+    const overlayX = overlayWidth * this.getArtTuningValue("homeworkOverlayOffsetXRatio");
+    const overlayY =
+      (overlayTop + overlayBottom) / 2 +
+      overlayHeight * this.getArtTuningValue("homeworkOverlayOffsetYRatio");
+    host.setPosition(Math.round(overlayX), Math.round(overlayY), 0);
+    const transform = host.addComponent(UITransform);
+    transform.setContentSize(overlayWidth, overlayHeight);
+    const baseScale = Math.max(
+      0.68,
+      Math.min(1, (overlayWidth * 0.94) / 1120, (overlayHeight * 0.94) / 500)
+    );
+    const scale = Math.max(0.5, Math.min(1.35, baseScale * this.getArtTuningValue("homeworkOverlayScale")));
+    host.setScale(scale, scale, 1);
+
+    const hint = this.homeworkCenterCoordinator.getCurrentHint();
+    this.homeworkCenterRefs = renderHomeworkCenter(
+      host,
+      {
+        selectedSubject: this.homeworkCenterCoordinator.getSelectedSubject(),
+        noteDraft: this.homeworkCenterCoordinator.getCurrentDraft(),
+        historySummary: formatHomeworkHistory(appState.getHomeworkHistory(), { limit: 3 }),
+        hint: hint.message,
+        hintIsWarning: hint.isWarning,
+        uploadedImage: this.homeworkCenterCoordinator.getCurrentUploadedImage(),
+        uploading: this.homeworkCenterCoordinator.isUploading(),
+        submitting: this.homeworkCenterCoordinator.isSubmitting(),
+        uploadError: this.homeworkCenterCoordinator.getUploadError(),
+        submitError: this.homeworkCenterCoordinator.getSubmitError(),
+        rewardFeedback: this.homeworkCenterCoordinator.getRewardFeedback(),
+        devResetting: this.homeworkDevResetting,
+        devResetMessage: this.homeworkDevResetMessage,
+        layout: this.resolveHomeworkCenterLayoutTuning(),
+      },
+      {
+        onSelectSubject: (subject) => this.handleHomeworkSubjectSelect(subject),
+        onUploadImage: () => void this.handleHomeworkImageUpload(),
+        onRemoveImage: () => this.handleHomeworkImageRemove(),
+        onSubmit: () => void this.handleHomeworkSubmit(),
+        onBackToOverview: () => this.closeHomeworkCenter(),
+        onViewBag: () => this.handleHomeworkViewBag(),
+        onContinue: () => this.handleHomeworkContinue(),
+        onDevResetToday: () => void this.handleHomeworkDevResetToday(),
+      },
+      this
+    );
+  }
+
+  private resolveHomeworkCenterLayoutTuning(): HomeworkCenterLayoutTuning {
+    return {
+      workCardX: this.getArtTuningValue("homeworkWorkCardX"),
+      workCardY: this.getArtTuningValue("homeworkWorkCardY"),
+      workCardWidth: this.getArtTuningValue("homeworkWorkCardWidth"),
+      workCardHeight: this.getArtTuningValue("homeworkWorkCardHeight"),
+      rewardCardX: this.getArtTuningValue("homeworkRewardCardX"),
+      rewardCardY: this.getArtTuningValue("homeworkRewardCardY"),
+      rewardCardWidth: this.getArtTuningValue("homeworkRewardCardWidth"),
+      rewardCardHeight: this.getArtTuningValue("homeworkRewardCardHeight"),
+      panelAlpha: this.getArtTuningValue("homeworkPanelAlpha"),
+      panelInnerAlpha: this.getArtTuningValue("homeworkPanelInnerAlpha"),
+      panelBorderWidth: this.getArtTuningValue("homeworkPanelBorderWidth"),
+      panelRadius: this.getArtTuningValue("homeworkPanelRadius"),
+      panelGradientAlpha: this.getArtTuningValue("homeworkPanelGradientAlpha"),
+      panelGradientRange: this.getArtTuningValue("homeworkPanelGradientRange"),
+      panelGradientColorR: this.getArtTuningValue("homeworkPanelGradientColorR"),
+      panelGradientColorG: this.getArtTuningValue("homeworkPanelGradientColorG"),
+      panelGradientColorB: this.getArtTuningValue("homeworkPanelGradientColorB"),
+    };
+  }
+
+  private openHomeworkCenterFromFoodShortage(): void {
+    this.isFoodSelectionPanelOpen = false;
+    this.isHomeworkCenterOpen = true;
+    this.appendMainInteraction("打开学习任务", "完成一次学习任务可以获得新的口粮。");
+    this.render();
+    void this.refreshHomeworkCenterData();
+  }
+
+  private closeHomeworkCenter(): void {
+    this.syncHomeworkNoteDraft();
+    this.isHomeworkCenterOpen = false;
+    this.appendMainInteraction("回到宠物主页", "学习任务面板已收起。");
+    this.render();
+  }
+
+  private handleHomeworkViewBag(): void {
+    this.syncHomeworkNoteDraft();
+    this.isHomeworkCenterOpen = false;
+    this.activeTopBarNavTab = "bag";
+    this.appendMainInteraction("查看背包", "正在查看后端同步到的口粮库存。");
+    this.render();
+  }
+
+  private handleHomeworkContinue(): void {
+    this.homeworkCenterCoordinator.resetForContinue();
+    this.homeworkDevResetMessage = null;
+    this.render();
+  }
+
+  private handleHomeworkSubjectSelect(subject: HomeworkSubject): void {
+    this.syncHomeworkNoteDraft();
+    this.homeworkCenterCoordinator.setSelectedSubject(subject);
+    this.render();
+  }
+
+  private handleHomeworkImageRemove(): void {
+    this.syncHomeworkNoteDraft();
+    this.homeworkCenterCoordinator.clearUploadedImage();
+    this.render();
+  }
+
+  private async refreshHomeworkCenterData(): Promise<void> {
+    await homeworkService.refreshTodayStatus();
+    if (this.isHomeworkCenterOpen) {
+      this.render();
+    }
+
+    const historyResult = await homeworkService.refreshHistory(1, 5);
+    if (this.isHomeworkCenterOpen && historyResult.success) {
+      this.render();
+    }
+  }
+
+  private async handleHomeworkDevResetToday(): Promise<void> {
+    if (this.homeworkDevResetting) {
+      return;
+    }
+
+    this.syncHomeworkNoteDraft();
+    this.homeworkDevResetting = true;
+    this.homeworkDevResetMessage = "正在重置今日作业状态...";
+    this.render();
+
+    try {
+      const result = await homeworkService.resetTodayForDev(appState.getPetId());
+      if (!result.success) {
+        this.homeworkDevResetMessage = result.message ?? "开发重置接口不可用。";
+        this.appendMainInteraction("开发重置失败", this.homeworkDevResetMessage);
+        return;
+      }
+
+      this.homeworkCenterCoordinator.resetForContinue();
+      this.homeworkDevResetMessage = result.data?.message ?? "今日作业状态已重置，可重新提交。";
+      await homeworkService.refreshTodayStatus();
+      await homeworkService.refreshHistory(1, 5);
+      this.appendMainInteraction("开发重置完成", this.homeworkDevResetMessage);
+    } catch {
+      this.homeworkDevResetMessage = "开发重置失败，请确认后端接口已启用。";
+      this.appendMainInteraction("开发重置失败", this.homeworkDevResetMessage);
+    } finally {
+      this.homeworkDevResetting = false;
+      if (this.isHomeworkCenterOpen) {
+        this.render();
+      }
+    }
+  }
+
+  private async handleHomeworkImageUpload(): Promise<void> {
+    this.syncHomeworkNoteDraft();
+    if (this.homeworkCenterCoordinator.isUploading() || this.homeworkCenterCoordinator.isSubmitting()) {
+      return;
+    }
+
+    const file = await this.pickHomeworkImageFile();
+    if (!file) {
+      return;
+    }
+
+    const uploadTask = this.homeworkCenterCoordinator.uploadCurrentImage(file);
+    this.render();
+    const feedback = await uploadTask;
+    this.appendMainInteraction(
+      feedback.success ? "图片已上传" : "图片上传失败",
+      feedback.message
+    );
+    this.render();
+  }
+
+  private async handleHomeworkSubmit(): Promise<void> {
+    this.syncHomeworkNoteDraft();
+    const submitTask = this.homeworkCenterCoordinator.submitCurrent(appState.getPetId());
+    this.render();
+    const feedback = await submitTask;
+    const latestBackendLog = feedback.logsSynced ? appState.getMainEvents()[0] : null;
+    this.appendMainInteraction(
+      latestBackendLog?.title ?? (feedback.rewardStatus === "granted" ? "作业奖励" : "作业提交"),
+      latestBackendLog?.detail ?? feedback.message
+    );
+    this.render();
+
+    if (feedback.success) {
+      await homeworkService.refreshTodayStatus();
+      await homeworkService.refreshHistory(1, 5);
+      if (this.isHomeworkCenterOpen) {
+        this.render();
+      }
+    }
+
+    if (feedback.success && feedback.rewardStatus === "granted" && feedback.shouldRefreshDashboard) {
+      const refreshed = await this.tryRefreshMainDashboard();
+      if (!refreshed) {
+        this.appendMainInteraction("背包稍后刷新", "奖励已发放，背包稍后刷新。");
+        this.render();
+      }
+    }
+  }
+
+  private syncHomeworkNoteDraft(): void {
+    const noteInput = this.homeworkCenterRefs?.noteInput;
+    if (!noteInput) {
+      return;
+    }
+    this.homeworkCenterCoordinator.syncCurrentDraft(noteInput.string);
+  }
+
+  private pickHomeworkImageFile(): Promise<File | null> {
+    if (typeof document === "undefined" || !document.body) {
+      this.appendMainInteraction("图片上传不可用", "当前运行环境暂不支持选择本地图片。");
+      this.render();
+      return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.style.display = "none";
+
+      let settled = false;
+      const cleanup = (): void => {
+        if (input.parentElement) {
+          input.parentElement.removeChild(input);
+        }
+        window.removeEventListener("focus", handleFocus);
+      };
+      const settle = (file: File | null): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(file);
+      };
+      const handleFocus = (): void => {
+        window.setTimeout(() => settle(input.files?.[0] ?? null), 250);
+      };
+
+      input.addEventListener("change", () => settle(input.files?.[0] ?? null), {
+        once: true,
+      });
+      window.addEventListener("focus", handleFocus, { once: true });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
   private renderTopBarStructure(
     parent: Node,
     options: {
@@ -3284,6 +5582,7 @@ export class MainController extends ScreenController {
       height: number;
     }
   ): void {
+    const viewModel = this.resolveMainViewModel();
     const radius = Math.round(options.height * 0.38);
     const topBarShellAlpha = Math.round(this.getArtTuningValue("topBarShellAlpha"));
     const topBarInnerAlpha = Math.round(this.getArtTuningValue("topBarInnerAlpha"));
@@ -3617,11 +5916,7 @@ export class MainController extends ScreenController {
       navHitArea.on(
         Button.EventType.CLICK,
         () => {
-          if (this.activeTopBarNavTab === item.key) {
-            return;
-          }
-          this.activeTopBarNavTab = item.key;
-          this.render();
+          this.handleTopBarTabSelect(item.key);
         },
         this
       );
@@ -3654,7 +5949,7 @@ export class MainController extends ScreenController {
     });
     RuntimeUI.createLabel(statusShell, {
       name: "TopBarStatusIcon",
-      text: "🌙",
+      text: this.resolveStatusIcon(viewModel.displayStatus),
       x: -statusWidth / 2 + 24,
       y: 0,
       width: 22,
@@ -3664,7 +5959,7 @@ export class MainController extends ScreenController {
     });
     RuntimeUI.createLabel(statusShell, {
       name: "TopBarStatusText",
-      text: "休息中",
+      text: viewModel.statusValueText,
       x: 22,
       y: 0,
       width: statusWidth - 48,
@@ -3830,6 +6125,7 @@ export class MainController extends ScreenController {
     const items = [
       {
         name: "Feed",
+        action: "feed" as BottomDockAction,
         icon: "๑ڡ๑",
         topColor: new Color(249, 206, 104, 255),
         bottomColor: new Color(238, 157, 50, 255),
@@ -3841,6 +6137,7 @@ export class MainController extends ScreenController {
       },
       {
         name: "Play",
+        action: "play" as BottomDockAction,
         icon: "ᕕᐛᕗ",
         topColor: new Color(207, 183, 255, 255),
         bottomColor: new Color(154, 121, 226, 255),
@@ -3852,6 +6149,7 @@ export class MainController extends ScreenController {
       },
       {
         name: "Bath",
+        action: "bath" as BottomDockAction,
         icon: "≋",
         topColor: new Color(145, 226, 176, 255),
         bottomColor: new Color(86, 190, 131, 255),
@@ -3863,6 +6161,7 @@ export class MainController extends ScreenController {
       },
       {
         name: "Sleep",
+        action: "sleep" as BottomDockAction,
         icon: "Zz",
         topColor: new Color(157, 176, 255, 255),
         bottomColor: new Color(96, 119, 220, 255),
@@ -3874,6 +6173,7 @@ export class MainController extends ScreenController {
       },
       {
         name: "Music",
+        action: "music" as BottomDockAction,
         icon: "♪",
         topColor: new Color(248, 202, 92, 255),
         bottomColor: new Color(231, 150, 41, 255),
@@ -3885,6 +6185,7 @@ export class MainController extends ScreenController {
       },
       {
         name: "Care",
+        action: "care" as BottomDockAction,
         icon: "♡",
         topColor: new Color(251, 179, 199, 255),
         bottomColor: new Color(226, 111, 148, 255),
@@ -4001,6 +6302,18 @@ export class MainController extends ScreenController {
         fontSize: bottomDockTextFontSize,
         color: bottomDockTextColor,
       });
+      const hitArea = RuntimeUI.createBox(tile, {
+        name: `BottomDock${item.name}Hit`,
+        x: 0,
+        y: 0,
+        width: tileWidth,
+        height: tileHeight,
+        color: new Color(255, 255, 255, 0),
+        radius: 24,
+      });
+      const actionButton = hitArea.addComponent(Button);
+      actionButton.transition = Button.Transition.NONE;
+      hitArea.on(Button.EventType.CLICK, () => this.handleBottomDockAction(item.action), this);
     });
   }
 
@@ -4062,6 +6375,1042 @@ export class MainController extends ScreenController {
       color: new Color(126, 93, 69, 214),
     });
   }
+
+  private renderSideCardStructure(
+    parent: Node,
+    options: {
+      name: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      radius: number;
+      title: string;
+      subtitle: string;
+      side: "left" | "right";
+    }
+  ): void {
+    const card = RuntimeUI.createCard(parent, {
+      name: options.name,
+      x: Math.round(options.x),
+      y: Math.round(options.y),
+      width: Math.round(options.width),
+      height: Math.round(options.height),
+      color: new Color(235, 207, 180, 214),
+      innerColor: new Color(255, 252, 247, 208),
+      radius: Math.round(options.radius * 1.08),
+      borderThickness: 2,
+      innerRadius: Math.max(0, Math.round(options.radius * 1.08) - 2),
+    });
+
+    if (options.side === "left") {
+      this.renderLeftStatusCardContent(card, options);
+      return;
+    }
+
+    this.renderRightLogCardContent(card, options);
+  }
+
+  private renderLeftStatusCardContent(
+    card: Node,
+    options: {
+      name: string;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.resolveMainViewModel();
+    const cardWidth = options.width;
+    const cardHeight = options.height;
+    const topY = cardHeight / 2;
+    const leftX = -cardWidth / 2;
+    const titleY = Math.round(topY - cardHeight * this.getArtTuningValue("leftStatusTitleYRatio"));
+    const pawX = Math.round(cardWidth * this.getArtTuningValue("leftStatusPawXRatio"));
+    const pawY = titleY + Math.round(this.getArtTuningValue("leftStatusPawYOffset"));
+    const pawScale = this.getArtTuningValue("leftStatusPawScale");
+
+    this.renderPawTitleDecor(card, {
+      name: `${options.name}LeftPaw`,
+      x: -pawX,
+      y: pawY,
+      mirrored: false,
+      scale: pawScale,
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}Title`,
+      text: "小橘状态",
+      x: 0,
+      y: titleY,
+      width: Math.round(cardWidth * 0.58),
+      height: 38,
+      fontSize: Math.max(18, Math.min(42, Math.round(cardWidth * this.getArtTuningValue("leftStatusTitleFontScale")))),
+      color: new Color(126, 68, 32, 240),
+    });
+    this.renderPawTitleDecor(card, {
+      name: `${options.name}RightPaw`,
+      x: pawX,
+      y: pawY,
+      mirrored: true,
+      scale: pawScale,
+    });
+
+    const levelY = Math.round(topY - cardHeight * this.getArtTuningValue("leftStatusLevelYRatio"));
+    const levelPillX = Math.round(cardWidth * this.getArtTuningValue("leftStatusLevelPillXRatio"));
+    const levelPillWidth = Math.round(cardWidth * this.getArtTuningValue("leftStatusLevelPillWidthRatio"));
+    const levelPillHeight = Math.round(cardHeight * this.getArtTuningValue("leftStatusLevelPillHeightRatio"));
+    RuntimeUI.createBox(card, {
+      name: `${options.name}LevelPill`,
+      x: levelPillX,
+      y: levelY,
+      width: levelPillWidth,
+      height: levelPillHeight,
+      color: new Color(255, 247, 230, 224),
+      radius: Math.round(levelPillHeight * 0.5),
+    });
+    RuntimeUI.createBox(card, {
+      name: `${options.name}LevelPillGlow`,
+      x: levelPillX,
+      y: levelY + Math.round(levelPillHeight * 0.18),
+      width: Math.round(levelPillWidth * 0.78),
+      height: Math.round(levelPillHeight * 0.28),
+      color: new Color(255, 255, 255, 76),
+      radius: Math.round(levelPillHeight * 0.16),
+    });
+    this.renderCloudBadge(card, {
+      name: `${options.name}LevelBadge`,
+      x: Math.round(leftX + cardWidth * this.getArtTuningValue("leftStatusLevelBadgeXRatio")),
+      y: levelY,
+      size: Math.round(
+        Math.min(
+          cardWidth * this.getArtTuningValue("leftStatusLevelBadgeWidthRatio"),
+          cardHeight * this.getArtTuningValue("leftStatusLevelBadgeHeightRatio")
+        )
+      ),
+      text: viewModel.levelBadgeText,
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}LevelText`,
+      text: viewModel.levelText,
+      x: Math.round(cardWidth * this.getArtTuningValue("leftStatusLevelTextXRatio")),
+      y: levelY + 1,
+      width: Math.round(cardWidth * 0.46),
+      height: 26,
+      fontSize: Math.max(16, Math.min(32, Math.round(cardWidth * this.getArtTuningValue("leftStatusLevelTextFontScale")))),
+      color: new Color(126, 68, 32, 236),
+    });
+
+    const dividerY = Math.round(topY - cardHeight * this.getArtTuningValue("leftStatusDividerYRatio"));
+    this.renderDottedDivider(card, {
+      name: `${options.name}DottedDivider`,
+      y: dividerY,
+      width: Math.round(cardWidth * this.getArtTuningValue("leftStatusDividerWidthRatio")),
+      dotCount: 26,
+    });
+
+    const rows = [
+      { name: "Satiety", icon: "🍚", label: "饱腹值", value: viewModel.satiety, color: new Color(255, 129, 153, 235) },
+      { name: "Stamina", icon: "⚡", label: "体力值", value: viewModel.stamina, color: new Color(124, 211, 64, 235) },
+      { name: "Mood", icon: "❤", label: "心情值", value: viewModel.mood, color: new Color(255, 113, 139, 235) },
+    ];
+    const rowStartY = dividerY - Math.round(cardHeight * this.getArtTuningValue("leftStatusRowsTopGapRatio"));
+    const rowGap = Math.round(cardHeight * this.getArtTuningValue("leftStatusRowsGapRatio"));
+    rows.forEach((row, index) => {
+      this.renderLeftStatusRow(card, {
+        name: `${options.name}${row.name}`,
+        x: 0,
+        y: rowStartY - index * rowGap,
+        width: cardWidth,
+        icon: row.icon,
+        label: row.label,
+        value: row.value,
+        color: row.color,
+      });
+    });
+
+    this.renderFlowerCluster(card, {
+      name: `${options.name}FlowerDecor`,
+      x: Math.round(cardWidth * this.getArtTuningValue("leftStatusFlowerXRatio")),
+      y: Math.round(-cardHeight / 2 + this.getArtTuningValue("leftStatusFlowerYOffset")),
+      scale: Math.max(0.45, Math.min(1.4, (cardWidth / 310) * this.getArtTuningValue("leftStatusFlowerScale"))),
+    });
+  }
+
+  private renderPawTitleDecor(
+    parent: Node,
+    options: { name: string; x: number; y: number; mirrored: boolean; scale?: number }
+  ): void {
+    const direction = options.mirrored ? -1 : 1;
+    const scale = options.scale ?? 1;
+    const pawColor = new Color(248, 177, 126, 138);
+    const dotColor = new Color(248, 177, 126, 120);
+    const pad = (suffix: string, x: number, y: number, width: number, height: number, alpha = pawColor.a): void => {
+      RuntimeUI.createBox(parent, {
+        name: `${options.name}${suffix}`,
+        x: Math.round(options.x + x * scale * direction),
+        y: Math.round(options.y + y * scale),
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale)),
+        color: new Color(pawColor.r, pawColor.g, pawColor.b, alpha),
+        radius: Math.round((Math.max(width, height) * scale) / 2),
+      });
+    };
+
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}Dot`,
+      x: Math.round(options.x - 24 * scale * direction),
+      y: options.y,
+      width: Math.max(1, Math.round(4 * scale)),
+      height: Math.max(1, Math.round(4 * scale)),
+      color: dotColor,
+      radius: Math.max(1, Math.round(2 * scale)),
+    });
+    pad("Main", 0, -3, 13, 11);
+    pad("ToeTop", -1, 8, 7, 8);
+    pad("ToeLeft", -9, 4, 6, 7);
+    pad("ToeRight", 8, 4, 6, 7);
+    pad("ToeFar", 14, -1, 5, 6, 104);
+  }
+
+  private renderDottedDivider(
+    parent: Node,
+    options: { name: string; y: number; width: number; dotCount?: number }
+  ): void {
+    const dotCount = Math.max(8, options.dotCount ?? 22);
+    const startX = -options.width / 2;
+    const gap = options.width / (dotCount - 1);
+    for (let index = 0; index < dotCount; index += 1) {
+      RuntimeUI.createBox(parent, {
+        name: `${options.name}${index}`,
+        x: Math.round(startX + index * gap),
+        y: options.y,
+        width: 4,
+        height: 2,
+        color: new Color(241, 194, 147, 112),
+        radius: 1,
+      });
+    }
+  }
+
+  private renderFlowerCluster(
+    parent: Node,
+    options: { name: string; x: number; y: number; scale: number }
+  ): void {
+    const drawFlower = (name: string, x: number, y: number, scale: number): void => {
+      const petalColor = new Color(255, 133, 162, 214);
+      const centerColor = new Color(255, 227, 102, 226);
+      const petalSize = Math.round(8 * scale);
+      const petalOffset = Math.round(6 * scale);
+      const petals = [
+        { x: 0, y: petalOffset },
+        { x: 0, y: -petalOffset },
+        { x: -petalOffset, y: 0 },
+        { x: petalOffset, y: 0 },
+      ];
+      petals.forEach((petal, index) => {
+        RuntimeUI.createBox(parent, {
+          name: `${name}Petal${index}`,
+          x: Math.round(x + petal.x),
+          y: Math.round(y + petal.y),
+          width: petalSize,
+          height: petalSize,
+          color: petalColor,
+          radius: Math.round(petalSize / 2),
+        });
+      });
+      RuntimeUI.createBox(parent, {
+        name: `${name}Center`,
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(7 * scale),
+        height: Math.round(7 * scale),
+        color: centerColor,
+        radius: Math.round(4 * scale),
+      });
+    };
+
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}Stem`,
+      x: options.x - Math.round(8 * options.scale),
+      y: options.y - Math.round(9 * options.scale),
+      width: Math.round(4 * options.scale),
+      height: Math.round(28 * options.scale),
+      color: new Color(126, 199, 116, 178),
+      radius: Math.round(2 * options.scale),
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}Leaf`,
+      x: options.x - Math.round(18 * options.scale),
+      y: options.y - Math.round(16 * options.scale),
+      width: Math.round(18 * options.scale),
+      height: Math.round(10 * options.scale),
+      color: new Color(126, 199, 116, 178),
+      radius: Math.round(8 * options.scale),
+    });
+    drawFlower(`${options.name}Large`, options.x, options.y, options.scale);
+    drawFlower(
+      `${options.name}Small`,
+      options.x - Math.round(24 * options.scale),
+      options.y - Math.round(15 * options.scale),
+      options.scale * 0.62
+    );
+  }
+
+  private renderCompanionCloudIcon(
+    parent: Node,
+    options: { name: string; x: number; y: number; size: number }
+  ): void {
+    const haloSize = Math.round(options.size * 1.18);
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}Halo`,
+      x: options.x,
+      y: options.y,
+      width: haloSize,
+      height: haloSize,
+      color: new Color(255, 224, 164, 124),
+      radius: Math.round(haloSize / 2),
+    });
+
+    const cloudColor = new Color(255, 252, 241, 248);
+    const shadowColor = new Color(239, 156, 92, 62);
+    const parts = [
+      { suffix: "BaseShadow", x: 0, y: -0.14, w: 0.84, h: 0.38, color: shadowColor },
+      { suffix: "LeftShadow", x: -0.23, y: 0.02, w: 0.4, h: 0.4, color: shadowColor },
+      { suffix: "TopShadow", x: 0.02, y: 0.12, w: 0.46, h: 0.46, color: shadowColor },
+      { suffix: "RightShadow", x: 0.25, y: -0.02, w: 0.38, h: 0.38, color: shadowColor },
+      { suffix: "Base", x: 0, y: -0.1, w: 0.84, h: 0.38, color: cloudColor },
+      { suffix: "Left", x: -0.23, y: 0.06, w: 0.4, h: 0.4, color: cloudColor },
+      { suffix: "Top", x: 0.02, y: 0.16, w: 0.46, h: 0.46, color: cloudColor },
+      { suffix: "Right", x: 0.25, y: 0.02, w: 0.38, h: 0.38, color: cloudColor },
+    ];
+    parts.forEach((part) => {
+      RuntimeUI.createBox(parent, {
+        name: `${options.name}${part.suffix}`,
+        x: Math.round(options.x + options.size * part.x),
+        y: Math.round(options.y + options.size * part.y),
+        width: Math.round(options.size * part.w),
+        height: Math.round(options.size * part.h),
+        color: part.color,
+        radius: Math.round(options.size * 0.22),
+      });
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Face`,
+      text: "⌣",
+      x: options.x,
+      y: Math.round(options.y - options.size * 0.03),
+      width: Math.round(options.size * 0.5),
+      height: Math.round(options.size * 0.28),
+      fontSize: Math.max(10, Math.round(options.size * 0.22)),
+      color: new Color(212, 117, 74, 170),
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}Star`,
+      x: Math.round(options.x - options.size * 0.42),
+      y: Math.round(options.y + options.size * 0.22),
+      width: Math.round(options.size * 0.12),
+      height: Math.round(options.size * 0.12),
+      color: new Color(255, 255, 255, 176),
+      radius: Math.round(options.size * 0.06),
+    });
+  }
+
+  private renderCloudBadge(
+    parent: Node,
+    options: { name: string; x: number; y: number; size: number; text: string }
+  ): void {
+    const shadowColor = new Color(201, 116, 47, 44);
+    const outlineColor = new Color(248, 158, 74, 224);
+    const petalColor = new Color(255, 250, 231, 252);
+    const highlightColor = new Color(255, 255, 255, 92);
+    const radius = Math.round(options.size * 0.45);
+    const offsets = [
+      { x: 0, y: 0, scale: 0.9 },
+      { x: -0.23, y: 0.15, scale: 0.64 },
+      { x: 0.23, y: 0.15, scale: 0.64 },
+      { x: -0.18, y: -0.17, scale: 0.62 },
+      { x: 0.18, y: -0.17, scale: 0.62 },
+    ];
+    offsets.forEach((offset, index) => {
+      const petalX = Math.round(options.x + options.size * offset.x);
+      const petalY = Math.round(options.y + options.size * offset.y);
+      const petalSize = Math.round(options.size * offset.scale);
+      RuntimeUI.createBox(parent, {
+        name: `${options.name}PetalShadow${index}`,
+        x: petalX,
+        y: petalY - Math.round(options.size * 0.035),
+        width: petalSize,
+        height: petalSize,
+        color: shadowColor,
+        radius,
+      });
+      RuntimeUI.createBox(parent, {
+        name: `${options.name}PetalOutline${index}`,
+        x: petalX,
+        y: petalY,
+        width: petalSize,
+        height: petalSize,
+        color: outlineColor,
+        radius,
+      });
+      RuntimeUI.createBox(parent, {
+        name: `${options.name}Petal${index}`,
+        x: petalX,
+        y: petalY,
+        width: Math.max(1, petalSize - 4),
+        height: Math.max(1, petalSize - 4),
+        color: petalColor,
+        radius,
+      });
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}TopGloss`,
+      x: Math.round(options.x - options.size * 0.08),
+      y: Math.round(options.y + options.size * 0.18),
+      width: Math.round(options.size * 0.46),
+      height: Math.round(options.size * 0.18),
+      color: highlightColor,
+      radius: Math.round(options.size * 0.09),
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Text`,
+      text: options.text,
+      x: options.x,
+      y: options.y - Math.round(options.size * 0.01),
+      width: Math.round(options.size * 0.9),
+      height: Math.round(options.size * 0.34),
+      fontSize: Math.max(15, Math.round(options.size * 0.28)),
+      color: new Color(126, 68, 32, 232),
+    });
+  }
+
+  private renderLeftStatusRow(
+    parent: Node,
+    options: {
+      name: string;
+      x: number;
+      y: number;
+      width: number;
+      icon: string;
+      label: string;
+      value: number | null;
+      color: Color;
+    }
+  ): void {
+    const progressValue = options.value ?? 0;
+    const valueText = options.value === null ? "--/100" : `${progressValue}/100`;
+    const iconSize = Math.max(34, Math.min(82, Math.round(options.width * this.getArtTuningValue("leftStatusRowIconSizeRatio"))));
+    const iconX = Math.round(-options.width * this.getArtTuningValue("leftStatusRowIconXRatio"));
+    const labelX = Math.round(-options.width * this.getArtTuningValue("leftStatusRowLabelXRatio"));
+    const valueX = Math.round(options.width * this.getArtTuningValue("leftStatusRowValueXRatio"));
+    const barX = Math.round(options.width * this.getArtTuningValue("leftStatusRowBarXRatio"));
+    const barWidth = Math.round(options.width * this.getArtTuningValue("leftStatusRowBarWidthRatio"));
+    const barHeight = Math.max(10, Math.round(iconSize * this.getArtTuningValue("leftStatusRowBarHeightScale")));
+    RuntimeUI.createCard(parent, {
+      name: `${options.name}IconBg`,
+      x: iconX,
+      y: options.y + 1,
+      width: iconSize,
+      height: iconSize,
+      color: new Color(244, 197, 148, 190),
+      innerColor: new Color(255, 252, 244, 246),
+      radius: Math.round(iconSize / 2),
+      borderThickness: 1,
+      innerRadius: Math.round(iconSize / 2) - 1,
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}IconGloss`,
+      x: iconX,
+      y: options.y + Math.round(iconSize * 0.18),
+      width: Math.round(iconSize * 0.54),
+      height: Math.round(iconSize * 0.2),
+      color: new Color(255, 255, 255, 72),
+      radius: Math.round(iconSize * 0.1),
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Icon`,
+      text: options.icon,
+      x: iconX,
+      y: options.y + 1,
+      width: Math.round(iconSize * 0.76),
+      height: Math.round(iconSize * 0.68),
+      fontSize: Math.round(iconSize * 0.52),
+      color: new Color(255, 129, 153, 235),
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Label`,
+      text: options.label,
+      x: labelX,
+      y: options.y + Math.round(iconSize * 0.255),
+      width: Math.round(options.width * 0.28),
+      height: 22,
+      fontSize: Math.max(13, Math.min(26, Math.round(options.width * this.getArtTuningValue("leftStatusRowLabelFontScale")))),
+      color: new Color(126, 68, 32, 226),
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Value`,
+      text: valueText,
+      x: valueX,
+      y: options.y + Math.round(iconSize * 0.255),
+      width: Math.round(options.width * 0.22),
+      height: 22,
+      fontSize: Math.max(12, Math.min(24, Math.round(options.width * this.getArtTuningValue("leftStatusRowValueFontScale")))),
+      color: new Color(126, 68, 32, 226),
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}BarShadow`,
+      x: barX,
+      y: options.y - Math.round(iconSize * 0.27),
+      width: barWidth,
+      height: barHeight,
+      color: new Color(163, 122, 92, 34),
+      radius: Math.round(barHeight / 2),
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}BarBg`,
+      x: barX,
+      y: options.y - Math.round(iconSize * 0.235),
+      width: barWidth,
+      height: barHeight,
+      color: new Color(255, 255, 255, 226),
+      radius: Math.round(barHeight / 2),
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}BarFill`,
+      x: Math.round(barX - barWidth / 2 + (barWidth * progressValue) / 200),
+      y: options.y - Math.round(iconSize * 0.235),
+      width: Math.round((barWidth * progressValue) / 100),
+      height: Math.max(1, barHeight - 2),
+      color: options.color,
+      radius: Math.round((barHeight - 2) / 2),
+    });
+    RuntimeUI.createBox(parent, {
+      name: `${options.name}BarHighlight`,
+      x: Math.round(barX - barWidth / 2 + (barWidth * progressValue) / 200),
+      y: options.y - Math.round(iconSize * 0.17),
+      width: Math.round((barWidth * progressValue) / 100),
+      height: Math.max(4, Math.round(barHeight * 0.32)),
+      color: new Color(255, 255, 255, 74),
+      radius: Math.round(barHeight * 0.16),
+    });
+  }
+
+  private appendMainInteraction(title: string, detail: string): void {
+    const latest = this.interactionEntries[0];
+    if (latest?.title === title && latest.detail === detail) {
+      return;
+    }
+    this.interactionEntries = [{ title, detail, createdAt: new Date().toISOString() }, ...this.interactionEntries].slice(0, 3);
+  }
+
+  private handleBottomDockAction(action: BottomDockAction): void {
+    if (action === "feed") {
+      void this.handleFeedAction();
+      return;
+    }
+
+    if (action === "sleep" || action === "play" || action === "care") {
+      void this.handleCorePetAction(action);
+      return;
+    }
+
+    const feedbackByAction: Record<Exclude<BottomDockAction, "feed" | CorePetAction>, MainInteractionEntry> = {
+      bath: {
+        title: "洗澡入口",
+        detail: "当前未接入真实洗澡接口，本次不改变正式数值。",
+        createdAt: new Date().toISOString(),
+      },
+      music: {
+        title: "播放音乐",
+        detail: "当前未接入真实音乐接口，本次不改变正式数值。",
+        createdAt: new Date().toISOString(),
+      },
+    };
+
+    const feedback = feedbackByAction[action];
+    this.appendMainInteraction(feedback.title, feedback.detail);
+    this.render();
+  }
+
+  private async handleCorePetAction(action: CorePetAction): Promise<void> {
+    if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
+      this.appendMainInteraction("正在同步精灵状态", "背包使用请求还在处理，请稍后再试。");
+      this.render();
+      return;
+    }
+
+    if (this.activePetAction) {
+      this.appendMainInteraction("操作进行中", "已有互动请求在处理，已忽略重复点击。");
+      this.render();
+      return;
+    }
+
+    this.activePetAction = action;
+
+    if (this.dashboardLoading) {
+      this.appendMainInteraction("正在同步精灵状态", "正在等待 dashboard 同步完成，随后继续本次互动。");
+      this.render();
+      await (this.dashboardRefreshPromise ?? Promise.resolve(false));
+      if (this.dashboardLoading) {
+        if (this.activePetAction === action) {
+          this.activePetAction = null;
+        }
+        this.appendMainInteraction("互动暂不可用", "dashboard 仍在同步中，请稍后再试。");
+        this.render();
+        return;
+      }
+    }
+
+    const viewModel = this.resolveMainViewModel();
+    if (action === "sleep" && viewModel.stamina !== null && viewModel.stamina >= 90) {
+      if (this.activePetAction === action) {
+        this.activePetAction = null;
+      }
+      this.appendMainInteraction("精灵现在还不困哦", "体力已经很充足，本次不发起休息请求。");
+      this.render();
+      return;
+    }
+    if (action === "play" && viewModel.stamina !== null && viewModel.stamina <= 10) {
+      if (this.activePetAction === action) {
+        this.activePetAction = null;
+      }
+      this.appendMainInteraction("精灵有点累", "先休息一下吧，本次不发起玩耍请求。");
+      this.render();
+      return;
+    }
+
+    const now = Date.now();
+    const cooldownRemainingMs = this.corePetActionCooldownUntil - now;
+    if (cooldownRemainingMs > 0) {
+      if (this.activePetAction === action) {
+        this.activePetAction = null;
+      }
+      const waitSeconds = Math.max(0.3, Math.ceil(cooldownRemainingMs / 100) / 10);
+      this.appendMainInteraction("操作太快啦", `请稍等 ${waitSeconds.toFixed(1)} 秒再继续互动。`);
+      this.render();
+      return;
+    }
+
+    const actionConfig: Record<CorePetAction, {
+      runningTitle: string;
+      successTitle: string;
+      successDetail: string;
+      failureTitle: string;
+      request: () => Promise<Awaited<ReturnType<typeof petService.sleepCurrentPet>>>;
+    }> = {
+      sleep: {
+        runningTitle: "正在休息",
+        successTitle: "休息成功",
+        successDetail: "精灵休息了一会儿，已使用接口返回状态刷新页面。",
+        failureTitle: "休息失败",
+        request: () => petService.sleepCurrentPet(),
+      },
+      play: {
+        runningTitle: "正在玩耍",
+        successTitle: "玩耍成功",
+        successDetail: "你和精灵玩了一会儿，已使用接口返回状态刷新页面。",
+        failureTitle: "玩耍失败",
+        request: () => petService.playCurrentPet(),
+      },
+      care: {
+        runningTitle: "正在关怀",
+        successTitle: "关怀成功",
+        successDetail: "你陪伴了精灵，已使用接口返回状态刷新页面。",
+        failureTitle: "关怀失败",
+        request: () => petService.careCurrentPet(),
+      },
+    };
+
+    const config = actionConfig[action];
+    this.appendMainInteraction(config.runningTitle, "正在请求真实互动接口，不修改口粮库存。");
+    this.render();
+
+    try {
+      const result = await config.request();
+      if (this.activePetAction !== action) {
+        return;
+      }
+
+      if (result.success && result.data) {
+        this.backendFeedBlocked = false;
+        this.localPetMode = null;
+        this.lastOfflineDecay = result.offlineDecay ?? null;
+        this.corePetActionCooldownUntil = Date.now() + CORE_PET_ACTION_COOLDOWN_MS;
+        this.appendMainInteraction(config.successTitle, config.successDetail);
+        this.render();
+        if (this.activePetAction === action) {
+          this.activePetAction = null;
+        }
+        return;
+      }
+
+      this.corePetActionCooldownUntil = Date.now() + CORE_PET_ACTION_COOLDOWN_MS;
+      this.activePetAction = null;
+      const detail = result.message
+        ? `${result.message}；未修改正式宠物状态，未修改口粮库存。`
+        : "互动接口暂不可用，未修改正式宠物状态，未修改口粮库存。";
+      this.appendMainInteraction(config.failureTitle, detail);
+      this.render();
+    } catch {
+      if (this.activePetAction === action) {
+        this.activePetAction = null;
+        this.appendMainInteraction(config.failureTitle, "请求异常，未修改正式宠物状态，未修改口粮库存。");
+        this.render();
+      }
+    }
+  }
+
+  private async handleFeedAction(): Promise<void> {
+    if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
+      this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
+      this.render();
+      return;
+    }
+
+    if (this.dashboardLoading) {
+      this.appendMainInteraction("正在同步口粮", "正在等待进入 Main 时触发的 dashboard 同步完成。");
+      this.render();
+      await (this.dashboardRefreshPromise ?? Promise.resolve(false));
+    }
+
+    this.isFoodSelectionPanelOpen = true;
+    const availableFoodCount = appState.getPetFoodInventory().filter((food) => food.count > 0).length;
+    this.appendMainInteraction(
+      "选择口粮",
+      availableFoodCount > 0
+        ? "请选择一份口粮后再调用真实背包使用接口。"
+        : "dashboard 已同步，但当前没有可用口粮；请先提交作业获取奖励。"
+    );
+    this.render();
+  }
+
+  private async handleFoodSelection(selectedFood: PetFoodInventoryItem): Promise<void> {
+    if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
+      this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
+      this.render();
+      return;
+    }
+    if (selectedFood.count <= 0) {
+      this.backendFeedBlocked = true;
+      this.appendMainInteraction(
+        "喂食暂不可用",
+        `${selectedFood.food_type} / ${selectedFood.food_quality} 库存不足，未扣减库存。`
+      );
+      this.render();
+      return;
+    }
+
+    const requestSeq = this.feedRequestSeq + 1;
+    this.feedRequestSeq = requestSeq;
+
+    this.feedRequestInFlight = true;
+    this.inventoryUseRequestInFlight = true;
+    this.appendMainInteraction(
+      "正在尝试喂食",
+      `已选择 ${this.formatFoodName(selectedFood)}，正在请求真实背包使用接口。`
+    );
+    this.render();
+
+    try {
+      const result = await petService.useFoodFromInventory({
+        food_type: selectedFood.food_type,
+        food_quality: selectedFood.food_quality,
+      });
+
+      if (requestSeq !== this.feedRequestSeq) {
+        return;
+      }
+
+      const data = result.data;
+      const hasFeedPayload =
+        Boolean(data?.pet) &&
+        Array.isArray(data?.foods);
+
+      if (result.success && hasFeedPayload) {
+        this.backendFeedBlocked = false;
+        this.localPetMode = null;
+        this.lastOfflineDecay = data?.offlineDecay ?? null;
+        this.feedRequestInFlight = false;
+        this.inventoryUseRequestInFlight = false;
+        const latestLog = data?.logs?.[0];
+        this.appendMainInteraction(
+          latestLog?.title ?? "使用成功",
+          latestLog?.detail ?? `已使用 ${this.formatFoodName(selectedFood)}，已按接口返回结果刷新状态。`
+        );
+        this.render();
+        return;
+      }
+
+      this.backendFeedBlocked = true;
+      this.feedRequestInFlight = false;
+      this.inventoryUseRequestInFlight = false;
+      const incompleteMessage = result.success ? "接口返回不完整，未做本地推算。" : null;
+      this.appendMainInteraction(
+        result.success ? "背包刷新不完整" : "使用失败",
+        incompleteMessage ?? (result.message ? `${result.message}；未扣本地库存，未伪造宠物状态。` : "背包使用接口暂不可用，未扣本地库存，未伪造宠物状态。")
+      );
+      this.render();
+      if (result.message?.includes("返回不完整")) {
+        await this.tryRefreshMainDashboard();
+      }
+    } catch {
+      if (requestSeq === this.feedRequestSeq) {
+        this.backendFeedBlocked = true;
+        this.feedRequestInFlight = false;
+        this.inventoryUseRequestInFlight = false;
+        this.appendMainInteraction("使用失败", "背包使用请求异常，未扣本地库存，未伪造宠物状态。");
+        this.render();
+      }
+    }
+  }
+
+  private formatInteractionTime(raw: string): string {
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) {
+      return "--:--";
+    }
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+
+  private formatFoodName(food: PetFoodInventoryItem): string {
+    return `${this.formatFoodQuality(food.food_quality)}${this.formatFoodType(food.food_type)}`;
+  }
+
+  private resolveFoodIcon(food: PetFoodInventoryItem): string {
+    const icons: Record<string, string> = {
+      energy: "⚡",
+      xp: "🍚",
+      expression_fruit: "🍎",
+      logic_cookie: "🍪",
+      star_milk: "🥛",
+      meal_box: "🍱",
+    };
+    return icons[food.food_type] ?? "🍚";
+  }
+
+  private resolveFoodEffectText(food: PetFoodInventoryItem): string {
+    const qualityLabel = this.formatFoodQuality(food.food_quality);
+    const effectLabels: Record<string, string> = {
+      energy: "体力口粮",
+      xp: "成长口粮",
+      expression_fruit: "心情口粮",
+      logic_cookie: "体力口粮",
+      star_milk: "心情与饱腹口粮",
+      meal_box: "饱腹口粮",
+    };
+    return `${qualityLabel}${effectLabels[food.food_type] ?? "口粮"}，实际效果以后端为准`;
+  }
+
+  private formatFoodType(type: PetFoodInventoryItem["food_type"]): string {
+    const names: Record<string, string> = {
+      energy: "体力口粮",
+      xp: "经验口粮",
+      expression_fruit: "表达果实",
+      logic_cookie: "逻辑饼干",
+      star_milk: "星星牛奶",
+      meal_box: "营养便当",
+    };
+    return names[type] ?? type;
+  }
+
+  private formatFoodQuality(quality: PetFoodInventoryItem["food_quality"]): string {
+    switch (quality) {
+      case "advanced":
+        return "高级";
+      case "premium":
+        return "优质";
+      case "normal":
+      default:
+        return "普通";
+    }
+  }
+
+  private formatOfflineDecayDetail(summary: OfflineDecaySummary): string {
+    if (summary.message?.trim()) {
+      return summary.message;
+    }
+    if (typeof summary.elapsedHours === "number" && Number.isFinite(summary.elapsedHours)) {
+      return `后端已按 ${summary.elapsedHours} 小时结算离线状态，页面只展示接口返回结果。`;
+    }
+    return "后端已结算离线状态，页面只展示接口返回结果。";
+  }
+
+  private resolveDashboardSyncDetail(
+    offlineDecay: OfflineDecaySummary | undefined,
+    dailyBasicFood: DailyBasicFoodPayload | undefined
+  ): string {
+    if (dailyBasicFood?.granted) {
+      return "今日基础口粮已送达，记得照顾小橘哦。";
+    }
+    if (offlineDecay?.applied) {
+      return this.formatOfflineDecayDetail(offlineDecay);
+    }
+    return "已尝试读取宠物状态与口粮库存。";
+  }
+
+  private resolveRightLogTipBody(viewModel: MainViewModel): string {
+    if (this.backendFeedBlocked) {
+      return "喂食未拿到完整结果\n已停止库存结算";
+    }
+    if (!viewModel.isDashboardReady) {
+      return "宠物状态待同步\n不会使用假成长数值";
+    }
+    if (this.lastOfflineDecay?.applied) {
+      return this.formatOfflineDecayDetail(this.lastOfflineDecay);
+    }
+    return `当前宠物：${viewModel.petName}\n状态来自 appState`;
+  }
+
+  private renderRightLogCardContent(
+    card: Node,
+    options: {
+      name: string;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.resolveMainViewModel();
+    const cardWidth = options.width;
+    const cardHeight = options.height;
+    const topY = cardHeight / 2;
+    const titleY = Math.round(topY - cardHeight * this.getArtTuningValue("rightLogTitleYRatio"));
+    const pawX = Math.round(cardWidth * this.getArtTuningValue("rightLogPawXRatio"));
+    const pawY = titleY + Math.round(this.getArtTuningValue("rightLogPawYOffset"));
+    const pawScale = this.getArtTuningValue("rightLogPawScale");
+
+    this.renderPawTitleDecor(card, {
+      name: `${options.name}LeftPaw`,
+      x: -pawX,
+      y: pawY,
+      mirrored: false,
+      scale: pawScale,
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}Title`,
+      text: "互动日志",
+      x: 0,
+      y: titleY,
+      width: Math.round(cardWidth * 0.58),
+      height: 38,
+      fontSize: Math.max(18, Math.min(42, Math.round(cardWidth * this.getArtTuningValue("rightLogTitleFontScale")))),
+      color: new Color(126, 68, 32, 240),
+    });
+    this.renderPawTitleDecor(card, {
+      name: `${options.name}RightPaw`,
+      x: pawX,
+      y: pawY,
+      mirrored: true,
+      scale: pawScale,
+    });
+
+    const logEntries = this.interactionEntries.slice(0, 3);
+    const textX = Math.round(cardWidth * this.getArtTuningValue("rightLogTextXRatio"));
+    const textTop = Math.round(topY - cardHeight * this.getArtTuningValue("rightLogTextTopRatio"));
+    const lineGap = Math.max(42, Math.round(cardHeight * this.getArtTuningValue("rightLogLineGapRatio") * 1.32));
+    logEntries.forEach((entry, index) => {
+      const entryY = textTop - index * lineGap;
+      const titleLabel = RuntimeUI.createLabel(card, {
+        name: `${options.name}LogTitle${index + 1}`,
+        text: `${this.formatInteractionTime(entry.createdAt)} ${entry.title}`,
+        x: textX,
+        y: entryY + Math.round(lineGap * 0.22),
+        width: Math.round(cardWidth * this.getArtTuningValue("rightLogTextWidthRatio")),
+        height: Math.round(lineGap * 0.36),
+        fontSize: Math.max(13, Math.min(28, Math.round(cardWidth * this.getArtTuningValue("rightLogTextFontScale")))),
+        color: new Color(126, 68, 32, 218),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      titleLabel.enableWrapText = false;
+      titleLabel.overflow = Label.Overflow.CLAMP;
+      titleLabel.lineHeight = Math.round(titleLabel.fontSize * 1.25);
+      const detailLabel = RuntimeUI.createLabel(card, {
+        name: `${options.name}LogDetail${index + 1}`,
+        text: entry.detail,
+        x: textX,
+        y: entryY - Math.round(lineGap * 0.18),
+        width: Math.round(cardWidth * this.getArtTuningValue("rightLogTextWidthRatio")),
+        height: Math.round(lineGap * 0.42),
+        fontSize: Math.max(11, Math.min(22, Math.round(cardWidth * this.getArtTuningValue("rightLogTextFontScale") * 0.82))),
+        color: new Color(151, 105, 76, 196),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      detailLabel.enableWrapText = false;
+      detailLabel.overflow = Label.Overflow.CLAMP;
+      detailLabel.lineHeight = Math.round(detailLabel.fontSize * 1.25);
+    });
+
+    const dividerY = Math.round(topY - cardHeight * this.getArtTuningValue("rightLogDividerYRatio"));
+    this.renderDottedDivider(card, {
+      name: `${options.name}DottedDivider`,
+      y: dividerY,
+      width: Math.round(cardWidth * this.getArtTuningValue("rightLogDividerWidthRatio")),
+      dotCount: 26,
+    });
+
+    const tipX = Math.round(cardWidth * this.getArtTuningValue("rightLogTipXRatio"));
+    const tipY = Math.round(cardHeight * this.getArtTuningValue("rightLogTipYRatio"));
+    const tipWidth = Math.round(cardWidth * this.getArtTuningValue("rightLogTipWidthRatio"));
+    const tipHeight = Math.round(cardHeight * this.getArtTuningValue("rightLogTipHeightRatio"));
+    const tipRadius = Math.round(tipHeight * this.getArtTuningValue("rightLogTipRadiusRatio"));
+    RuntimeUI.createCard(card, {
+      name: `${options.name}TipCard`,
+      x: tipX,
+      y: tipY,
+      width: tipWidth,
+      height: tipHeight,
+      color: new Color(239, 196, 141, 166),
+      innerColor: new Color(255, 249, 231, 226),
+      radius: tipRadius,
+      borderThickness: 1,
+      innerRadius: Math.max(0, tipRadius - 1),
+    });
+    RuntimeUI.createBox(card, {
+      name: `${options.name}TipCardGloss`,
+      x: tipX,
+      y: tipY + Math.round(tipHeight * this.getArtTuningValue("rightLogTipGlossYRatio")),
+      width: Math.round(tipWidth * this.getArtTuningValue("rightLogTipGlossWidthRatio")),
+      height: Math.round(tipHeight * this.getArtTuningValue("rightLogTipGlossHeightRatio")),
+      color: new Color(255, 255, 255, 54),
+      radius: Math.round(tipHeight * 0.1),
+    });
+    this.renderCompanionCloudIcon(card, {
+      name: `${options.name}TipIcon`,
+      x: tipX + Math.round(tipWidth * this.getArtTuningValue("rightLogTipIconXRatio")),
+      y: tipY + Math.round(tipHeight * this.getArtTuningValue("rightLogTipIconYRatio")),
+      size: Math.round(tipHeight * this.getArtTuningValue("rightLogTipIconSizeRatio")),
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}TipTitle`,
+      text: this.backendFeedBlocked ? "接口阻塞提示" : viewModel.displayStatus,
+      x: tipX + Math.round(tipWidth * this.getArtTuningValue("rightLogTipTitleXRatio")),
+      y: tipY + Math.round(tipHeight * this.getArtTuningValue("rightLogTipTitleYRatio")),
+      width: Math.round(tipWidth * this.getArtTuningValue("rightLogTipTitleWidthRatio")),
+      height: 24,
+      fontSize: Math.max(13, Math.min(26, Math.round(cardWidth * this.getArtTuningValue("rightLogTipTitleFontScale")))),
+      color: new Color(126, 68, 32, 226),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    const tipBody = RuntimeUI.createLabel(card, {
+      name: `${options.name}TipBody`,
+      text: this.resolveRightLogTipBody(viewModel),
+      x: tipX + Math.round(tipWidth * this.getArtTuningValue("rightLogTipBodyXRatio")),
+      y: tipY + Math.round(tipHeight * this.getArtTuningValue("rightLogTipBodyYRatio")),
+      width: Math.round(tipWidth * this.getArtTuningValue("rightLogTipBodyWidthRatio")),
+      height: Math.round(tipHeight * this.getArtTuningValue("rightLogTipBodyHeightRatio")),
+      fontSize: Math.max(11, Math.min(21, Math.round(cardWidth * this.getArtTuningValue("rightLogTipBodyFontScale")))),
+      color: new Color(151, 105, 76, 172),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    tipBody.lineHeight = Math.round(tipBody.fontSize * 1.42);
+
+    this.renderFlowerCluster(card, {
+      name: `${options.name}FlowerDecor`,
+      x: Math.round(cardWidth * this.getArtTuningValue("rightLogFlowerXRatio")),
+      y: Math.round(-cardHeight / 2 + this.getArtTuningValue("rightLogFlowerYOffset")),
+      scale: Math.max(0.45, Math.min(1.4, (cardWidth / 310) * this.getArtTuningValue("rightLogFlowerScale"))),
+    });
+  }
     // 给 MainStage 加天空 + 地面，并按 MainStage 圆角裁剪
 	// 给 MainStage 加天空 + 地面渐变底图
 	private renderStageBase(
@@ -4111,11 +7460,35 @@ export class MainController extends ScreenController {
 	  );
 	  maskGraphics.fill();
 
-	  // 先只做最简单的天空 + 地面。
-	  // 这一步不是最终视觉，只用来验证：
-	  // 1. 不遮挡 MainStage 边框
-	  // 2. 圆角处没有黑边
-	// 天空 / 地面分界线，略低于中心，接近参考页感觉。
+	if (this.stageSceneBackgroundSpriteFrame) {
+	  const backgroundRect = this.stageSceneBackgroundSpriteFrame.rect;
+	  const backgroundSize =
+		backgroundRect.width > 0 && backgroundRect.height > 0
+		  ? new Size(backgroundRect.width, backgroundRect.height)
+		  : this.stageSceneBackgroundSpriteFrame.originalSize;
+	  const backgroundAspect = backgroundSize.height > 0 ? backgroundSize.width / backgroundSize.height : 1;
+	  const contentAspect = contentHeight > 0 ? contentWidth / contentHeight : 1;
+	  const backgroundWidth =
+		backgroundAspect > contentAspect ? contentHeight * backgroundAspect : contentWidth;
+	  const backgroundHeight =
+		backgroundAspect > contentAspect ? contentHeight : contentWidth / backgroundAspect;
+	  const backgroundScale = this.getArtTuningValue("stageBackgroundScale");
+	  const backgroundWidthScale = this.getArtTuningValue("stageBackgroundWidthScale");
+	  const backgroundHeightScale = this.getArtTuningValue("stageBackgroundHeightScale");
+	  const backgroundOffsetX = contentWidth * this.getArtTuningValue("stageBackgroundOffsetXRatio");
+	  const backgroundOffsetY = contentHeight * this.getArtTuningValue("stageBackgroundOffsetYRatio");
+
+	  RuntimeUI.createSpriteFrame(clip, {
+		name: "StageSceneBackground",
+		x: Math.round(backgroundOffsetX),
+		y: Math.round(backgroundOffsetY),
+		width: Math.round(backgroundWidth * backgroundScale * backgroundWidthScale),
+		height: Math.round(backgroundHeight * backgroundScale * backgroundHeightScale),
+		spriteFrame: this.stageSceneBackgroundSpriteFrame,
+	  });
+	} else {
+	  // 资源加载失败时保留旧天空 + 地面作为兜底，避免 Stage 空白。
+	  // 天空 / 地面分界线，略低于中心，接近参考页感觉。
 	const horizonY = -contentHeight * 0.03;
 
 	// 过渡带高度：先做窄一点，避免又变成一大片脏渐变。
@@ -4174,6 +7547,7 @@ export class MainController extends ScreenController {
 		color: new Color(r, g, b, 255),
 		radius: 0,
 	  });
+	}
 	}
 	// 顶部云朵层：使用现成云图，并把“位置”和“大小”拆成单独参数。
 	// 美术后续只需要调这几个值：
@@ -4261,51 +7635,61 @@ export class MainController extends ScreenController {
 	  color: new Color(244, 183, 79, 210),
 	});
 
-	// 中央安全区占位。
-	// 先用一层轻填充 + 一层细边框近似参考页的虚线框感，保持结构占位但不过分抢戏。
-	const safeZoneWidth = Math.max(320, Math.min(contentWidth * this.getArtTuningValue("safeZoneWidthRatio"), 430));
-	const safeZoneHeight = Math.max(310, Math.min(contentHeight * this.getArtTuningValue("safeZoneHeightRatio"), 438));
+	// 中央角色静态展示区。
+	// Milestone 5 收尾阶段只展示静态休息态角色，不在这里接入宠物业务状态。
+  const safeZoneWidth = Math.max(260, Math.min(contentWidth * this.getArtTuningValue("safeZoneWidthRatio") * 0.86, 360));
+  const safeZoneHeight = Math.max(240, Math.min(contentHeight * this.getArtTuningValue("safeZoneHeightRatio") * 0.82, 340));
 	const safeZoneY = contentHeight * this.getArtTuningValue("safeZoneYRatio");
+	const foxOffsetX = Math.round(contentWidth * this.getArtTuningValue("foxCharacterOffsetXRatio"));
+	const foxOffsetY = Math.round(contentHeight * this.getArtTuningValue("foxCharacterOffsetYRatio"));
+	const foxVisualScale = this.getArtTuningValue("foxCharacterScale");
+	const foxShadowAlpha = Math.round(this.getArtTuningValue("foxShadowAlpha"));
 	RuntimeUI.createBox(clip, {
-	  name: "PetSafeZoneFill",
-	  x: 0,
-	  y: safeZoneY,
-	  width: safeZoneWidth,
-	  height: safeZoneHeight,
-	  color: new Color(255, 255, 255, 32),
-	  radius: 28,
-	});
-	RuntimeUI.createCard(clip, {
-	  name: "PetSafeZoneOutline",
-	  x: 0,
-	  y: safeZoneY,
-	  width: safeZoneWidth,
-	  height: safeZoneHeight,
-	  style: "shell",
-	  borderColor: new Color(247, 191, 129, 154),
-	  radius: 28,
-	  lineWidth: 2,
+	  name: "MainCharacterGroundShadow",
+	  x: foxOffsetX,
+	  y: safeZoneY + foxOffsetY - safeZoneHeight * 0.34 * foxVisualScale,
+	  width: Math.round(safeZoneWidth * 0.58 * foxVisualScale * this.getArtTuningValue("foxShadowWidthScale")),
+	  height: Math.round(safeZoneHeight * 0.1 * foxVisualScale * this.getArtTuningValue("foxShadowHeightScale")),
+	  color: new Color(126, 88, 56, foxShadowAlpha),
+	  radius: Math.round(safeZoneHeight * 0.05),
 	});
 
-	RuntimeUI.createBox(clip, {
-	  name: "PetSafeZoneLabelBg",
-	  x: 0,
-	  y: safeZoneY + safeZoneHeight / 2 - 28,
-	  width: 142,
-	  height: 28,
-	  color: new Color(255, 255, 255, 198),
-	  radius: 14,
-	});
-	RuntimeUI.createLabel(clip, {
-	  name: "PetSafeZoneLabel",
-	  text: "PET SAFE ZONE",
-	  x: 0,
-	  y: safeZoneY + safeZoneHeight / 2 - 28,
-	  width: 132,
-	  height: 20,
-	  fontSize: 12,
-	  color: new Color(110, 74, 51, 196),
-	});
+	if (this.mainCharacterRestingFoxSpriteFrame) {
+	  const characterFrameRect = this.mainCharacterRestingFoxSpriteFrame.rect;
+	  const characterOriginalSize = characterFrameRect.width > 0 && characterFrameRect.height > 0
+		? new Size(characterFrameRect.width, characterFrameRect.height)
+		: this.mainCharacterRestingFoxSpriteFrame.originalSize;
+	  const characterAspect =
+		characterOriginalSize.height > 0 ? characterOriginalSize.width / characterOriginalSize.height : 1;
+	  const parentScaleX = Math.abs(clip.worldScale.x) || 1;
+	  const parentScaleY = Math.abs(clip.worldScale.y) || 1;
+	  const characterMaxScreenWidth = safeZoneWidth * 0.92 * foxVisualScale * parentScaleX;
+	  const characterMaxScreenHeight = safeZoneHeight * 0.9 * foxVisualScale * parentScaleY;
+	  let characterScreenWidth = characterMaxScreenWidth;
+	  let characterScreenHeight = characterScreenWidth / characterAspect;
+	  if (characterScreenHeight > characterMaxScreenHeight) {
+		characterScreenHeight = characterMaxScreenHeight;
+		characterScreenWidth = characterScreenHeight * characterAspect;
+	  }
+	  RuntimeUI.createSpriteFrame(clip, {
+		name: "MainCharacterRestingFox",
+		x: foxOffsetX,
+		y: Math.round(safeZoneY + foxOffsetY - safeZoneHeight * 0.02 * foxVisualScale),
+		width: Math.round(characterScreenWidth / parentScaleX),
+		height: Math.round(characterScreenHeight / parentScaleY),
+		spriteFrame: this.mainCharacterRestingFoxSpriteFrame,
+	  });
+	} else {
+	  RuntimeUI.createBox(clip, {
+		name: "MainCharacterRestingFoxFallback",
+		x: foxOffsetX,
+		y: safeZoneY + foxOffsetY,
+		width: Math.round(safeZoneWidth * 0.55 * foxVisualScale),
+		height: Math.round(safeZoneHeight * 0.42 * foxVisualScale),
+		color: new Color(255, 255, 255, 48),
+		radius: 32,
+	  });
+	}
 
 	if (this.showShaderDebugBlock) {
 	  const shaderDebugSize = Math.min(128, Math.max(92, Math.round(Math.min(safeZoneWidth, safeZoneHeight) * 0.26)));
@@ -4369,27 +7753,6 @@ export class MainController extends ScreenController {
 		color: new Color(126, 93, 69, 188),
 	  });
 	}
-
-	RuntimeUI.createBox(clip, {
-	  name: "PetAnchor",
-	  x: 0,
-	  y: safeZoneY - safeZoneHeight / 2 + 44,
-	  width: 110,
-	  height: 18,
-	  color: new Color(247, 155, 52, 46),
-	  radius: 9,
-	});
-	RuntimeUI.createCard(clip, {
-	  name: "PetAnchorBorder",
-	  x: 0,
-	  y: safeZoneY - safeZoneHeight / 2 + 44,
-	  width: 110,
-	  height: 18,
-	  style: "shell",
-	  borderColor: new Color(247, 155, 52, 68),
-	  radius: 9,
-	  lineWidth: 1,
-	});
 
 	// 地面两侧草丛占位。
 	// 这里先用几团半圆草包建立左右落点，避免画面底部太空。
@@ -4924,6 +8287,8 @@ export class MainController extends ScreenController {
             minLabel.textContent = formatBound(field, field.min);
 
             var range = document.createElement("input");
+            range.id = "main-art-tuning-" + field.key + "-range";
+            range.name = field.key + "_range";
             range.type = "range";
             range.min = String(field.min);
             range.max = String(field.max);
@@ -4935,6 +8300,8 @@ export class MainController extends ScreenController {
             maxLabel.textContent = formatBound(field, field.max);
 
             var number = document.createElement("input");
+            number.id = "main-art-tuning-" + field.key + "-number";
+            number.name = field.key + "_number";
             number.type = "number";
             number.min = String(field.min);
             number.max = String(field.max);

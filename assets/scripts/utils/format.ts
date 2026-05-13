@@ -63,7 +63,16 @@ export function formatHomeworkHistoryItem(
 }
 
 export function mapSubjectLabel(subject: string): string {
-  return HOMEWORK_SUBJECT_LABELS[subject as HomeworkSubject] ?? subject;
+  const normalized = normalizeHomeworkSubjectKey(subject);
+  if (normalized === "general") {
+    return "综合";
+  }
+  return HOMEWORK_SUBJECT_LABELS[normalized as HomeworkSubject] ?? subject;
+}
+
+function normalizeHomeworkSubjectKey(subject: string): string {
+  const normalized = subject.trim().toLowerCase();
+  return normalized === "other" ? "general" : normalized;
 }
 
 export function normalizeMultilineText(raw: string): string {
