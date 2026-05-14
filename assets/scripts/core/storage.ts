@@ -7,6 +7,8 @@ export const STORAGE_KEYS = {
   petId: "buddy.pet.id",
   petIdMap: "buddy.pet.id.map",
   activeTab: "buddy.main.activeTab",
+  petLifeLastMainSeenAtPrefix: "petLife:lastMainSeenAt:",
+  petLifeReturnGreetingShownPrefix: "petLife:returnGreetingShown:",
 } as const;
 
 export const storage = {

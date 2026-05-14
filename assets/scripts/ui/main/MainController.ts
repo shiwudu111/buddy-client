@@ -14,6 +14,7 @@
   resources,
   Size,
   Sprite,
+  SpriteAtlas,
   SpriteFrame,
   ScrollView,
   Texture2D,
@@ -24,11 +25,19 @@
   view,
 } from "cc";
 import { appState } from "../../app/AppState";
+import { STORAGE_KEYS, storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
 import { homeworkService } from "../../services/HomeworkService";
 import { petService } from "../../services/PetService";
-import type { DailyBasicFoodPayload, HomeworkSubject, OfflineDecaySummary, PetFoodInventoryItem } from "../../types/api";
+import type {
+  DailyBasicFoodPayload,
+  HomeworkSubject,
+  OfflineDecaySummary,
+  PetFoodInventoryItem,
+  TimeContextDayPeriod,
+  TimeContextPayload,
+} from "../../types/api";
 import { formatHomeworkHistory } from "../../utils/format";
 import { ScreenController } from "../common/base/ScreenController";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
@@ -38,6 +47,15 @@ import {
   type HomeworkCenterLayoutTuning,
   type HomeworkCenterViewRefs,
 } from "../homework/HomeworkCenterView";
+import {
+  ART_TUNING_DEFAULTS,
+  ART_TUNING_FIELDS,
+  ART_TUNING_STORAGE_KEY,
+  type ArtDebugHostWindow,
+  type ArtTuningField,
+  type ArtTuningKey,
+  type ArtTuningState,
+} from "./MainArtTuning";
 
 const { ccclass } = _decorator;
 
@@ -77,6 +95,11 @@ const MAIN_STAGE_SCENE_BACKGROUND_PATH = "ui/main/background/主界面背景/spr
 // 当前只作为 Milestone 5 收尾的学生端静态视觉层，不接业务宠物状态。
 const MAIN_CHARACTER_RESTING_FOX_PATH = "ui/main/character/九尾狐休息中/spriteFrame";
 
+const MAIN_FOX_IDLE_DEFAULT_ATLAS_PATH = "ui/main/fox/pet_idle";
+const MAIN_FOX_IDLE_SHOW_ATLAS_PATH = "ui/main/fox/pet_idle_show";
+const MAIN_FOX_IDLE_DEFAULT_PREFIX = "pet_idle_";
+const MAIN_FOX_IDLE_SHOW_PREFIX = "pet_idle_show_";
+
 // 径向 LUT 采样效果资源路径。
 // 它让柔光贴图更像“散开的光”，而不是普通平面贴图。
 const RADIAL_LUT_EFFECT_PATH = "effects/radial-lut";
@@ -114,13 +137,21 @@ const DEBUG_TOGGLE_GAP = 8;
 // 后端仍应保留限频或业务冷却；这里主要避免单个客户端误触连发。
 const CORE_PET_ACTION_COOLDOWN_MS = 300;
 
+const PET_BUBBLE_DURATION_MS = 4000;
+const PET_VISUAL_FEED_DURATION_MS = 1800;
+const PET_VISUAL_PLAY_DURATION_MS = 2200;
+const PET_VISUAL_MUSIC_DURATION_MS = 2000;
+const PET_VISUAL_SOOTHED_DURATION_MS = 2000;
+const RETURN_GREETING_SHORT_MINUTES = 10;
+const RETURN_GREETING_NORMAL_MINUTES = 60;
+const RETURN_GREETING_LONG_MINUTES = 360;
+const FOX_IDLE_DEFAULT_FRAME_DURATION_MS = 83;
+const FOX_IDLE_SHOW_FRAME_DURATION_MS = Math.round(FOX_IDLE_DEFAULT_FRAME_DURATION_MS * 1.5);
+const FOX_IDLE_SHOW_TRIGGER_MS = 8000;
+
 // 美术调参页的窗口名。
 // 固定名字可以避免每次点击都弹出一堆重复窗口。
 const ART_DEBUG_WINDOW_NAME = "BuddyMainArtDebug";
-
-// 美术调参本地缓存 key。
-// 用来让人工调过的参数在刷新后还能保留。
-const ART_TUNING_STORAGE_KEY = "buddy-client.main.art-tuning.v1";
 
 // 壳层参考宽度。
 // 用来作为壳层整体缩放的基准，不是固定像素母版。
@@ -191,253 +222,6 @@ type MainLayout = {
   buttonY: number;
 };
 
-type ArtTuningState = {
-  appShellPadding: number;
-  shellFramePadding: number;
-  mainViewportRadius: number;
-  mainViewportAlpha: number;
-  mainViewportShadowAlpha: number;
-  mainViewportShadowSpreadRatio: number;
-  mainViewportOffsetXRatio: number;
-  mainViewportOffsetYRatio: number;
-  mainViewportWidthScale: number;
-  mainViewportHeightScale: number;
-  topBarHeightRatio: number;
-  topBarShellAlpha: number;
-  topBarInnerAlpha: number;
-  topBarBorderWidth: number;
-  topBarBorderAlpha: number;
-  topBarShadowAlpha: number;
-  topBarShadowSpreadRatio: number;
-  topBarBrandMarkHeightRatio: number;
-  topBarBrandTextGap: number;
-  topBarBrandTitleY: number;
-  topBarBrandTitleFontScale: number;
-  topBarBrandSubtitleY: number;
-  topBarBrandSubtitleFontScale: number;
-  topBarNavWidthRatio: number;
-  topBarStatusWidthRatio: number;
-  topBarNavGlossWidthRatio: number;
-  topBarNavGlossHeightRatio: number;
-  topBarNavGlossOffsetYRatio: number;
-  topBarNavGlossAlpha: number;
-  topBarBrandGlossWidthRatio: number;
-  topBarBrandGlossHeightRatio: number;
-  topBarBrandGlossOffsetYRatio: number;
-  topBarBrandGlossAlpha: number;
-  topBarNavTopColorR: number;
-  topBarNavTopColorG: number;
-  topBarNavTopColorB: number;
-  topBarNavBottomColorR: number;
-  topBarNavBottomColorG: number;
-  topBarNavBottomColorB: number;
-  topBarNavMaterialGlossAlpha: number;
-  bottomDockHeightRatio: number;
-  bottomDockShellAlpha: number;
-  bottomDockInnerAlpha: number;
-  bottomDockGradientTopAlpha: number;
-  bottomDockGradientBottomAlpha: number;
-  bottomDockTileGapRatio: number;
-  bottomDockIconWidth: number;
-  bottomDockIconHeight: number;
-  bottomDockIconRadiusRatio: number;
-  bottomDockIconBorderWidth: number;
-  bottomDockIconBorderAlpha: number;
-  bottomDockIconOffsetX: number;
-  bottomDockIconOffsetY: number;
-  bottomDockIconGlossWidthRatio: number;
-  bottomDockIconGlossHeightRatio: number;
-  bottomDockIconGlossOffsetYRatio: number;
-  bottomDockGlyphAlpha: number;
-  bottomDockFeedGlyphSizeScale: number;
-  bottomDockFeedGlyphOffsetX: number;
-  bottomDockFeedGlyphOffsetY: number;
-  bottomDockPlayGlyphSizeScale: number;
-  bottomDockPlayGlyphOffsetX: number;
-  bottomDockPlayGlyphOffsetY: number;
-  bottomDockBathGlyphSizeScale: number;
-  bottomDockBathGlyphOffsetX: number;
-  bottomDockBathGlyphOffsetY: number;
-  bottomDockSleepGlyphSizeScale: number;
-  bottomDockSleepGlyphOffsetX: number;
-  bottomDockSleepGlyphOffsetY: number;
-  bottomDockMusicGlyphSizeScale: number;
-  bottomDockMusicGlyphOffsetX: number;
-  bottomDockMusicGlyphOffsetY: number;
-  bottomDockCareGlyphSizeScale: number;
-  bottomDockCareGlyphOffsetX: number;
-  bottomDockCareGlyphOffsetY: number;
-  bottomDockTileGroupWidthScale: number;
-  bottomDockTileWidthScale: number;
-  bottomDockTileHeightScale: number;
-  bottomDockTileBorderWidth: number;
-  bottomDockTileBorderAlpha: number;
-  bottomDockTileInnerAlpha: number;
-  bottomDockTextOffsetX: number;
-  bottomDockTextOffsetY: number;
-  bottomDockTextAlpha: number;
-  bottomDockTextFontSize: number;
-  bottomDockTextColorR: number;
-  bottomDockTextColorG: number;
-  bottomDockTextColorB: number;
-  bottomDockBorderWidth: number;
-  bottomDockBorderAlpha: number;
-  bottomDockShadowAlpha: number;
-  bottomDockShadowSpreadRatio: number;
-  topBarOffsetXRatio: number;
-  topBarOffsetYRatio: number;
-  topBarWidthScale: number;
-  topBarHeightScale: number;
-  leftCardOffsetXRatio: number;
-  leftCardOffsetYRatio: number;
-  leftCardWidthScale: number;
-  leftCardHeightScale: number;
-  rightCardOffsetXRatio: number;
-  rightCardOffsetYRatio: number;
-  rightCardWidthScale: number;
-  rightCardHeightScale: number;
-  sideCardStageInsetRatio: number;
-  sideCardBaseWidthRatio: number;
-  sideCardBaseHeightRatio: number;
-  sideCardVerticalGuardRatio: number;
-  leftStatusTitleYRatio: number;
-  leftStatusTitleFontScale: number;
-  leftStatusPawXRatio: number;
-  leftStatusPawYOffset: number;
-  leftStatusPawScale: number;
-  leftStatusLevelYRatio: number;
-  leftStatusLevelPillXRatio: number;
-  leftStatusLevelPillWidthRatio: number;
-  leftStatusLevelPillHeightRatio: number;
-  leftStatusLevelBadgeXRatio: number;
-  leftStatusLevelBadgeWidthRatio: number;
-  leftStatusLevelBadgeHeightRatio: number;
-  leftStatusLevelTextXRatio: number;
-  leftStatusLevelTextFontScale: number;
-  leftStatusDividerYRatio: number;
-  leftStatusDividerWidthRatio: number;
-  leftStatusRowsTopGapRatio: number;
-  leftStatusRowsGapRatio: number;
-  leftStatusRowIconXRatio: number;
-  leftStatusRowIconSizeRatio: number;
-  leftStatusRowLabelXRatio: number;
-  leftStatusRowValueXRatio: number;
-  leftStatusRowBarXRatio: number;
-  leftStatusRowBarWidthRatio: number;
-  leftStatusRowBarHeightScale: number;
-  leftStatusRowLabelFontScale: number;
-  leftStatusRowValueFontScale: number;
-  leftStatusFlowerXRatio: number;
-  leftStatusFlowerYOffset: number;
-  leftStatusFlowerScale: number;
-  rightLogTitleYRatio: number;
-  rightLogTitleFontScale: number;
-  rightLogPawXRatio: number;
-  rightLogPawYOffset: number;
-  rightLogPawScale: number;
-  rightLogTextXRatio: number;
-  rightLogTextTopRatio: number;
-  rightLogLineGapRatio: number;
-  rightLogTextWidthRatio: number;
-  rightLogTextHeightScale: number;
-  rightLogTextFontScale: number;
-  rightLogDividerYRatio: number;
-  rightLogDividerWidthRatio: number;
-  rightLogTipXRatio: number;
-  rightLogTipYRatio: number;
-  rightLogTipWidthRatio: number;
-  rightLogTipHeightRatio: number;
-  rightLogTipRadiusRatio: number;
-  rightLogTipGlossYRatio: number;
-  rightLogTipGlossWidthRatio: number;
-  rightLogTipGlossHeightRatio: number;
-  rightLogTipIconXRatio: number;
-  rightLogTipIconYRatio: number;
-  rightLogTipIconSizeRatio: number;
-  rightLogTipTitleXRatio: number;
-  rightLogTipTitleYRatio: number;
-  rightLogTipTitleWidthRatio: number;
-  rightLogTipTitleFontScale: number;
-  rightLogTipBodyXRatio: number;
-  rightLogTipBodyYRatio: number;
-  rightLogTipBodyWidthRatio: number;
-  rightLogTipBodyHeightRatio: number;
-  rightLogTipBodyFontScale: number;
-  rightLogFlowerXRatio: number;
-  rightLogFlowerYOffset: number;
-  rightLogFlowerScale: number;
-  bottomDockOffsetXRatio: number;
-  bottomDockOffsetYRatio: number;
-  bottomDockWidthScale: number;
-  bottomDockHeightScale: number;
-  homeworkOverlayOffsetXRatio: number;
-  homeworkOverlayOffsetYRatio: number;
-  homeworkOverlayWidthScale: number;
-  homeworkOverlayHeightScale: number;
-  homeworkOverlayScale: number;
-  homeworkWorkCardX: number;
-  homeworkWorkCardY: number;
-  homeworkWorkCardWidth: number;
-  homeworkWorkCardHeight: number;
-  homeworkRewardCardX: number;
-  homeworkRewardCardY: number;
-  homeworkRewardCardWidth: number;
-  homeworkRewardCardHeight: number;
-  homeworkPanelAlpha: number;
-  homeworkPanelInnerAlpha: number;
-  homeworkPanelBorderWidth: number;
-  homeworkPanelRadius: number;
-  homeworkPanelGradientAlpha: number;
-  homeworkPanelGradientRange: number;
-  homeworkPanelGradientColorR: number;
-  homeworkPanelGradientColorG: number;
-  homeworkPanelGradientColorB: number;
-  stageBackgroundScale: number;
-  stageBackgroundWidthScale: number;
-  stageBackgroundHeightScale: number;
-  stageBackgroundOffsetXRatio: number;
-  stageBackgroundOffsetYRatio: number;
-  cloudYRatio: number;
-  cloudBaseWidthRatio: number;
-  leftCloudXRatio: number;
-  rightCloudXRatio: number;
-  leftCloudScale: number;
-  rightCloudScale: number;
-  rightCloudYOffsetRatio: number;
-  stageBaseArcWidthRatio: number;
-  stageBaseArcHeightRatio: number;
-  stageBaseArcBottomRatio: number;
-  stageGroundLineYRatio: number;
-  safeZoneWidthRatio: number;
-  safeZoneHeightRatio: number;
-  safeZoneYRatio: number;
-  foxCharacterScale: number;
-  foxCharacterOffsetXRatio: number;
-  foxCharacterOffsetYRatio: number;
-  foxShadowAlpha: number;
-  foxShadowWidthScale: number;
-  foxShadowHeightScale: number;
-  grassYRatio: number;
-};
-
-type ArtTuningKey = keyof ArtTuningState;
-
-type ArtTuningField = {
-  key: ArtTuningKey;
-  section: string;
-  label: string;
-  description: string;
-  min: number;
-  max: number;
-  step: number;
-};
-
-type ArtDebugBridge = {
-  getSnapshot: () => { state: ArtTuningState; fields: ArtTuningField[] };
-  setValue: (key: string, value: number) => void;
-  reset: () => void;
-  openReferencePage: () => void;
-};
 
 type TopBarNavTab = "petHome" | "bag" | "journal";
 
@@ -462,6 +246,30 @@ type MainPetDisplayStatus =
 
 type LocalPetMode = "resting" | null;
 
+type PetVisualState =
+  | "serverDerived"
+  | "eating"
+  | "playing"
+  | "sleeping"
+  | "listening"
+  | "soothed";
+
+type PetBubbleSource =
+  | "timeContext"
+  | "localFallbackGreeting"
+  | "stateBubble"
+  | "actionFeedback";
+
+type PetBubble = {
+  text: string;
+  source: PetBubbleSource;
+  createdAt: string;
+};
+
+type OpeningBubblePriority = "high" | "normal";
+
+type LocalGreetingWindow = "short" | "normal" | "long" | "overnight";
+
 type MainViewModel = {
   petName: string;
   levelBadgeText: string;
@@ -475,2276 +283,6 @@ type MainViewModel = {
   statusValueText: string;
 };
 
-type ArtDebugHostWindow = Window &
-  typeof globalThis & {
-    __BUDDY_CLIENT_ART_DEBUG__?: ArtDebugBridge;
-  };
-
-const ART_TUNING_DEFAULTS: ArtTuningState = {
-  appShellPadding: APP_SHELL_PADDING,
-  shellFramePadding: SHELL_FRAME_PADDING,
-  mainViewportRadius: MAIN_VIEWPORT_RADIUS,
-  mainViewportAlpha: 255,
-  mainViewportShadowAlpha: 56,
-  mainViewportShadowSpreadRatio: 0.03,
-  mainViewportOffsetXRatio: 0,
-  mainViewportOffsetYRatio: 0,
-  mainViewportWidthScale: 1,
-  mainViewportHeightScale: 1,
-  topBarHeightRatio: 0.112,
-  topBarShellAlpha: 244,
-  topBarInnerAlpha: 142,
-  topBarBorderWidth: 3.5,
-  topBarBorderAlpha: 255,
-  topBarShadowAlpha: 58,
-  topBarShadowSpreadRatio: 0.18,
-  topBarBrandMarkHeightRatio: 0.64,
-  topBarBrandTextGap: 14,
-  topBarBrandTitleY: 13,
-  topBarBrandTitleFontScale: 0.335,
-  topBarBrandSubtitleY: -16,
-  topBarBrandSubtitleFontScale: 0.15,
-  topBarNavWidthRatio: 0.325,
-  topBarStatusWidthRatio: 0.118,
-  topBarNavGlossWidthRatio: 0.76,
-  topBarNavGlossHeightRatio: 0.34,
-  topBarNavGlossOffsetYRatio: 0.16,
-  topBarNavGlossAlpha: 52,
-  topBarBrandGlossWidthRatio: 0.72,
-  topBarBrandGlossHeightRatio: 0.3,
-  topBarBrandGlossOffsetYRatio: 0.12,
-  topBarBrandGlossAlpha: 46,
-  topBarNavTopColorR: 237,
-  topBarNavTopColorG: 194,
-  topBarNavTopColorB: 58,
-  topBarNavBottomColorR: 245,
-  topBarNavBottomColorG: 160,
-  topBarNavBottomColorB: 72,
-  topBarNavMaterialGlossAlpha: 56,
-  bottomDockHeightRatio: 0.172,
-  bottomDockShellAlpha: 255,
-  bottomDockInnerAlpha: 218,
-  bottomDockGradientTopAlpha: 26,
-  bottomDockGradientBottomAlpha: 18,
-  bottomDockTileGapRatio: 0.011,
-  bottomDockIconWidth: 62,
-  bottomDockIconHeight: 52,
-  bottomDockIconRadiusRatio: 0.42,
-  bottomDockIconBorderWidth: 1,
-  bottomDockIconBorderAlpha: 210,
-  bottomDockIconOffsetX: 0,
-  bottomDockIconOffsetY: 0,
-  bottomDockIconGlossWidthRatio: 0.7,
-  bottomDockIconGlossHeightRatio: 0.28,
-  bottomDockIconGlossOffsetYRatio: 0.13,
-  bottomDockGlyphAlpha: 255,
-  bottomDockFeedGlyphSizeScale: 1,
-  bottomDockFeedGlyphOffsetX: 0,
-  bottomDockFeedGlyphOffsetY: 0,
-  bottomDockPlayGlyphSizeScale: 1,
-  bottomDockPlayGlyphOffsetX: 0,
-  bottomDockPlayGlyphOffsetY: 0,
-  bottomDockBathGlyphSizeScale: 1,
-  bottomDockBathGlyphOffsetX: 0,
-  bottomDockBathGlyphOffsetY: 0,
-  bottomDockSleepGlyphSizeScale: 1,
-  bottomDockSleepGlyphOffsetX: 0,
-  bottomDockSleepGlyphOffsetY: 0,
-  bottomDockMusicGlyphSizeScale: 1,
-  bottomDockMusicGlyphOffsetX: 0,
-  bottomDockMusicGlyphOffsetY: 0,
-  bottomDockCareGlyphSizeScale: 1,
-  bottomDockCareGlyphOffsetX: 0,
-  bottomDockCareGlyphOffsetY: 0,
-  bottomDockTileGroupWidthScale: 1,
-  bottomDockTileWidthScale: 1,
-  bottomDockTileHeightScale: 1,
-  bottomDockTileBorderWidth: 2,
-  bottomDockTileBorderAlpha: 218,
-  bottomDockTileInnerAlpha: 255,
-  bottomDockTextOffsetX: 0,
-  bottomDockTextOffsetY: 0,
-  bottomDockTextAlpha: 255,
-  bottomDockTextFontSize: 18,
-  bottomDockTextColorR: 110,
-  bottomDockTextColorG: 74,
-  bottomDockTextColorB: 51,
-  bottomDockBorderWidth: 2,
-  bottomDockBorderAlpha: 255,
-  bottomDockShadowAlpha: 50,
-  bottomDockShadowSpreadRatio: 0.18,
-  topBarOffsetXRatio: 0,
-  topBarOffsetYRatio: 0,
-  topBarWidthScale: 1,
-  topBarHeightScale: 0.94,
-  leftCardOffsetXRatio: 0,
-  leftCardOffsetYRatio: 0,
-  leftCardWidthScale: 1,
-  leftCardHeightScale: 1,
-  rightCardOffsetXRatio: 0,
-  rightCardOffsetYRatio: 0,
-  rightCardWidthScale: 1,
-  rightCardHeightScale: 1,
-  sideCardStageInsetRatio: 0.025,
-  sideCardBaseWidthRatio: 0.255,
-  sideCardBaseHeightRatio: 0.9,
-  sideCardVerticalGuardRatio: 1.2,
-  leftStatusTitleYRatio: 0.105,
-  leftStatusTitleFontScale: 0.116,
-  leftStatusPawXRatio: 0.33,
-  leftStatusPawYOffset: 4,
-  leftStatusPawScale: 1,
-  leftStatusLevelYRatio: 0.255,
-  leftStatusLevelPillXRatio: 0.17,
-  leftStatusLevelPillWidthRatio: 0.68,
-  leftStatusLevelPillHeightRatio: 0.145,
-  leftStatusLevelBadgeXRatio: 0.235,
-  leftStatusLevelBadgeWidthRatio: 0.285,
-  leftStatusLevelBadgeHeightRatio: 0.19,
-  leftStatusLevelTextXRatio: 0.19,
-  leftStatusLevelTextFontScale: 0.087,
-  leftStatusDividerYRatio: 0.45,
-  leftStatusDividerWidthRatio: 0.82,
-  leftStatusRowsTopGapRatio: 0.14,
-  leftStatusRowsGapRatio: 0.18,
-  leftStatusRowIconXRatio: 0.345,
-  leftStatusRowIconSizeRatio: 0.19,
-  leftStatusRowLabelXRatio: 0.095,
-  leftStatusRowValueXRatio: 0.31,
-  leftStatusRowBarXRatio: 0.155,
-  leftStatusRowBarWidthRatio: 0.61,
-  leftStatusRowBarHeightScale: 0.32,
-  leftStatusRowLabelFontScale: 0.068,
-  leftStatusRowValueFontScale: 0.059,
-  leftStatusFlowerXRatio: 0.37,
-  leftStatusFlowerYOffset: 28,
-  leftStatusFlowerScale: 1,
-  rightLogTitleYRatio: 0.105,
-  rightLogTitleFontScale: 0.116,
-  rightLogPawXRatio: 0.33,
-  rightLogPawYOffset: 4,
-  rightLogPawScale: 1,
-  rightLogTextXRatio: -0.01,
-  rightLogTextTopRatio: 0.255,
-  rightLogLineGapRatio: 0.112,
-  rightLogTextWidthRatio: 0.86,
-  rightLogTextHeightScale: 0.78,
-  rightLogTextFontScale: 0.074,
-  rightLogDividerYRatio: 0.61,
-  rightLogDividerWidthRatio: 0.82,
-  rightLogTipXRatio: 0,
-  rightLogTipYRatio: -0.24,
-  rightLogTipWidthRatio: 0.86,
-  rightLogTipHeightRatio: 0.245,
-  rightLogTipRadiusRatio: 0.22,
-  rightLogTipGlossYRatio: 0.25,
-  rightLogTipGlossWidthRatio: 0.72,
-  rightLogTipGlossHeightRatio: 0.22,
-  rightLogTipIconXRatio: -0.31,
-  rightLogTipIconYRatio: 0,
-  rightLogTipIconSizeRatio: 0.74,
-  rightLogTipTitleXRatio: 0.14,
-  rightLogTipTitleYRatio: 0.19,
-  rightLogTipTitleWidthRatio: 0.56,
-  rightLogTipTitleFontScale: 0.069,
-  rightLogTipBodyXRatio: 0.14,
-  rightLogTipBodyYRatio: -0.19,
-  rightLogTipBodyWidthRatio: 0.58,
-  rightLogTipBodyHeightRatio: 0.48,
-  rightLogTipBodyFontScale: 0.052,
-  rightLogFlowerXRatio: 0.37,
-  rightLogFlowerYOffset: 28,
-  rightLogFlowerScale: 1,
-  bottomDockOffsetXRatio: 0,
-  bottomDockOffsetYRatio: 0,
-  bottomDockWidthScale: 1,
-  bottomDockHeightScale: 1,
-  homeworkOverlayOffsetXRatio: 0,
-  homeworkOverlayOffsetYRatio: 0,
-  homeworkOverlayWidthScale: 1,
-  homeworkOverlayHeightScale: 1,
-  homeworkOverlayScale: 1,
-  homeworkWorkCardX: -290,
-  homeworkWorkCardY: 0,
-  homeworkWorkCardWidth: 600,
-  homeworkWorkCardHeight: 500,
-  homeworkRewardCardX: 292,
-  homeworkRewardCardY: 0,
-  homeworkRewardCardWidth: 500,
-  homeworkRewardCardHeight: 500,
-  homeworkPanelAlpha: 236,
-  homeworkPanelInnerAlpha: 244,
-  homeworkPanelBorderWidth: 2,
-  homeworkPanelRadius: 24,
-  homeworkPanelGradientAlpha: 82,
-  homeworkPanelGradientRange: 0.72,
-  homeworkPanelGradientColorR: 255,
-  homeworkPanelGradientColorG: 252,
-  homeworkPanelGradientColorB: 247,
-  stageBackgroundScale: 1,
-  stageBackgroundWidthScale: 1,
-  stageBackgroundHeightScale: 1,
-  stageBackgroundOffsetXRatio: 0,
-  stageBackgroundOffsetYRatio: 0,
-  cloudYRatio: 0.33,
-  cloudBaseWidthRatio: 0.28,
-  leftCloudXRatio: -0.25,
-  rightCloudXRatio: 0.25,
-  leftCloudScale: 0.92,
-  rightCloudScale: 1.08,
-  rightCloudYOffsetRatio: 0.02,
-  stageBaseArcWidthRatio: 0.56,
-  stageBaseArcHeightRatio: 0.145,
-  stageBaseArcBottomRatio: 0.165,
-  stageGroundLineYRatio: -0.145,
-  safeZoneWidthRatio: 0.4,
-  safeZoneHeightRatio: 0.585,
-  safeZoneYRatio: 0.018,
-  foxCharacterScale: 1,
-  foxCharacterOffsetXRatio: 0,
-  foxCharacterOffsetYRatio: 0,
-  foxShadowAlpha: 28,
-  foxShadowWidthScale: 1,
-  foxShadowHeightScale: 1,
-  grassYRatio: -0.305,
-};
-
-const ART_TUNING_FIELDS: ArtTuningField[] = [
-  {
-    key: "appShellPadding",
-    section: "壳层",
-    label: "壳层内缩",
-    description: "控制壳层到第一层内框的整体留白。",
-    min: 8,
-    max: 32,
-    step: 1,
-  },
-  {
-    key: "shellFramePadding",
-    section: "壳层",
-    label: "视口内缩",
-    description: "控制 ShellFrame 到 MainViewport 的距离。",
-    min: 12,
-    max: 36,
-    step: 1,
-  },
-  {
-    key: "mainViewportRadius",
-    section: "壳层",
-    label: "主视口圆角",
-    description: "控制 MainViewport 的柔和程度。",
-    min: 22,
-    max: 42,
-    step: 1,
-  },
-  {
-    key: "mainViewportAlpha",
-    section: "主视口",
-    label: "主视口透明度",
-    description: "控制 MainViewport 本体的整体透明度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "mainViewportShadowAlpha",
-    section: "主视口",
-    label: "主视口阴影透明度",
-    description: "控制 MainViewport 外阴影的可见强度。",
-    min: 0,
-    max: 120,
-    step: 1,
-  },
-  {
-    key: "mainViewportShadowSpreadRatio",
-    section: "主视口",
-    label: "主视口阴影扩散比例",
-    description: "控制 MainViewport 外阴影向四周扩散的范围。",
-    min: 0.01,
-    max: 0.08,
-    step: 0.002,
-  },
-  {
-    key: "mainViewportOffsetXRatio",
-    section: "主视口布局",
-    label: "水平位置",
-    description: "控制 MainViewport 相对 ShellFrame 基准位置的水平偏移。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "mainViewportOffsetYRatio",
-    section: "主视口布局",
-    label: "垂直位置",
-    description: "控制 MainViewport 相对 ShellFrame 基准位置的垂直偏移。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "mainViewportHeightScale",
-    section: "主视口布局",
-    label: "高度",
-    description: "控制 MainViewport 相对基准高度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "mainViewportWidthScale",
-    section: "主视口布局",
-    label: "宽度",
-    description: "控制 MainViewport 相对基准宽度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "homeworkOverlayOffsetXRatio",
-    section: "作业弹层",
-    label: "整体水平位置",
-    description: "控制作业弹层整体相对主视口宽度的水平偏移。",
-    min: -0.25,
-    max: 0.25,
-    step: 0.005,
-  },
-  {
-    key: "homeworkOverlayOffsetYRatio",
-    section: "作业弹层",
-    label: "整体垂直位置",
-    description: "控制作业弹层整体相对主视口高度的垂直偏移。",
-    min: -0.25,
-    max: 0.25,
-    step: 0.005,
-  },
-  {
-    key: "homeworkOverlayWidthScale",
-    section: "作业弹层",
-    label: "覆盖宽度",
-    description: "控制作业弹层宿主区域的覆盖宽度。",
-    min: 0.75,
-    max: 1.35,
-    step: 0.01,
-  },
-  {
-    key: "homeworkOverlayHeightScale",
-    section: "作业弹层",
-    label: "覆盖高度",
-    description: "控制作业弹层宿主区域的覆盖高度，用来压住场景栏和底部栏。",
-    min: 0.75,
-    max: 1.45,
-    step: 0.01,
-  },
-  {
-    key: "homeworkOverlayScale",
-    section: "作业弹层",
-    label: "整体缩放",
-    description: "在自适应缩放基础上继续放大或缩小左右两个分屏卡片。",
-    min: 0.75,
-    max: 1.25,
-    step: 0.01,
-  },
-  {
-    key: "homeworkWorkCardX",
-    section: "作业弹层",
-    label: "左卡 X",
-    description: "控制提交学习任务卡片的水平位置。",
-    min: -420,
-    max: -120,
-    step: 1,
-  },
-  {
-    key: "homeworkWorkCardY",
-    section: "作业弹层",
-    label: "左卡 Y",
-    description: "控制提交学习任务卡片的垂直位置。",
-    min: -100,
-    max: 100,
-    step: 1,
-  },
-  {
-    key: "homeworkWorkCardWidth",
-    section: "作业弹层",
-    label: "左卡宽度",
-    description: "控制提交学习任务卡片宽度。",
-    min: 480,
-    max: 720,
-    step: 1,
-  },
-  {
-    key: "homeworkWorkCardHeight",
-    section: "作业弹层",
-    label: "左卡高度",
-    description: "控制提交学习任务卡片高度。",
-    min: 400,
-    max: 620,
-    step: 1,
-  },
-  {
-    key: "homeworkRewardCardX",
-    section: "作业弹层",
-    label: "右卡 X",
-    description: "控制奖励反馈卡片的水平位置。",
-    min: 120,
-    max: 430,
-    step: 1,
-  },
-  {
-    key: "homeworkRewardCardY",
-    section: "作业弹层",
-    label: "右卡 Y",
-    description: "控制奖励反馈卡片的垂直位置。",
-    min: -100,
-    max: 100,
-    step: 1,
-  },
-  {
-    key: "homeworkRewardCardWidth",
-    section: "作业弹层",
-    label: "右卡宽度",
-    description: "控制奖励反馈卡片宽度。",
-    min: 380,
-    max: 640,
-    step: 1,
-  },
-  {
-    key: "homeworkRewardCardHeight",
-    section: "作业弹层",
-    label: "右卡高度",
-    description: "控制奖励反馈卡片高度。",
-    min: 400,
-    max: 620,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelAlpha",
-    section: "作业弹层",
-    label: "卡片描边透明度",
-    description: "控制左右作业卡片描边层透明度，不影响卡片主体底色。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelBorderWidth",
-    section: "作业弹层",
-    label: "卡片描边粗细",
-    description: "控制左右作业卡片描边线宽，描边层独立于卡片主体。",
-    min: 0,
-    max: 12,
-    step: 0.5,
-  },
-  {
-    key: "homeworkPanelRadius",
-    section: "作业弹层",
-    label: "卡片圆角",
-    description: "控制左右作业卡片主体和描边层的圆角大小。",
-    min: 0,
-    max: 48,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelInnerAlpha",
-    section: "作业弹层",
-    label: "卡片主体透明度",
-    description: "控制左右作业卡片主体底色透明度，数值越低越透。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelGradientAlpha",
-    section: "作业弹层",
-    label: "渐变遮挡透明度",
-    description: "控制左右作业卡片外侧渐变遮挡层的最大透明度。",
-    min: 0,
-    max: 180,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelGradientRange",
-    section: "作业弹层",
-    label: "渐变遮挡范围",
-    description: "0 为全宽线性渐变；1 为外侧三分之一满遮挡后渐变；2 为外侧三分之二满遮挡后渐变。",
-    min: 0,
-    max: 2,
-    step: 0.01,
-  },
-  {
-    key: "homeworkPanelGradientColorR",
-    section: "作业弹层",
-    label: "渐变颜色 R",
-    description: "控制渐变遮挡层颜色的红色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelGradientColorG",
-    section: "作业弹层",
-    label: "渐变颜色 G",
-    description: "控制渐变遮挡层颜色的绿色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "homeworkPanelGradientColorB",
-    section: "作业弹层",
-    label: "渐变颜色 B",
-    description: "控制渐变遮挡层颜色的蓝色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "stageBackgroundScale",
-    section: "舞台背景",
-    label: "背景缩放",
-    description: "在等比 cover 的基础上继续缩放 Stage 背景图。",
-    min: 0.5,
-    max: 2,
-    step: 0.01,
-  },
-  {
-    key: "stageBackgroundWidthScale",
-    section: "舞台背景",
-    label: "背景宽度缩放",
-    description: "单独控制 Stage 背景图的宽度缩放。",
-    min: 0.5,
-    max: 2,
-    step: 0.01,
-  },
-  {
-    key: "stageBackgroundHeightScale",
-    section: "舞台背景",
-    label: "背景高度缩放",
-    description: "单独控制 Stage 背景图的高度缩放。",
-    min: 0.5,
-    max: 2,
-    step: 0.01,
-  },
-  {
-    key: "stageBackgroundOffsetXRatio",
-    section: "舞台背景",
-    label: "背景水平位置",
-    description: "按 Stage 内容宽度比例移动背景图。",
-    min: -0.5,
-    max: 0.5,
-    step: 0.005,
-  },
-  {
-    key: "stageBackgroundOffsetYRatio",
-    section: "舞台背景",
-    label: "背景垂直位置",
-    description: "按 Stage 内容高度比例移动背景图。",
-    min: -0.5,
-    max: 0.5,
-    step: 0.005,
-  },
-  {
-    key: "topBarHeightRatio",
-    section: "顶栏",
-    label: "顶栏高度比例",
-    description: "控制顶栏相对主视口高度的占比。",
-    min: 0.075,
-    max: 0.18,
-    step: 0.002,
-  },
-  {
-    key: "topBarShellAlpha",
-    section: "顶栏",
-    label: "顶栏外壳透明度",
-    description: "控制顶栏最外层壳体底色的可见程度。",
-    min: 180,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarInnerAlpha",
-    section: "顶栏",
-    label: "顶栏内层透明度",
-    description: "控制顶栏内层面板的可见程度，不和外壳透明度绑死。",
-    min: 28,
-    max: 236,
-    step: 1,
-  },
-  {
-    key: "topBarBorderWidth",
-    section: "顶栏",
-    label: "顶栏描边宽度",
-    description: "控制顶栏外圈描边的粗细。",
-    min: 1,
-    max: 6,
-    step: 0.5,
-  },
-  {
-    key: "topBarBorderAlpha",
-    section: "顶栏",
-    label: "顶栏描边透明度",
-    description: "控制顶栏外圈描边的可见程度。",
-    min: 120,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarShadowAlpha",
-    section: "顶栏",
-    label: "顶栏阴影透明度",
-    description: "控制顶栏外阴影的可见强度，语义与壳层 / 主视口一致。",
-    min: 0,
-    max: 120,
-    step: 1,
-  },
-  {
-    key: "topBarShadowSpreadRatio",
-    section: "顶栏",
-    label: "顶栏阴影扩散比例",
-    description: "控制顶栏外阴影向四周扩散的范围，语义与壳层 / 主视口一致。",
-    min: 0.08,
-    max: 0.28,
-    step: 0.005,
-  },
-  {
-    key: "topBarBrandMarkHeightRatio",
-    section: "顶栏",
-    label: "品牌图标比例",
-    description: "控制左上品牌图标相对顶栏高度的比例。",
-    min: 0.5,
-    max: 0.8,
-    step: 0.01,
-  },
-  {
-    key: "topBarBrandTextGap",
-    section: "顶栏",
-    label: "图标文字间距",
-    description: "控制品牌图标与标题组之间的水平距离。",
-    min: 8,
-    max: 30,
-    step: 1,
-  },
-  {
-    key: "topBarBrandTitleY",
-    section: "顶栏细调",
-    label: "标题纵向位移",
-    description: "控制品牌主标题在顶栏中的上下位置。",
-    min: 0,
-    max: 24,
-    step: 1,
-  },
-  {
-    key: "topBarBrandTitleFontScale",
-    section: "顶栏细调",
-    label: "标题字号比例",
-    description: "控制品牌主标题相对顶栏高度的字号比例。",
-    min: 0.26,
-    max: 0.4,
-    step: 0.005,
-  },
-  {
-    key: "topBarBrandSubtitleY",
-    section: "顶栏细调",
-    label: "副标题纵向位移",
-    description: "控制品牌副标题在顶栏中的上下位置。",
-    min: -28,
-    max: -6,
-    step: 1,
-  },
-  {
-    key: "topBarBrandSubtitleFontScale",
-    section: "顶栏细调",
-    label: "副标题字号比例",
-    description: "控制品牌副标题相对顶栏高度的字号比例。",
-    min: 0.11,
-    max: 0.2,
-    step: 0.005,
-  },
-  {
-    key: "topBarNavWidthRatio",
-    section: "顶栏",
-    label: "导航宽度比例",
-    description: "控制中间胶囊导航的总宽度。",
-    min: 0.26,
-    max: 0.38,
-    step: 0.002,
-  },
-  {
-    key: "topBarStatusWidthRatio",
-    section: "顶栏",
-    label: "状态入口比例",
-    description: "控制右侧状态入口的宽度。",
-    min: 0.09,
-    max: 0.15,
-    step: 0.002,
-  },
-  {
-    key: "topBarNavGlossWidthRatio",
-    section: "顶栏细调",
-    label: "导航高光宽度",
-    description: "控制激活按钮顶部高光相对按钮宽度的比例。",
-    min: 0.45,
-    max: 0.95,
-    step: 0.01,
-  },
-  {
-    key: "topBarNavGlossHeightRatio",
-    section: "顶栏细调",
-    label: "导航高光高度",
-    description: "控制激活按钮顶部高光相对按钮高度的比例。",
-    min: 0.16,
-    max: 0.6,
-    step: 0.01,
-  },
-  {
-    key: "topBarNavGlossOffsetYRatio",
-    section: "顶栏细调",
-    label: "导航高光位置",
-    description: "控制激活按钮顶部高光的纵向位置。",
-    min: -0.05,
-    max: 0.3,
-    step: 0.01,
-  },
-  {
-    key: "topBarNavGlossAlpha",
-    section: "顶栏细调",
-    label: "导航高光透明度",
-    description: "控制激活按钮顶部高光的可见强度。",
-    min: 0,
-    max: 140,
-    step: 1,
-  },
-  {
-    key: "topBarBrandGlossWidthRatio",
-    section: "顶栏细调",
-    label: "图标高光宽度",
-    description: "控制品牌图标高光相对图标宽度的比例。",
-    min: 0.4,
-    max: 0.95,
-    step: 0.01,
-  },
-  {
-    key: "topBarBrandGlossHeightRatio",
-    section: "顶栏细调",
-    label: "图标高光高度",
-    description: "控制品牌图标高光相对图标高度的比例。",
-    min: 0.14,
-    max: 0.6,
-    step: 0.01,
-  },
-  {
-    key: "topBarBrandGlossOffsetYRatio",
-    section: "顶栏细调",
-    label: "图标高光位置",
-    description: "控制品牌图标高光的纵向位置。",
-    min: -0.22,
-    max: 0.48,
-    step: 0.01,
-  },
-  {
-    key: "topBarBrandGlossAlpha",
-    section: "顶栏细调",
-    label: "图标高光透明度",
-    description: "控制品牌图标高光的可见强度。",
-    min: 0,
-    max: 140,
-    step: 1,
-  },
-  {
-    key: "topBarNavTopColorR",
-    section: "顶栏细调",
-    label: "顶部黄 R",
-    description: "控制激活按钮顶部渐变色的红色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarNavTopColorG",
-    section: "顶栏细调",
-    label: "顶部黄 G",
-    description: "控制激活按钮顶部渐变色的绿色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarNavTopColorB",
-    section: "顶栏细调",
-    label: "顶部黄 B",
-    description: "控制激活按钮顶部渐变色的蓝色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarNavBottomColorR",
-    section: "顶栏细调",
-    label: "底部橙 R",
-    description: "控制激活按钮底部渐变色的红色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarNavBottomColorG",
-    section: "顶栏细调",
-    label: "底部橙 G",
-    description: "控制激活按钮底部渐变色的绿色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarNavBottomColorB",
-    section: "顶栏细调",
-    label: "底部橙 B",
-    description: "控制激活按钮底部渐变色的蓝色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "topBarNavMaterialGlossAlpha",
-    section: "顶栏细调",
-    label: "材质 Gloss 强度",
-    description: "控制激活按钮材质内置 gloss 的整体强度。",
-    min: 0,
-    max: 140,
-    step: 1,
-  },
-  {
-    key: "bottomDockHeightRatio",
-    section: "底栏",
-    label: "底栏高度比例",
-    description: "控制底栏相对主视口高度的占比。",
-    min: 0.14,
-    max: 0.22,
-    step: 0.002,
-  },
-  {
-    key: "bottomDockShellAlpha",
-    section: "底栏",
-    label: "底栏底色透明度",
-    description: "控制底栏外壳底色的可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockInnerAlpha",
-    section: "底栏",
-    label: "底栏内层透明度",
-    description: "控制底栏内层白色卡面的可见程度；外壳透明度不明显时通常是这一层在覆盖。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockGradientTopAlpha",
-    section: "底栏",
-    label: "底栏渐变上透明度",
-    description: "控制底栏内部微弱上下渐变的顶部亮度。",
-    min: 0,
-    max: 120,
-    step: 1,
-  },
-  {
-    key: "bottomDockGradientBottomAlpha",
-    section: "底栏",
-    label: "底栏渐变下透明度",
-    description: "控制底栏内部微弱上下渐变的底部暖色强度。",
-    min: 0,
-    max: 120,
-    step: 1,
-  },
-  {
-    key: "bottomDockTileGapRatio",
-    section: "底栏",
-    label: "动作卡间距比例",
-    description: "控制六宫格动作卡之间的水平缝隙。",
-    min: 0.006,
-    max: 0.02,
-    step: 0.001,
-  },
-  {
-    key: "bottomDockIconWidth",
-    section: "底栏",
-    label: "动作图标长度",
-    description: "控制底栏每个动作图标圆润圆角矩形底形的横向长度。",
-    min: 36,
-    max: 96,
-    step: 1,
-  },
-  {
-    key: "bottomDockIconHeight",
-    section: "底栏",
-    label: "动作图标高度",
-    description: "控制底栏每个动作图标圆润圆角矩形底形的纵向高度。",
-    min: 32,
-    max: 88,
-    step: 1,
-  },
-  {
-    key: "bottomDockIconRadiusRatio",
-    section: "底栏",
-    label: "动作图标圆角比例",
-    description: "控制动作图标底形圆角相对短边的比例，保持圆润但不做成完整半圆胶囊。",
-    min: 0.2,
-    max: 0.48,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockIconBorderWidth",
-    section: "底栏",
-    label: "动作图标描边粗细",
-    description: "控制动作图标圆润圆角矩形底形外圈描边粗细。",
-    min: 0,
-    max: 5,
-    step: 0.5,
-  },
-  {
-    key: "bottomDockIconBorderAlpha",
-    section: "底栏",
-    label: "动作图标描边透明度",
-    description: "控制动作图标圆润圆角矩形底形外圈描边可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockIconOffsetX",
-    section: "底栏",
-    label: "动作图标水平位移",
-    description: "控制六个动作图标在各自动作卡里的水平位移。",
-    min: -28,
-    max: 28,
-    step: 1,
-  },
-  {
-    key: "bottomDockIconOffsetY",
-    section: "底栏",
-    label: "动作图标垂直位移",
-    description: "控制六个动作图标在各自动作卡里的垂直位移。",
-    min: -28,
-    max: 28,
-    step: 1,
-  },
-  {
-    key: "bottomDockIconGlossWidthRatio",
-    section: "底栏",
-    label: "动作图标高光长度",
-    description: "控制动作图标顶部高光相对图标长度的比例。",
-    min: 0.25,
-    max: 0.95,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockIconGlossHeightRatio",
-    section: "底栏",
-    label: "动作图标高光高度",
-    description: "控制动作图标顶部高光相对图标高度的比例。",
-    min: 0.12,
-    max: 0.55,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockIconGlossOffsetYRatio",
-    section: "底栏",
-    label: "动作图标高光位移",
-    description: "控制动作图标顶部高光的纵向位移。",
-    min: -0.18,
-    max: 0.32,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockGlyphAlpha",
-    section: "底栏",
-    label: "颜文字透明度",
-    description: "统一控制六个动作图标内颜文字 / 符号的可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockFeedGlyphSizeScale",
-    section: "底栏",
-    label: "喂食颜文字大小",
-    description: "单独控制喂食图标颜文字大小。",
-    min: 0.55,
-    max: 1.45,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockFeedGlyphOffsetX",
-    section: "底栏",
-    label: "喂食颜文字左右",
-    description: "单独控制喂食图标颜文字水平位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockFeedGlyphOffsetY",
-    section: "底栏",
-    label: "喂食颜文字上下",
-    description: "单独控制喂食图标颜文字垂直位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockPlayGlyphSizeScale",
-    section: "底栏",
-    label: "玩耍颜文字大小",
-    description: "单独控制玩耍图标颜文字大小。",
-    min: 0.55,
-    max: 1.45,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockPlayGlyphOffsetX",
-    section: "底栏",
-    label: "玩耍颜文字左右",
-    description: "单独控制玩耍图标颜文字水平位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockPlayGlyphOffsetY",
-    section: "底栏",
-    label: "玩耍颜文字上下",
-    description: "单独控制玩耍图标颜文字垂直位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockBathGlyphSizeScale",
-    section: "底栏",
-    label: "洗澡颜文字大小",
-    description: "单独控制洗澡图标颜文字大小。",
-    min: 0.55,
-    max: 1.45,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockBathGlyphOffsetX",
-    section: "底栏",
-    label: "洗澡颜文字左右",
-    description: "单独控制洗澡图标颜文字水平位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockBathGlyphOffsetY",
-    section: "底栏",
-    label: "洗澡颜文字上下",
-    description: "单独控制洗澡图标颜文字垂直位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockSleepGlyphSizeScale",
-    section: "底栏",
-    label: "睡觉颜文字大小",
-    description: "单独控制睡觉图标颜文字大小。",
-    min: 0.55,
-    max: 1.45,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockSleepGlyphOffsetX",
-    section: "底栏",
-    label: "睡觉颜文字左右",
-    description: "单独控制睡觉图标颜文字水平位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockSleepGlyphOffsetY",
-    section: "底栏",
-    label: "睡觉颜文字上下",
-    description: "单独控制睡觉图标颜文字垂直位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockMusicGlyphSizeScale",
-    section: "底栏",
-    label: "听歌颜文字大小",
-    description: "单独控制听歌图标颜文字大小。",
-    min: 0.55,
-    max: 1.45,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockMusicGlyphOffsetX",
-    section: "底栏",
-    label: "听歌颜文字左右",
-    description: "单独控制听歌图标颜文字水平位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockMusicGlyphOffsetY",
-    section: "底栏",
-    label: "听歌颜文字上下",
-    description: "单独控制听歌图标颜文字垂直位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockCareGlyphSizeScale",
-    section: "底栏",
-    label: "心情颜文字大小",
-    description: "单独控制心情图标颜文字大小。",
-    min: 0.55,
-    max: 1.45,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockCareGlyphOffsetX",
-    section: "底栏",
-    label: "心情颜文字左右",
-    description: "单独控制心情图标颜文字水平位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockCareGlyphOffsetY",
-    section: "底栏",
-    label: "心情颜文字上下",
-    description: "单独控制心情图标颜文字垂直位移。",
-    min: -18,
-    max: 18,
-    step: 1,
-  },
-  {
-    key: "bottomDockTileGroupWidthScale",
-    section: "底栏",
-    label: "动作卡整体宽度",
-    description: "控制六个动作卡整体轨道的横向占用范围，围绕底栏中心展开或收拢。",
-    min: 0.45,
-    max: 1.55,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockTileWidthScale",
-    section: "底栏",
-    label: "动作卡宽度",
-    description: "微调六个动作卡相对自动分配宽度的缩放，已做钝化处理。",
-    min: 0.45,
-    max: 1.55,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockTileHeightScale",
-    section: "底栏",
-    label: "动作卡高度",
-    description: "微调六个动作卡相对底栏基准高度的缩放，已做钝化处理。",
-    min: 0.45,
-    max: 1.55,
-    step: 0.02,
-  },
-  {
-    key: "bottomDockTileBorderWidth",
-    section: "底栏",
-    label: "动作卡描边宽度",
-    description: "控制六个动作卡外圈奶油描边的粗细。",
-    min: 0,
-    max: 6,
-    step: 0.5,
-  },
-  {
-    key: "bottomDockTileBorderAlpha",
-    section: "底栏",
-    label: "动作卡描边透明度",
-    description: "控制六个动作卡外圈奶油描边的可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockTileInnerAlpha",
-    section: "底栏",
-    label: "动作卡卡面透明度",
-    description: "控制六个动作卡白色内层卡面的可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextOffsetX",
-    section: "底栏",
-    label: "动作文字水平位移",
-    description: "统一控制喂食、玩耍、洗澡、睡觉、听歌、心情文字的水平位置。",
-    min: -40,
-    max: 40,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextOffsetY",
-    section: "底栏",
-    label: "动作文字垂直位移",
-    description: "统一控制喂食、玩耍、洗澡、睡觉、听歌、心情文字的垂直位置。",
-    min: -40,
-    max: 40,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextAlpha",
-    section: "底栏",
-    label: "动作文字透明度",
-    description: "统一控制底栏六个动作文字的可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextFontSize",
-    section: "底栏",
-    label: "动作文字字号",
-    description: "统一控制底栏六个动作文字的字号大小。",
-    min: 10,
-    max: 34,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextColorR",
-    section: "底栏",
-    label: "动作文字颜色 R",
-    description: "控制底栏动作文字颜色的红色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextColorG",
-    section: "底栏",
-    label: "动作文字颜色 G",
-    description: "控制底栏动作文字颜色的绿色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockTextColorB",
-    section: "底栏",
-    label: "动作文字颜色 B",
-    description: "控制底栏动作文字颜色的蓝色通道。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockBorderWidth",
-    section: "底栏",
-    label: "底栏描边宽度",
-    description: "控制底栏外圈描边的粗细。",
-    min: 0,
-    max: 6,
-    step: 0.5,
-  },
-  {
-    key: "bottomDockBorderAlpha",
-    section: "底栏",
-    label: "底栏描边透明度",
-    description: "控制底栏外圈描边的可见程度。",
-    min: 0,
-    max: 255,
-    step: 1,
-  },
-  {
-    key: "bottomDockShadowAlpha",
-    section: "底栏",
-    label: "底栏阴影透明度",
-    description: "控制底栏外阴影的可见强度，语义与顶栏一致。",
-    min: 0,
-    max: 120,
-    step: 1,
-  },
-  {
-    key: "bottomDockShadowSpreadRatio",
-    section: "底栏",
-    label: "底栏阴影扩散比例",
-    description: "控制底栏外阴影向四周扩散的范围，语义与顶栏一致。",
-    min: 0.08,
-    max: 0.28,
-    step: 0.005,
-  },
-  {
-    key: "topBarOffsetXRatio",
-    section: "主视口布局",
-    label: "顶栏水平位置",
-    description: "控制顶栏相对主视口基准位置的水平偏移。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "topBarOffsetYRatio",
-    section: "主视口布局",
-    label: "顶栏垂直位置",
-    description: "控制顶栏相对主视口基准位置的垂直偏移。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "topBarWidthScale",
-    section: "主视口布局",
-    label: "顶栏宽度",
-    description: "控制顶栏相对基准宽度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "topBarHeightScale",
-    section: "主视口布局",
-    label: "顶栏高度",
-    description: "控制顶栏相对基准高度的缩放。",
-    min: 0.48,
-    max: 1.55,
-    step: 0.01,
-  },
-  {
-    key: "leftCardOffsetXRatio",
-    section: "左右卡片",
-    label: "左卡水平位置",
-    description: "控制左卡在主舞台区域内的水平偏移，最终会被限制在主舞台内。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "leftCardOffsetYRatio",
-    section: "左右卡片",
-    label: "左卡垂直位置",
-    description: "控制左卡在主舞台区域内的垂直偏移，最终会被限制在主舞台内。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "leftCardWidthScale",
-    section: "左右卡片",
-    label: "左卡宽度",
-    description: "控制左卡相对当前侧栏基准宽度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "leftCardHeightScale",
-    section: "左右卡片",
-    label: "左卡高度",
-    description: "控制左卡相对当前侧栏基准高度的缩放。",
-    min: 0.6,
-    max: 2,
-    step: 0.01,
-  },
-  {
-    key: "rightCardOffsetXRatio",
-    section: "左右卡片",
-    label: "右卡水平位置",
-    description: "控制右卡在主舞台区域内的水平偏移，最终会被限制在主舞台内。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "rightCardOffsetYRatio",
-    section: "左右卡片",
-    label: "右卡垂直位置",
-    description: "控制右卡在主舞台区域内的垂直偏移，最终会被限制在主舞台内。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "rightCardWidthScale",
-    section: "左右卡片",
-    label: "右卡宽度",
-    description: "控制右卡相对当前侧栏基准宽度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "rightCardHeightScale",
-    section: "左右卡片",
-    label: "右卡高度",
-    description: "控制右卡相对当前侧栏基准高度的缩放。",
-    min: 0.6,
-    max: 2,
-    step: 0.01,
-  },
-  {
-    key: "sideCardStageInsetRatio",
-    section: "左右卡片",
-    label: "舞台内边距",
-    description: "控制左右卡片与主舞台可见边界之间的安全距离。",
-    min: 0.01,
-    max: 0.08,
-    step: 0.002,
-  },
-  {
-    key: "sideCardBaseWidthRatio",
-    section: "左右卡片",
-    label: "侧卡基准宽度",
-    description: "控制左右卡片未单独缩放前的基础宽度比例。",
-    min: 0.18,
-    max: 0.34,
-    step: 0.005,
-  },
-  {
-    key: "sideCardBaseHeightRatio",
-    section: "左右卡片",
-    label: "侧卡基准高度",
-    description: "控制左右卡片未单独缩放前的基础高度比例。",
-    min: 0.68,
-    max: 0.98,
-    step: 0.005,
-  },
-  {
-    key: "sideCardVerticalGuardRatio",
-    section: "左右卡片",
-    label: "上下安全缝",
-    description: "控制左右卡片与主舞台上下边界之间额外保留的安全距离。",
-    min: 0.4,
-    max: 2.6,
-    step: 0.05,
-  },
-  {
-    key: "leftStatusTitleYRatio",
-    section: "左卡细调",
-    label: "标题纵向",
-    description: "控制小橘状态标题相对卡片顶部的纵向比例。",
-    min: 0.06,
-    max: 0.18,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusTitleFontScale",
-    section: "左卡细调",
-    label: "标题字号",
-    description: "控制小橘状态标题的字号比例。",
-    min: 0.08,
-    max: 0.16,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusPawXRatio",
-    section: "左卡细调",
-    label: "标题爪印横距",
-    description: "控制标题左右爪印离中心的横向距离。",
-    min: 0.22,
-    max: 0.44,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusPawYOffset",
-    section: "左卡细调",
-    label: "标题爪印纵向",
-    description: "控制标题左右爪印相对标题的纵向偏移。",
-    min: -24,
-    max: 24,
-    step: 1,
-  },
-  {
-    key: "leftStatusPawScale",
-    section: "左卡细调",
-    label: "标题爪印缩放",
-    description: "控制标题左右爪印整体大小。",
-    min: 0.55,
-    max: 1.8,
-    step: 0.01,
-  },
-  {
-    key: "leftStatusLevelYRatio",
-    section: "左卡细调",
-    label: "等级区纵向",
-    description: "控制等级胶囊和 Lv 徽章的整体纵向比例。",
-    min: 0.18,
-    max: 0.36,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusLevelPillXRatio",
-    section: "左卡细调",
-    label: "等级胶囊横向",
-    description: "控制等级胶囊相对卡片中心的水平位置。",
-    min: -0.02,
-    max: 0.32,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusLevelPillWidthRatio",
-    section: "左卡细调",
-    label: "等级胶囊宽度",
-    description: "控制等级胶囊的宽度比例。",
-    min: 0.42,
-    max: 0.86,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusLevelPillHeightRatio",
-    section: "左卡细调",
-    label: "等级胶囊高度",
-    description: "控制等级胶囊的高度比例。",
-    min: 0.08,
-    max: 0.22,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusLevelBadgeXRatio",
-    section: "左卡细调",
-    label: "Lv 徽章横向",
-    description: "控制 Lv.7 花形徽章离左边缘的横向比例。",
-    min: 0.12,
-    max: 0.36,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusLevelBadgeWidthRatio",
-    section: "左卡细调",
-    label: "Lv 徽章宽度比例",
-    description: "控制 Lv.7 花形徽章按卡片宽度计算的大小上限。",
-    min: 0.18,
-    max: 0.38,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusLevelBadgeHeightRatio",
-    section: "左卡细调",
-    label: "Lv 徽章高度比例",
-    description: "控制 Lv.7 花形徽章按卡片高度计算的大小上限。",
-    min: 0.12,
-    max: 0.26,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusLevelTextXRatio",
-    section: "左卡细调",
-    label: "等级文字横向",
-    description: "控制等级文字的水平位置。",
-    min: 0.02,
-    max: 0.34,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusLevelTextFontScale",
-    section: "左卡细调",
-    label: "等级文字字号",
-    description: "控制等级文字的字号比例。",
-    min: 0.06,
-    max: 0.12,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusDividerYRatio",
-    section: "左卡细调",
-    label: "虚线纵向",
-    description: "控制左卡分隔虚线相对卡片顶部的纵向比例。",
-    min: 0.34,
-    max: 0.58,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusDividerWidthRatio",
-    section: "左卡细调",
-    label: "虚线宽度",
-    description: "控制左卡分隔虚线的整体宽度。",
-    min: 0.56,
-    max: 0.95,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowsTopGapRatio",
-    section: "左卡细调",
-    label: "状态区起点",
-    description: "控制第一条状态行与虚线之间的距离。",
-    min: 0.06,
-    max: 0.22,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusRowsGapRatio",
-    section: "左卡细调",
-    label: "状态行间距",
-    description: "控制三条状态行之间的纵向间距。",
-    min: 0.1,
-    max: 0.26,
-    step: 0.002,
-  },
-  {
-    key: "leftStatusRowIconXRatio",
-    section: "左卡细调",
-    label: "状态图标横向",
-    description: "控制三条状态图标的统一水平位置。",
-    min: 0.22,
-    max: 0.44,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowIconSizeRatio",
-    section: "左卡细调",
-    label: "状态图标大小",
-    description: "控制三条状态图标底圆和图案的统一大小。",
-    min: 0.13,
-    max: 0.26,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowLabelXRatio",
-    section: "左卡细调",
-    label: "状态文字横向",
-    description: "控制饱腹值 / 体力值 / 心情值文字的水平位置。",
-    min: 0.02,
-    max: 0.2,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowValueXRatio",
-    section: "左卡细调",
-    label: "状态数值横向",
-    description: "控制 60/100 等数值文字的水平位置。",
-    min: 0.2,
-    max: 0.42,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowBarXRatio",
-    section: "左卡细调",
-    label: "进度条横向",
-    description: "控制三条进度条的统一水平位置。",
-    min: 0.02,
-    max: 0.3,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowBarWidthRatio",
-    section: "左卡细调",
-    label: "进度条宽度",
-    description: "控制三条进度条的统一宽度。",
-    min: 0.42,
-    max: 0.76,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowBarHeightScale",
-    section: "左卡细调",
-    label: "进度条厚度",
-    description: "控制三条进度条相对图标尺寸的厚度。",
-    min: 0.2,
-    max: 0.5,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusRowLabelFontScale",
-    section: "左卡细调",
-    label: "状态文字字号",
-    description: "控制状态名称文字的字号比例。",
-    min: 0.048,
-    max: 0.09,
-    step: 0.001,
-  },
-  {
-    key: "leftStatusRowValueFontScale",
-    section: "左卡细调",
-    label: "状态数值字号",
-    description: "控制状态数值文字的字号比例。",
-    min: 0.044,
-    max: 0.08,
-    step: 0.001,
-  },
-  {
-    key: "leftStatusFlowerXRatio",
-    section: "左卡细调",
-    label: "底部花朵横向",
-    description: "控制左卡底部花朵装饰的水平位置。",
-    min: 0.18,
-    max: 0.48,
-    step: 0.005,
-  },
-  {
-    key: "leftStatusFlowerYOffset",
-    section: "左卡细调",
-    label: "底部花朵纵向",
-    description: "控制左卡底部花朵装饰离卡片底部的距离。",
-    min: 6,
-    max: 58,
-    step: 1,
-  },
-  {
-    key: "leftStatusFlowerScale",
-    section: "左卡细调",
-    label: "底部花朵缩放",
-    description: "控制左卡底部花朵装饰的整体大小。",
-    min: 0.45,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "rightLogTitleYRatio",
-    section: "右卡细调",
-    label: "标题纵向",
-    description: "控制互动日志标题相对卡片顶部的纵向比例。",
-    min: 0.06,
-    max: 0.18,
-    step: 0.002,
-  },
-  {
-    key: "rightLogTitleFontScale",
-    section: "右卡细调",
-    label: "标题字号",
-    description: "控制互动日志标题的字号比例。",
-    min: 0.08,
-    max: 0.16,
-    step: 0.002,
-  },
-  {
-    key: "rightLogPawXRatio",
-    section: "右卡细调",
-    label: "标题爪印横距",
-    description: "控制标题左右爪印离中心的横向距离。",
-    min: 0.22,
-    max: 0.44,
-    step: 0.005,
-  },
-  {
-    key: "rightLogPawYOffset",
-    section: "右卡细调",
-    label: "标题爪印纵向",
-    description: "控制标题左右爪印相对标题的纵向偏移。",
-    min: -24,
-    max: 24,
-    step: 1,
-  },
-  {
-    key: "rightLogPawScale",
-    section: "右卡细调",
-    label: "标题爪印缩放",
-    description: "控制标题左右爪印整体大小。",
-    min: 0.55,
-    max: 1.8,
-    step: 0.01,
-  },
-  {
-    key: "rightLogTextXRatio",
-    section: "右卡细调",
-    label: "日志文字横向",
-    description: "控制三行日志正文的统一水平位置。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTextTopRatio",
-    section: "右卡细调",
-    label: "日志文字起点",
-    description: "控制第一行日志正文相对卡片顶部的纵向比例。",
-    min: 0.16,
-    max: 0.42,
-    step: 0.002,
-  },
-  {
-    key: "rightLogLineGapRatio",
-    section: "右卡细调",
-    label: "日志行间距",
-    description: "控制三行日志正文之间的行距。",
-    min: 0.07,
-    max: 0.18,
-    step: 0.002,
-  },
-  {
-    key: "rightLogTextWidthRatio",
-    section: "右卡细调",
-    label: "日志文字宽度",
-    description: "控制日志正文 Label 的宽度比例。",
-    min: 0.56,
-    max: 0.98,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTextHeightScale",
-    section: "右卡细调",
-    label: "日志文字高度",
-    description: "控制每行日志正文 Label 相对行距的高度。",
-    min: 0.45,
-    max: 1.2,
-    step: 0.01,
-  },
-  {
-    key: "rightLogTextFontScale",
-    section: "右卡细调",
-    label: "日志文字字号",
-    description: "控制日志正文文字字号比例。",
-    min: 0.052,
-    max: 0.095,
-    step: 0.001,
-  },
-  {
-    key: "rightLogDividerYRatio",
-    section: "右卡细调",
-    label: "虚线纵向",
-    description: "控制右卡分隔虚线相对卡片顶部的纵向比例。",
-    min: 0.46,
-    max: 0.72,
-    step: 0.002,
-  },
-  {
-    key: "rightLogDividerWidthRatio",
-    section: "右卡细调",
-    label: "虚线宽度",
-    description: "控制右卡分隔虚线的整体宽度。",
-    min: 0.56,
-    max: 0.95,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipXRatio",
-    section: "右卡细调",
-    label: "功能卡横向",
-    description: "控制底部功能卡相对卡片中心的水平位置。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipYRatio",
-    section: "右卡细调",
-    label: "功能卡纵向",
-    description: "控制底部功能卡相对卡片中心的纵向比例。",
-    min: -0.42,
-    max: -0.08,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipWidthRatio",
-    section: "右卡细调",
-    label: "功能卡宽度",
-    description: "控制底部功能卡的宽度比例。",
-    min: 0.58,
-    max: 0.98,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipHeightRatio",
-    section: "右卡细调",
-    label: "功能卡高度",
-    description: "控制底部功能卡的高度比例。",
-    min: 0.14,
-    max: 0.34,
-    step: 0.002,
-  },
-  {
-    key: "rightLogTipRadiusRatio",
-    section: "右卡细调",
-    label: "功能卡圆角",
-    description: "控制底部功能卡的圆角比例。",
-    min: 0.12,
-    max: 0.36,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipGlossYRatio",
-    section: "右卡细调",
-    label: "功能卡高光纵向",
-    description: "控制底部功能卡顶部高光的纵向位置。",
-    min: 0.08,
-    max: 0.42,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipGlossWidthRatio",
-    section: "右卡细调",
-    label: "功能卡高光宽度",
-    description: "控制底部功能卡高光的宽度比例。",
-    min: 0.35,
-    max: 0.95,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipGlossHeightRatio",
-    section: "右卡细调",
-    label: "功能卡高光高度",
-    description: "控制底部功能卡高光的高度比例。",
-    min: 0.08,
-    max: 0.38,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipIconXRatio",
-    section: "右卡细调",
-    label: "云朵图标横向",
-    description: "控制底部功能卡内云朵图标的水平位置。",
-    min: -0.46,
-    max: -0.12,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipIconYRatio",
-    section: "右卡细调",
-    label: "云朵图标纵向",
-    description: "控制底部功能卡内云朵图标的纵向位置。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipIconSizeRatio",
-    section: "右卡细调",
-    label: "云朵图标大小",
-    description: "控制底部功能卡内云朵图标的大小比例。",
-    min: 0.45,
-    max: 1.05,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipTitleXRatio",
-    section: "右卡细调",
-    label: "功能标题横向",
-    description: "控制静态陪伴场景标题的水平位置。",
-    min: -0.02,
-    max: 0.32,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipTitleYRatio",
-    section: "右卡细调",
-    label: "功能标题纵向",
-    description: "控制静态陪伴场景标题的纵向位置。",
-    min: 0.02,
-    max: 0.34,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipTitleWidthRatio",
-    section: "右卡细调",
-    label: "功能标题宽度",
-    description: "控制静态陪伴场景标题 Label 的宽度比例。",
-    min: 0.36,
-    max: 0.76,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipTitleFontScale",
-    section: "右卡细调",
-    label: "功能标题字号",
-    description: "控制静态陪伴场景标题的字号比例。",
-    min: 0.05,
-    max: 0.09,
-    step: 0.001,
-  },
-  {
-    key: "rightLogTipBodyXRatio",
-    section: "右卡细调",
-    label: "功能说明横向",
-    description: "控制底部功能卡说明文字的水平位置。",
-    min: -0.02,
-    max: 0.32,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipBodyYRatio",
-    section: "右卡细调",
-    label: "功能说明纵向",
-    description: "控制底部功能卡说明文字的纵向位置。",
-    min: -0.34,
-    max: 0.02,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipBodyWidthRatio",
-    section: "右卡细调",
-    label: "功能说明宽度",
-    description: "控制底部功能卡说明文字 Label 的宽度比例。",
-    min: 0.36,
-    max: 0.78,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipBodyHeightRatio",
-    section: "右卡细调",
-    label: "功能说明高度",
-    description: "控制底部功能卡说明文字 Label 的高度比例。",
-    min: 0.28,
-    max: 0.72,
-    step: 0.005,
-  },
-  {
-    key: "rightLogTipBodyFontScale",
-    section: "右卡细调",
-    label: "功能说明字号",
-    description: "控制底部功能卡说明文字字号比例。",
-    min: 0.038,
-    max: 0.07,
-    step: 0.001,
-  },
-  {
-    key: "rightLogFlowerXRatio",
-    section: "右卡细调",
-    label: "底部花朵横向",
-    description: "控制右卡底部花朵装饰的水平位置。",
-    min: 0.18,
-    max: 0.48,
-    step: 0.005,
-  },
-  {
-    key: "rightLogFlowerYOffset",
-    section: "右卡细调",
-    label: "底部花朵纵向",
-    description: "控制右卡底部花朵装饰离卡片底部的距离。",
-    min: 6,
-    max: 58,
-    step: 1,
-  },
-  {
-    key: "rightLogFlowerScale",
-    section: "右卡细调",
-    label: "底部花朵缩放",
-    description: "控制右卡底部花朵装饰的整体大小。",
-    min: 0.45,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockOffsetXRatio",
-    section: "主视口布局",
-    label: "底栏水平位置",
-    description: "控制底栏相对主视口基准位置的水平偏移。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockOffsetYRatio",
-    section: "主视口布局",
-    label: "底栏垂直位置",
-    description: "控制底栏相对主视口基准位置的垂直偏移。",
-    min: -0.2,
-    max: 0.2,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockWidthScale",
-    section: "主视口布局",
-    label: "底栏宽度",
-    description: "控制底栏相对基准宽度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "bottomDockHeightScale",
-    section: "主视口布局",
-    label: "底栏高度",
-    description: "控制底栏相对基准高度的缩放。",
-    min: 0.6,
-    max: 1.4,
-    step: 0.01,
-  },
-  {
-    key: "cloudYRatio",
-    section: "云朵",
-    label: "云层高度比例",
-    description: "控制顶部云层整体的纵向高度。",
-    min: 0.22,
-    max: 0.42,
-    step: 0.005,
-  },
-  {
-    key: "cloudBaseWidthRatio",
-    section: "云朵",
-    label: "云层基础宽度比例",
-    description: "控制两朵云共同使用的基础横向尺寸。",
-    min: 0.2,
-    max: 0.38,
-    step: 0.005,
-  },
-  {
-    key: "leftCloudXRatio",
-    section: "云朵",
-    label: "左云横向比例",
-    description: "控制左云相对舞台中心的水平位置。",
-    min: -0.36,
-    max: -0.12,
-    step: 0.005,
-  },
-  {
-    key: "rightCloudXRatio",
-    section: "云朵",
-    label: "右云横向比例",
-    description: "控制右云相对舞台中心的水平位置。",
-    min: 0.12,
-    max: 0.36,
-    step: 0.005,
-  },
-  {
-    key: "leftCloudScale",
-    section: "云朵",
-    label: "左云缩放",
-    description: "控制左云的单独大小。",
-    min: 0.7,
-    max: 1.3,
-    step: 0.01,
-  },
-  {
-    key: "rightCloudScale",
-    section: "云朵",
-    label: "右云缩放",
-    description: "控制右云的单独大小。",
-    min: 0.7,
-    max: 1.35,
-    step: 0.01,
-  },
-  {
-    key: "rightCloudYOffsetRatio",
-    section: "云朵",
-    label: "右云纵向偏移比例",
-    description: "控制右云相对左云的上下错位。",
-    min: -0.02,
-    max: 0.06,
-    step: 0.005,
-  },
-  {
-    key: "stageBaseArcWidthRatio",
-    section: "舞台",
-    label: "地面阴影宽度比例",
-    description: "控制中央地面承托阴影的横向宽度。",
-    min: 0.42,
-    max: 0.72,
-    step: 0.01,
-  },
-  {
-    key: "stageBaseArcHeightRatio",
-    section: "舞台",
-    label: "地面阴影高度比例",
-    description: "控制中央地面承托阴影的厚度。",
-    min: 0.08,
-    max: 0.22,
-    step: 0.005,
-  },
-  {
-    key: "stageBaseArcBottomRatio",
-    section: "舞台",
-    label: "地面阴影上移比例",
-    description: "控制地面阴影离底部的距离。",
-    min: 0.09,
-    max: 0.24,
-    step: 0.005,
-  },
-  {
-    key: "stageGroundLineYRatio",
-    section: "舞台",
-    label: "地平线纵向比例",
-    description: "控制地平线在舞台中的纵向位置。",
-    min: -0.24,
-    max: -0.04,
-    step: 0.005,
-  },
-  {
-    key: "safeZoneWidthRatio",
-    section: "小狐狸",
-    label: "狐狸基准宽度",
-    description: "控制小狐狸展示安全区相对舞台宽度的占比。",
-    min: 0.28,
-    max: 0.52,
-    step: 0.01,
-  },
-  {
-    key: "safeZoneHeightRatio",
-    section: "小狐狸",
-    label: "狐狸基准高度",
-    description: "控制小狐狸展示安全区相对舞台高度的占比。",
-    min: 0.42,
-    max: 0.7,
-    step: 0.01,
-  },
-  {
-    key: "safeZoneYRatio",
-    section: "小狐狸",
-    label: "狐狸基准纵向",
-    description: "控制小狐狸展示安全区整体上移或下移。",
-    min: -0.06,
-    max: 0.12,
-    step: 0.005,
-  },
-  {
-    key: "foxCharacterScale",
-    section: "小狐狸",
-    label: "狐狸整体缩放",
-    description: "控制中间小狐狸贴图的整体视觉大小。",
-    min: 0.55,
-    max: 1.35,
-    step: 0.01,
-  },
-  {
-    key: "foxCharacterOffsetXRatio",
-    section: "小狐狸",
-    label: "狐狸水平位置",
-    description: "按舞台宽度比例微调小狐狸水平位置。",
-    min: -0.18,
-    max: 0.18,
-    step: 0.005,
-  },
-  {
-    key: "foxCharacterOffsetYRatio",
-    section: "小狐狸",
-    label: "狐狸垂直位置",
-    description: "按舞台高度比例微调小狐狸垂直位置。",
-    min: -0.18,
-    max: 0.18,
-    step: 0.005,
-  },
-  {
-    key: "foxShadowAlpha",
-    section: "小狐狸",
-    label: "狐狸阴影透明度",
-    description: "控制小狐狸脚下椭圆阴影的可见强度。",
-    min: 0,
-    max: 90,
-    step: 1,
-  },
-  {
-    key: "foxShadowWidthScale",
-    section: "小狐狸",
-    label: "狐狸阴影宽度",
-    description: "控制小狐狸脚下椭圆阴影的横向大小。",
-    min: 0.55,
-    max: 1.6,
-    step: 0.01,
-  },
-  {
-    key: "foxShadowHeightScale",
-    section: "小狐狸",
-    label: "狐狸阴影高度",
-    description: "控制小狐狸脚下椭圆阴影的纵向厚度。",
-    min: 0.45,
-    max: 1.6,
-    step: 0.01,
-  },
-  {
-    key: "grassYRatio",
-    section: "舞台",
-    label: "草丛纵向比例",
-    description: "控制底部草丛和花朵整体高度。",
-    min: -0.38,
-    max: -0.2,
-    step: 0.005,
-  },
-];
 
 @ccclass("MainController")
 export class MainController extends ScreenController {
@@ -2757,6 +295,12 @@ export class MainController extends ScreenController {
   private stageCloudSpriteFrame: SpriteFrame | null = null;
   private stageSceneBackgroundSpriteFrame: SpriteFrame | null = null;
   private mainCharacterRestingFoxSpriteFrame: SpriteFrame | null = null;
+  private foxIdleDefaultFrames: SpriteFrame[] = [];
+  private foxIdleShowFrames: SpriteFrame[] = [];
+  private foxAnimationState: "default" | "show" = "default";
+  private foxAnimationFrameIndex = 0;
+  private foxAnimationElapsedMs = 0;
+  private foxIdleElapsedMs = 0;
   private radialGlowEffectAsset: EffectAsset | null = null;
   private shellShadowSpriteFrame: SpriteFrame | null = null;
   private mainViewportShadowSpriteFrame: SpriteFrame | null = null;
@@ -2809,18 +353,44 @@ export class MainController extends ScreenController {
   private homeworkDevResetMessage: string | null = null;
   private lastOfflineDecay: OfflineDecaySummary | null = null;
   private localPetMode: LocalPetMode = null;
+  private timeContext: TimeContextPayload | null = null;
+  private currentSeenAt: string | null = null;
+  private petBubble: PetBubble | null = null;
+  private petBubbleTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeVisualState: PetVisualState = "serverDerived";
+  private visualStateTimer: ReturnType<typeof setTimeout> | null = null;
+  private openingBubbleShownThisSession = false;
+  private highPriorityOpeningBubbleVisible = false;
+  private handleMainVisibilityChange = (): void => {
+    if (typeof document !== "undefined" && document.hidden) {
+      this.persistCurrentMainSeenAt();
+      this.clearLifeRuntimeState();
+    }
+  };
+  private handleMainPageHide = (): void => {
+    this.persistCurrentMainSeenAt();
+    this.clearLifeRuntimeState();
+  };
 
   onLoad(): void {
     this.hydrateArtTuningFromStorage();
     this.installArtDebugBridge();
     view.on("canvas-resize", this.render, this);
+    this.installLifeContextListeners();
   }
 
   onDestroy(): void {
+    this.persistCurrentMainSeenAt();
+    this.clearLifeRuntimeState();
+    this.uninstallLifeContextListeners();
     view.off("canvas-resize", this.render, this);
     this.releaseArtDebugPage();
     this.uninstallArtDebugBridge();
     this.releaseReferencePageUrl();
+  }
+
+  update(deltaTime: number): void {
+    this.updateFoxIdleAnimation(deltaTime);
   }
 
   async start(): Promise<void> {
@@ -2833,10 +403,32 @@ export class MainController extends ScreenController {
     try {
       const user = appState.getCurrentUser() ?? (await authService.bootstrapSession());
       if (!user) {
+        this.persistCurrentMainSeenAt();
+        this.clearLifeRuntimeState();
         sceneRouter.goToLogin();
       }
     } catch {
+      this.persistCurrentMainSeenAt();
+      this.clearLifeRuntimeState();
       sceneRouter.goToLogin();
+    }
+  }
+
+  private installLifeContextListeners(): void {
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.handleMainVisibilityChange);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.handleMainPageHide);
+    }
+  }
+
+  private uninstallLifeContextListeners(): void {
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.handleMainVisibilityChange);
+    }
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pagehide", this.handleMainPageHide);
     }
   }
 
@@ -2875,7 +467,9 @@ export class MainController extends ScreenController {
         }
         if (result.success) {
           this.localPetMode = null;
+          this.activeVisualState = "serverDerived";
           this.lastOfflineDecay = result.offlineDecay ?? null;
+          this.handleDashboardLifeContext(result.timeContext ?? null, result.offlineDecay, result.dailyBasicFood);
           this.dashboardFailureLogged = false;
           this.appendMainInteraction(
             result.dailyBasicFood?.granted ? "每日基础口粮" : "主页数据已同步",
@@ -2916,6 +510,325 @@ export class MainController extends ScreenController {
         this.dashboardRefreshPromise = null;
       }
     }
+  }
+
+  private handleDashboardLifeContext(
+    timeContext: TimeContextPayload | null,
+    offlineDecay: OfflineDecaySummary | undefined,
+    dailyBasicFood: DailyBasicFoodPayload | undefined
+  ): void {
+    this.timeContext = timeContext;
+    this.showOpeningBubbleIfNeeded(timeContext, offlineDecay, dailyBasicFood);
+    this.currentSeenAt = this.resolveCurrentSeenAt(timeContext);
+  }
+
+  private showOpeningBubbleIfNeeded(
+    timeContext: TimeContextPayload | null,
+    offlineDecay: OfflineDecaySummary | undefined,
+    dailyBasicFood: DailyBasicFoodPayload | undefined
+  ): void {
+    if (this.openingBubbleShownThisSession) {
+      return;
+    }
+
+    const highPriorityBubble = this.resolveHighPriorityOpeningBubble(timeContext, offlineDecay, dailyBasicFood);
+    if (highPriorityBubble) {
+      this.openingBubbleShownThisSession = true;
+      this.showPetBubble(highPriorityBubble.text, highPriorityBubble.source, {
+        priority: "high",
+      });
+      return;
+    }
+
+    const normalBubble = this.resolveNormalOpeningBubble(timeContext);
+    if (!normalBubble) {
+      return;
+    }
+
+    this.openingBubbleShownThisSession = true;
+    this.showPetBubble(normalBubble.text, normalBubble.source, {
+      priority: "normal",
+    });
+  }
+
+  private resolveHighPriorityOpeningBubble(
+    timeContext: TimeContextPayload | null,
+    offlineDecay: OfflineDecaySummary | undefined,
+    dailyBasicFood: DailyBasicFoodPayload | undefined
+  ): { text: string; source: PetBubbleSource } | null {
+    if (dailyBasicFood?.granted) {
+      return {
+        text: "今日基础口粮已送达，记得照顾小橘哦。",
+        source: "timeContext",
+      };
+    }
+    if (offlineDecay?.applied) {
+      return {
+        text: this.formatOfflineDecayDetail(offlineDecay),
+        source: "timeContext",
+      };
+    }
+    const backendGreeting = this.resolveBackendReturnGreeting(timeContext);
+    if (backendGreeting) {
+      return backendGreeting;
+    }
+    return this.resolveLocalFallbackGreeting(timeContext);
+  }
+
+  private resolveNormalOpeningBubble(
+    timeContext: TimeContextPayload | null
+  ): { text: string; source: PetBubbleSource } | null {
+    const stateBubble = this.resolveStateBubbleCopy();
+    if (stateBubble) {
+      return {
+        text: stateBubble,
+        source: "stateBubble",
+      };
+    }
+
+    if (!timeContext) {
+      return null;
+    }
+
+    const timePeriodCopy = this.resolveTimePeriodCopy(timeContext.dayPeriod);
+    return timePeriodCopy
+      ? {
+          text: timePeriodCopy,
+          source: "timeContext",
+        }
+      : null;
+  }
+
+  private resolveBackendReturnGreeting(
+    timeContext: TimeContextPayload | null
+  ): { text: string; source: PetBubbleSource } | null {
+    const greeting = timeContext?.returnGreeting;
+    if (!greeting?.shouldShow || !greeting.text.trim()) {
+      return null;
+    }
+    const petId = appState.getPetId();
+    const shownKey = this.resolveReturnGreetingShownStorageKey(
+      petId,
+      this.resolveGreetingLocalDate(timeContext),
+      this.mapReturnGreetingReasonToWindow(greeting.reason)
+    );
+    if (shownKey && storage.get(shownKey)) {
+      return null;
+    }
+    if (shownKey) {
+      storage.set(shownKey, this.resolveCurrentSeenAt(timeContext));
+    }
+    return {
+      text: greeting.text.trim(),
+      source: "timeContext",
+    };
+  }
+
+  private resolveLocalFallbackGreeting(
+    timeContext: TimeContextPayload | null
+  ): { text: string; source: PetBubbleSource } | null {
+    const petId = appState.getPetId();
+    if (!petId) {
+      return null;
+    }
+    const lastSeenAt = storage.get(this.resolveLastMainSeenAtStorageKey(petId));
+    if (!lastSeenAt) {
+      return null;
+    }
+    const now = new Date(this.resolveCurrentSeenAt(timeContext));
+    const lastSeen = new Date(lastSeenAt);
+    if (!Number.isFinite(now.getTime()) || !Number.isFinite(lastSeen.getTime())) {
+      return null;
+    }
+    const elapsedMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / 60000);
+    if (elapsedMinutes < RETURN_GREETING_SHORT_MINUTES) {
+      return null;
+    }
+
+    const localDate = this.resolveGreetingLocalDate(timeContext);
+    const lastSeenDate = this.getLocalDateKey(lastSeen);
+    const windowKey: LocalGreetingWindow =
+      lastSeenDate !== localDate
+        ? "overnight"
+        : elapsedMinutes >= RETURN_GREETING_LONG_MINUTES
+          ? "long"
+          : elapsedMinutes >= RETURN_GREETING_NORMAL_MINUTES
+            ? "normal"
+            : "short";
+    const shownKey = this.resolveReturnGreetingShownStorageKey(petId, localDate, windowKey);
+    if (shownKey && storage.get(shownKey)) {
+      return null;
+    }
+    if (shownKey) {
+      storage.set(shownKey, now.toISOString());
+    }
+    return {
+      text: this.resolveLocalFallbackGreetingCopy(windowKey),
+      source: "localFallbackGreeting",
+    };
+  }
+
+  private resolveStateBubbleCopy(): string | null {
+    const pet = appState.getCurrentPet();
+    if (!pet) {
+      return null;
+    }
+    const hunger = this.normalizeStatusValue(pet.hunger);
+    const energy = this.normalizeStatusValue(pet.energy);
+    const mood = this.normalizeStatusValue(pet.mood);
+    if (hunger !== null && hunger < 35) {
+      return "肚子有点空空的，要不要看看背包？";
+    }
+    if (energy !== null && energy < 30) {
+      return "有点困了，想安静休息一下。";
+    }
+    if (mood !== null && mood < 35) {
+      return "今天有点没精神，想被陪一会儿。";
+    }
+    if (hunger !== null || energy !== null || mood !== null) {
+      return "今天状态不错，见到你很开心。";
+    }
+    return null;
+  }
+
+  private resolveTimePeriodCopy(dayPeriod: TimeContextDayPeriod): string | null {
+    const copy: Record<TimeContextDayPeriod, string> = {
+      morning: "早上好呀，今天也一起慢慢来。",
+      noon: "中午啦，要不要休息一下？",
+      afternoon: "下午还有精神吗？我在这里陪你。",
+      evening: "晚上变安静了，我有点想和你待一会儿。",
+      night: "有点晚了，今天也辛苦啦。",
+      lateNight: "这么晚还在呀，要不要早点休息？",
+    };
+    return copy[dayPeriod] ?? null;
+  }
+
+  private resolveLocalFallbackGreetingCopy(windowKey: LocalGreetingWindow): string {
+    const copy: Record<LocalGreetingWindow, string> = {
+      short: "你回来啦，我刚刚在这里待了一会儿。",
+      normal: "你回来啦，见到你真好。",
+      long: "等了一阵子，看到你回来我安心啦。",
+      overnight: "今天又见到你啦，我们继续一起慢慢来。",
+    };
+    return copy[windowKey];
+  }
+
+  private mapReturnGreetingReasonToWindow(reason: string): LocalGreetingWindow {
+    if (reason === "overnight" || reason === "new_day") {
+      return "overnight";
+    }
+    if (reason === "long_return") {
+      return "long";
+    }
+    return "short";
+  }
+
+  private resolveGreetingLocalDate(timeContext: TimeContextPayload | null): string {
+    return timeContext?.localDate || this.getLocalDateKey(new Date());
+  }
+
+  private getLocalDateKey(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  private resolveCurrentSeenAt(timeContext: TimeContextPayload | null): string {
+    return timeContext?.serverNow || new Date().toISOString();
+  }
+
+  private resolveLastMainSeenAtStorageKey(petId: string): string {
+    return `${STORAGE_KEYS.petLifeLastMainSeenAtPrefix}${petId}`;
+  }
+
+  private resolveReturnGreetingShownStorageKey(
+    petId: string | null,
+    localDate: string,
+    windowKey: LocalGreetingWindow
+  ): string | null {
+    return petId
+      ? `${STORAGE_KEYS.petLifeReturnGreetingShownPrefix}${petId}:${localDate}:${windowKey}`
+      : null;
+  }
+
+  private persistCurrentMainSeenAt(): void {
+    const petId = appState.getPetId();
+    if (!petId) {
+      return;
+    }
+    storage.set(this.resolveLastMainSeenAtStorageKey(petId), this.currentSeenAt ?? new Date().toISOString());
+  }
+
+  private showPetBubble(
+    text: string,
+    source: PetBubbleSource,
+    options?: {
+      priority?: OpeningBubblePriority;
+      allowCoverHighPriority?: boolean;
+    }
+  ): void {
+    if (this.highPriorityOpeningBubbleVisible && options?.allowCoverHighPriority !== true) {
+      return;
+    }
+    this.clearPetBubbleTimer();
+    const createdAt = new Date().toISOString();
+    this.petBubble = {
+      text,
+      source,
+      createdAt,
+    };
+    this.highPriorityOpeningBubbleVisible = options?.priority === "high";
+    this.petBubbleTimer = setTimeout(() => {
+      if (this.petBubble?.createdAt !== createdAt) {
+        return;
+      }
+      this.petBubble = null;
+      this.highPriorityOpeningBubbleVisible = false;
+      this.petBubbleTimer = null;
+      this.render();
+    }, PET_BUBBLE_DURATION_MS);
+  }
+
+  private clearPetBubbleTimer(): void {
+    if (this.petBubbleTimer) {
+      clearTimeout(this.petBubbleTimer);
+      this.petBubbleTimer = null;
+    }
+  }
+
+  private triggerVisualState(
+    visualState: Exclude<PetVisualState, "serverDerived">,
+    durationMs: number | null
+  ): void {
+    this.clearVisualStateTimer();
+    this.activeVisualState = visualState;
+    if (durationMs === null) {
+      return;
+    }
+    this.visualStateTimer = setTimeout(() => {
+      if (this.activeVisualState !== visualState) {
+        return;
+      }
+      this.activeVisualState = "serverDerived";
+      this.visualStateTimer = null;
+      this.render();
+    }, durationMs);
+  }
+
+  private clearVisualStateTimer(): void {
+    if (this.visualStateTimer) {
+      clearTimeout(this.visualStateTimer);
+      this.visualStateTimer = null;
+    }
+  }
+
+  private clearLifeRuntimeState(): void {
+    this.clearPetBubbleTimer();
+    this.clearVisualStateTimer();
+    this.petBubble = null;
+    this.activeVisualState = "serverDerived";
+    this.highPriorityOpeningBubbleVisible = false;
   }
 
   private resolveMainViewModel(): MainViewModel {
@@ -2962,6 +875,12 @@ export class MainController extends ScreenController {
     stamina: number | null,
     mood: number | null
   ): MainPetDisplayStatus {
+    if (this.activeVisualState === "sleeping") {
+      return "休息中";
+    }
+    if (this.activeVisualState === "playing") {
+      return "玩耍中";
+    }
     if (this.localPetMode === "resting") {
       return "休息中";
     }
@@ -3015,6 +934,10 @@ export class MainController extends ScreenController {
       return "状态良好";
     }
     return null;
+  }
+
+  private isPetSnapshotSleeping(pet: { display_status?: string; status?: boolean }): boolean {
+    return this.mapServerStatus(pet.display_status ?? pet.status) === "休息中";
   }
 
   private resolveStatusIcon(status: MainPetDisplayStatus): string {
@@ -3218,6 +1141,8 @@ export class MainController extends ScreenController {
       case "stageBackgroundWidthScale":
       case "stageBackgroundHeightScale":
       case "foxCharacterScale":
+      case "foxSpriteWidthScale":
+      case "foxSpriteHeightScale":
       case "foxShadowWidthScale":
       case "foxShadowHeightScale":
         return { min: 0, max: 2 };
@@ -3469,6 +1394,25 @@ export class MainController extends ScreenController {
       this.mainCharacterRestingFoxSpriteFrame = spriteFrame;
       this.render();
     });
+    resources.load(MAIN_FOX_IDLE_DEFAULT_ATLAS_PATH, SpriteAtlas, (error, atlas) => {
+      if (error || !atlas) {
+        console.warn("[MainController] failed to load fox idle default atlas", error);
+        return;
+      }
+
+      this.foxIdleDefaultFrames = this.resolveFoxAtlasFrames(atlas, MAIN_FOX_IDLE_DEFAULT_PREFIX);
+      this.resetFoxAnimation("default");
+      this.render();
+    });
+    resources.load(MAIN_FOX_IDLE_SHOW_ATLAS_PATH, SpriteAtlas, (error, atlas) => {
+      if (error || !atlas) {
+        console.warn("[MainController] failed to load fox idle show atlas", error);
+        return;
+      }
+
+      this.foxIdleShowFrames = this.resolveFoxAtlasFrames(atlas, MAIN_FOX_IDLE_SHOW_PREFIX);
+      this.render();
+    });
     resources.load(CLOUD_SOFT_EFFECT_PATH, EffectAsset, (error, effectAsset) => {
 	  if (error || !effectAsset) {
 		console.warn("[MainController] failed to load cloud soft effect", error);
@@ -3487,6 +1431,167 @@ export class MainController extends ScreenController {
       this.radialGlowEffectAsset = effectAsset;
       this.render();
     });
+  }
+
+  private resolveFoxAtlasFrames(atlas: SpriteAtlas, framePrefix: string): SpriteFrame[] {
+    return atlas
+      .getSpriteFrames()
+      .filter((spriteFrame) => spriteFrame.name.startsWith(framePrefix))
+      .sort((left, right) => this.resolveFoxFrameOrder(left.name) - this.resolveFoxFrameOrder(right.name));
+  }
+
+  private resolveFoxFrameOrder(frameName: string): number {
+    const match = frameName.match(/(\d+)/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  private getCurrentFoxSpriteFrame(): SpriteFrame | null {
+    const frames =
+      this.foxAnimationState === "show" && this.foxIdleShowFrames.length > 0
+        ? this.foxIdleShowFrames
+        : this.foxIdleDefaultFrames;
+    if (frames.length > 0) {
+      return frames[Math.min(this.foxAnimationFrameIndex, frames.length - 1)] ?? null;
+    }
+    return this.mainCharacterRestingFoxSpriteFrame;
+  }
+
+  private resolveCurrentFoxStableSize(spriteFrame: SpriteFrame): Size {
+    const sequenceFrames = this.foxIdleDefaultFrames.length > 0
+      ? this.foxIdleDefaultFrames
+      : this.foxAnimationState === "show" && this.foxIdleShowFrames.length > 0
+        ? this.foxIdleShowFrames
+        : this.foxIdleDefaultFrames;
+    const sourceFrames = sequenceFrames.length > 0 ? sequenceFrames : [spriteFrame];
+    return sourceFrames.reduce((stableSize, frame) => {
+      const frameSize = this.resolveFoxFrameSourceSize(frame);
+      return new Size(
+        Math.max(stableSize.width, frameSize.width),
+        Math.max(stableSize.height, frameSize.height)
+      );
+    }, this.resolveFoxFrameSourceSize(spriteFrame));
+  }
+
+  private resolveFoxFrameSourceSize(spriteFrame: SpriteFrame): Size {
+    const originalSize = spriteFrame.originalSize;
+    if (originalSize.width > 0 && originalSize.height > 0) {
+      return originalSize;
+    }
+    const frameRect = spriteFrame.rect;
+    return frameRect.width > 0 && frameRect.height > 0
+      ? new Size(frameRect.width, frameRect.height)
+      : new Size(1, 1);
+  }
+
+  private createFoxSpriteNode(
+    parent: Node,
+    options: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      sourceSize: Size;
+      spriteFrame: SpriteFrame;
+    }
+  ): void {
+    const node = new Node("MainCharacterFoxSprite");
+    node.setParent(parent);
+    const transform = node.addComponent(UITransform);
+    transform.setContentSize(options.width, options.height);
+    node.setPosition(options.x, options.y, 0);
+
+    const spriteNode = new Node("MainCharacterFoxSpriteFrame");
+    spriteNode.setParent(node);
+    const sprite = spriteNode.addComponent(Sprite);
+    sprite.spriteFrame = options.spriteFrame;
+    sprite.type = Sprite.Type.SIMPLE;
+    sprite.trim = false;
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    const sourceSize = options.sourceSize;
+    const spriteTransform = spriteNode.getComponent(UITransform);
+    if (spriteTransform) {
+      spriteTransform.setContentSize(sourceSize.width, sourceSize.height);
+    }
+    spriteNode.setScale(
+      sourceSize.width > 0 ? options.width / sourceSize.width : 1,
+      sourceSize.height > 0 ? options.height / sourceSize.height : 1,
+      1
+    );
+  }
+
+  private resetFoxAnimation(state: "default" | "show"): void {
+    this.foxAnimationState = state;
+    this.foxAnimationFrameIndex = 0;
+    this.foxAnimationElapsedMs = 0;
+    if (state === "default") {
+      this.foxIdleElapsedMs = 0;
+    }
+  }
+
+  private resetFoxInactivity(): void {
+    this.foxIdleElapsedMs = 0;
+    if (this.foxAnimationState === "show") {
+      this.resetFoxAnimation("default");
+      this.render();
+    }
+  }
+
+  private updateFoxIdleAnimation(deltaTime: number): void {
+    if (this.activeTopBarNavTab !== "petHome") {
+      return;
+    }
+
+    if (this.foxIdleDefaultFrames.length === 0 && this.foxIdleShowFrames.length === 0) {
+      return;
+    }
+
+    const deltaMs = Math.min(250, Math.max(0, deltaTime * 1000));
+    if (this.foxAnimationState === "default") {
+      this.foxIdleElapsedMs += deltaMs;
+      if (this.foxIdleShowFrames.length > 0 && this.foxIdleElapsedMs >= FOX_IDLE_SHOW_TRIGGER_MS) {
+        this.resetFoxAnimation("show");
+        this.render();
+        return;
+      }
+      this.advanceFoxAnimationFrame(this.foxIdleDefaultFrames, FOX_IDLE_DEFAULT_FRAME_DURATION_MS, deltaMs, true);
+      return;
+    }
+
+    this.advanceFoxAnimationFrame(this.foxIdleShowFrames, FOX_IDLE_SHOW_FRAME_DURATION_MS, deltaMs, false);
+  }
+
+  private advanceFoxAnimationFrame(
+    frames: SpriteFrame[],
+    frameDurationMs: number,
+    deltaMs: number,
+    shouldLoop: boolean
+  ): void {
+    if (frames.length <= 1 || frameDurationMs <= 0) {
+      return;
+    }
+
+    this.foxAnimationElapsedMs += deltaMs;
+    let didAdvance = false;
+    while (this.foxAnimationElapsedMs >= frameDurationMs) {
+      this.foxAnimationElapsedMs -= frameDurationMs;
+      const nextFrameIndex = this.foxAnimationFrameIndex + 1;
+      if (nextFrameIndex >= frames.length) {
+        if (shouldLoop) {
+          this.foxAnimationFrameIndex = 0;
+        } else {
+          this.resetFoxAnimation("default");
+          didAdvance = true;
+          break;
+        }
+      } else {
+        this.foxAnimationFrameIndex = nextFrameIndex;
+      }
+      didAdvance = true;
+    }
+
+    if (didAdvance) {
+      this.render();
+    }
   }
 
   private ensureShellShadowAssetsForLayout(options: {
@@ -4733,6 +2838,7 @@ export class MainController extends ScreenController {
       return;
     }
 
+    this.resetFoxInactivity();
     this.activeTopBarNavTab = tab;
     if (tab === "bag") {
       this.appendMainInteraction("背包已打开", "当前展示 dashboard 同步到的口粮库存。");
@@ -6903,6 +5009,7 @@ export class MainController extends ScreenController {
   }
 
   private handleBottomDockAction(action: BottomDockAction): void {
+    this.resetFoxInactivity();
     if (action === "feed") {
       void this.handleFeedAction();
       return;
@@ -6927,6 +5034,10 @@ export class MainController extends ScreenController {
     };
 
     const feedback = feedbackByAction[action];
+    if (action === "music") {
+      this.triggerVisualState("listening", PET_VISUAL_MUSIC_DURATION_MS);
+      this.showPetBubble("这首歌好舒服。", "actionFeedback");
+    }
     this.appendMainInteraction(feedback.title, feedback.detail);
     this.render();
   }
@@ -7035,6 +5146,19 @@ export class MainController extends ScreenController {
         this.localPetMode = null;
         this.lastOfflineDecay = result.offlineDecay ?? null;
         this.corePetActionCooldownUntil = Date.now() + CORE_PET_ACTION_COOLDOWN_MS;
+        if (action === "sleep") {
+          this.triggerVisualState(
+            "sleeping",
+            this.isPetSnapshotSleeping(result.data) ? null : PET_VISUAL_PLAY_DURATION_MS
+          );
+          this.showPetBubble("我休息一下……", "actionFeedback");
+        } else if (action === "play") {
+          this.triggerVisualState("playing", PET_VISUAL_PLAY_DURATION_MS);
+          this.showPetBubble("再玩一会儿！", "actionFeedback");
+        } else if (action === "care") {
+          this.triggerVisualState("soothed", PET_VISUAL_SOOTHED_DURATION_MS);
+          this.showPetBubble("被你关心到了。", "actionFeedback");
+        }
         this.appendMainInteraction(config.successTitle, config.successDetail);
         this.render();
         if (this.activePetAction === action) {
@@ -7060,6 +5184,7 @@ export class MainController extends ScreenController {
   }
 
   private async handleFeedAction(): Promise<void> {
+    this.resetFoxInactivity();
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
       this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
       this.render();
@@ -7084,6 +5209,7 @@ export class MainController extends ScreenController {
   }
 
   private async handleFoodSelection(selectedFood: PetFoodInventoryItem): Promise<void> {
+    this.resetFoxInactivity();
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
       this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
       this.render();
@@ -7131,6 +5257,8 @@ export class MainController extends ScreenController {
         this.lastOfflineDecay = data?.offlineDecay ?? null;
         this.feedRequestInFlight = false;
         this.inventoryUseRequestInFlight = false;
+        this.triggerVisualState("eating", PET_VISUAL_FEED_DURATION_MS);
+        this.showPetBubble("这个好好吃！", "actionFeedback");
         const latestLog = data?.logs?.[0];
         this.appendMainInteraction(
           latestLog?.title ?? "使用成功",
@@ -7635,15 +5763,18 @@ export class MainController extends ScreenController {
 	  color: new Color(244, 183, 79, 210),
 	});
 
-	// 中央角色静态展示区。
-	// Milestone 5 收尾阶段只展示静态休息态角色，不在这里接入宠物业务状态。
+	// 中央角色展示区。
+	// 这里只接入表现层精灵图动画，正式宠物状态仍以后端快照为准。
   const safeZoneWidth = Math.max(260, Math.min(contentWidth * this.getArtTuningValue("safeZoneWidthRatio") * 0.86, 360));
   const safeZoneHeight = Math.max(240, Math.min(contentHeight * this.getArtTuningValue("safeZoneHeightRatio") * 0.82, 340));
 	const safeZoneY = contentHeight * this.getArtTuningValue("safeZoneYRatio");
 	const foxOffsetX = Math.round(contentWidth * this.getArtTuningValue("foxCharacterOffsetXRatio"));
 	const foxOffsetY = Math.round(contentHeight * this.getArtTuningValue("foxCharacterOffsetYRatio"));
 	const foxVisualScale = this.getArtTuningValue("foxCharacterScale");
+	const foxSpriteWidthScale = this.getArtTuningValue("foxSpriteWidthScale");
+	const foxSpriteHeightScale = this.getArtTuningValue("foxSpriteHeightScale");
 	const foxShadowAlpha = Math.round(this.getArtTuningValue("foxShadowAlpha"));
+	const foxSpriteFrame = this.getCurrentFoxSpriteFrame();
 	RuntimeUI.createBox(clip, {
 	  name: "MainCharacterGroundShadow",
 	  x: foxOffsetX,
@@ -7654,30 +5785,27 @@ export class MainController extends ScreenController {
 	  radius: Math.round(safeZoneHeight * 0.05),
 	});
 
-	if (this.mainCharacterRestingFoxSpriteFrame) {
-	  const characterFrameRect = this.mainCharacterRestingFoxSpriteFrame.rect;
-	  const characterOriginalSize = characterFrameRect.width > 0 && characterFrameRect.height > 0
-		? new Size(characterFrameRect.width, characterFrameRect.height)
-		: this.mainCharacterRestingFoxSpriteFrame.originalSize;
+	if (foxSpriteFrame) {
+	  const characterOriginalSize = this.resolveCurrentFoxStableSize(foxSpriteFrame);
 	  const characterAspect =
 		characterOriginalSize.height > 0 ? characterOriginalSize.width / characterOriginalSize.height : 1;
 	  const parentScaleX = Math.abs(clip.worldScale.x) || 1;
 	  const parentScaleY = Math.abs(clip.worldScale.y) || 1;
-	  const characterMaxScreenWidth = safeZoneWidth * 0.92 * foxVisualScale * parentScaleX;
-	  const characterMaxScreenHeight = safeZoneHeight * 0.9 * foxVisualScale * parentScaleY;
+	  const characterMaxScreenWidth = safeZoneWidth * 0.92 * foxVisualScale * foxSpriteWidthScale * parentScaleX;
+	  const characterMaxScreenHeight = safeZoneHeight * 0.9 * foxVisualScale * foxSpriteHeightScale * parentScaleY;
 	  let characterScreenWidth = characterMaxScreenWidth;
 	  let characterScreenHeight = characterScreenWidth / characterAspect;
 	  if (characterScreenHeight > characterMaxScreenHeight) {
 		characterScreenHeight = characterMaxScreenHeight;
 		characterScreenWidth = characterScreenHeight * characterAspect;
 	  }
-	  RuntimeUI.createSpriteFrame(clip, {
-		name: "MainCharacterRestingFox",
+	  this.createFoxSpriteNode(clip, {
 		x: foxOffsetX,
 		y: Math.round(safeZoneY + foxOffsetY - safeZoneHeight * 0.02 * foxVisualScale),
 		width: Math.round(characterScreenWidth / parentScaleX),
 		height: Math.round(characterScreenHeight / parentScaleY),
-		spriteFrame: this.mainCharacterRestingFoxSpriteFrame,
+		sourceSize: characterOriginalSize,
+		spriteFrame: foxSpriteFrame,
 	  });
 	} else {
 	  RuntimeUI.createBox(clip, {
@@ -7690,6 +5818,15 @@ export class MainController extends ScreenController {
 		radius: 32,
 	  });
 	}
+
+	this.renderPetLifeOverlay(clip, {
+	  safeZoneWidth,
+	  safeZoneHeight,
+	  safeZoneY,
+	  foxOffsetX,
+	  foxOffsetY,
+	  foxVisualScale,
+	});
 
 	if (this.showShaderDebugBlock) {
 	  const shaderDebugSize = Math.min(128, Math.max(92, Math.round(Math.min(safeZoneWidth, safeZoneHeight) * 0.26)));
@@ -7826,6 +5963,110 @@ export class MainController extends ScreenController {
 
 	clip.setSiblingIndex(1);
 	}
+
+  private renderPetLifeOverlay(
+    clip: Node,
+    options: {
+      safeZoneWidth: number;
+      safeZoneHeight: number;
+      safeZoneY: number;
+      foxOffsetX: number;
+      foxOffsetY: number;
+      foxVisualScale: number;
+    }
+  ): void {
+    const petCenterX = options.foxOffsetX;
+    const petCenterY = Math.round(options.safeZoneY + options.foxOffsetY);
+    const visualCopy = this.resolveVisualStateCopy();
+    if (visualCopy) {
+      RuntimeUI.createCard(clip, {
+        name: "PetLifeVisualStatePill",
+        x: petCenterX + Math.round(options.safeZoneWidth * 0.31),
+        y: petCenterY + Math.round(options.safeZoneHeight * 0.18 * options.foxVisualScale),
+        width: 84,
+        height: 34,
+        color: new Color(255, 245, 221, 214),
+        innerColor: new Color(255, 255, 255, 96),
+        borderColor: new Color(242, 203, 154, 190),
+        radius: 17,
+        innerRadius: 13,
+        borderThickness: 2,
+      });
+      RuntimeUI.createLabel(clip, {
+        name: "PetLifeVisualStateText",
+        text: visualCopy,
+        x: petCenterX + Math.round(options.safeZoneWidth * 0.31),
+        y: petCenterY + Math.round(options.safeZoneHeight * 0.18 * options.foxVisualScale),
+        width: 72,
+        height: 24,
+        fontSize: 16,
+        color: new Color(126, 68, 32, 232),
+      });
+    }
+
+    if (!this.petBubble) {
+      return;
+    }
+
+    const bubbleWidth = Math.max(210, Math.min(330, Math.round(options.safeZoneWidth * 0.86)));
+    const bubbleHeight = 68;
+    const bubbleX = Math.round(petCenterX + options.safeZoneWidth * 0.02);
+    const bubbleY = Math.round(petCenterY + options.safeZoneHeight * 0.45);
+    RuntimeUI.createCard(clip, {
+      name: "PetLifeBubble",
+      x: bubbleX,
+      y: bubbleY,
+      width: bubbleWidth,
+      height: bubbleHeight,
+      color: new Color(238, 180, 112, 218),
+      innerColor: new Color(255, 249, 237, 240),
+      borderColor: new Color(255, 226, 190, 220),
+      radius: 22,
+      innerRadius: 18,
+      borderThickness: 2,
+    });
+    RuntimeUI.createBox(clip, {
+      name: "PetLifeBubbleTail",
+      x: bubbleX - Math.round(bubbleWidth * 0.25),
+      y: bubbleY - Math.round(bubbleHeight * 0.44),
+      width: 24,
+      height: 14,
+      color: new Color(238, 180, 112, 218),
+      radius: 7,
+    });
+    const bubbleLabel = RuntimeUI.createLabel(clip, {
+      name: "PetLifeBubbleText",
+      text: this.petBubble.text,
+      x: bubbleX,
+      y: bubbleY,
+      width: bubbleWidth - 34,
+      height: bubbleHeight - 18,
+      fontSize: 18,
+      color: new Color(116, 72, 43, 240),
+    });
+    bubbleLabel.lineHeight = 24;
+    bubbleLabel.enableWrapText = true;
+    bubbleLabel.overflow = Label.Overflow.CLAMP;
+  }
+
+  private resolveVisualStateCopy(): string | null {
+    switch (this.activeVisualState) {
+      case "eating":
+        return "好吃";
+      case "playing":
+        return "☆ 玩耍";
+      case "sleeping":
+        return "Zz";
+      case "listening":
+        return "♪";
+      case "soothed":
+        return "♡";
+      case "serverDerived":
+      default:
+        return null;
+    }
+  }
+
   private renderReferenceButton(shell: Node, layout: MainLayout): void {
     RuntimeUI.createBox(shell, {
       name: "ReferenceButtonShadow",

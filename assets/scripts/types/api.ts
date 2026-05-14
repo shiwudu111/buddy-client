@@ -66,6 +66,35 @@ export interface DailyBasicFoodPayload {
   item?: InventoryFoodItem;
 }
 
+export type TimeContextDayPeriod =
+  | "morning"
+  | "noon"
+  | "afternoon"
+  | "evening"
+  | "night"
+  | "lateNight";
+
+export type TimeContextReturnGreetingReason =
+  | "short_return"
+  | "long_return"
+  | "overnight"
+  | "new_day"
+  | "none";
+
+export interface TimeContextPayload {
+  serverNow: string;
+  timezone: string;
+  localDate: string;
+  dayPeriod: TimeContextDayPeriod;
+  minutesSinceLastSeen?: number;
+  lastSeenAt?: string | null;
+  returnGreeting?: {
+    shouldShow: boolean;
+    text: string;
+    reason: TimeContextReturnGreetingReason;
+  };
+}
+
 export type MainEventKind =
   | "system"
   | "chat"
@@ -118,6 +147,7 @@ export interface PetDashboardPayload {
   inventory?: InventoryFoodItem[];
   recent_events?: MainEventEntry[];
   dailyBasicFood?: DailyBasicFoodPayload;
+  timeContext?: TimeContextPayload;
   offlineDecay?: OfflineDecaySummary;
   offline_decay?: OfflineDecaySummaryWire;
 }

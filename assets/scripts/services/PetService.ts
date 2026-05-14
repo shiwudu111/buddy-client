@@ -17,6 +17,7 @@ import type {
   PetFeedPayload,
   PetFeedResultPayload,
   PetStatus,
+  TimeContextPayload,
   UseInventoryItemResultPayload,
 } from "../types/api";
 
@@ -31,6 +32,7 @@ type PetStatusWire = PetStatus & {
 type PetStatusResponse = ApiResponse<PetStatus> & {
   dailyBasicFood?: DailyBasicFoodPayload;
   offlineDecay?: OfflineDecaySummary;
+  timeContext?: TimeContextPayload;
 };
 
 type InventoryUseResponse = ApiResponse<UseInventoryItemResultPayload> & {
@@ -60,6 +62,7 @@ class PetService {
         success: true,
         data: pet,
         dailyBasicFood: dashboardResult.data.dailyBasicFood,
+        timeContext: dashboardResult.data.timeContext,
         offlineDecay: this.normalizeOfflineDecaySummary(dashboardResult.data),
         statusCode: dashboardResult.statusCode,
       };
