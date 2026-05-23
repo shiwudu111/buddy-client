@@ -31,7 +31,7 @@ log "  log:  $LOG_FILE"
 
 if command -v rsync >/dev/null 2>&1; then
   log "Using rsync."
-  rsync -a --stats \
+  rsync -a --delete --stats \
     --exclude '.git/' \
     --exclude 'node_modules/' \
     --exclude '.tmp/' \
