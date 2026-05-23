@@ -1,21 +1,21 @@
 # AGENTS.md
 
-## Execution rules for this repo
+## 本仓库执行规则
 
-- Treat `./PLAN.md` as the product source of truth.
-- For the current cycle, only implement the items listed under `## Today`.
-- Do not expand scope beyond the files, modules, and acceptance criteria listed in `PLAN.md`.
-- Respect the existing constraints in `PLAN.md`:
-  - student side only
-  - do not implement complex AI generation
-  - do not modify stable flows outside Main unless explicitly required
-- Before editing code:
-  1. restate today's scope
-  2. list files to touch
-  3. list validation commands
-- Implement milestone by milestone.
-- After each milestone, run validation.
-- If backend integration blocks progress, ship the local preset fallback first.
-- Keep diffs minimal and localized.
-- Do not perform unrelated refactors, renames, dependency upgrades, or style rewrites.
-- Update progress in `PLAN.md` as milestones are completed.
+- 将 `./PLAN.md` 视为客户端当前产品执行源。
+- 本轮只实现 `## Today` 下列出的事项。
+- 不要超出 `PLAN.md` 中列出的文件、模块和验收标准。
+- 遵守 `PLAN.md` 中已有约束：
+  - 只处理学生端范围
+  - 不实现复杂 AI 生成
+  - 除非明确要求，不修改 Main 之外的稳定流程
+- 改代码前必须先说明：
+  1. 本轮范围
+  2. 预计触碰的文件
+  3. 验证命令
+- 按里程碑逐项实现。
+- 每个里程碑完成后运行对应验证。
+- 如果后端集成阻塞进度，先交付本地预设 fallback，并记录后端需求。
+- 保持 diff 最小且局部。
+- 不做无关重构、重命名、依赖升级或样式重写。
+- 每完成一个里程碑，及时更新 `PLAN.md` 进度。

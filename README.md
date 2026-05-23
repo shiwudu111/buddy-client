@@ -9,8 +9,8 @@
 
 ## 二、开发环境
 - **引擎版本**：Cocos Creator 3.8.7
-- **仓库根目录**：`E:\buddy-client`
-- **版本管理**：当前仓库为外层 Git 仓库
+- **仓库目录**：`buddy-client/`（位于父级工作区下）
+- **版本管理**：当前目录是独立 Git 仓库
 
 ## 三、主要目录
 - `assets/scenes`
@@ -27,7 +27,7 @@
   - 业务服务层
 - `assets/scripts/ui`
   - 页面控制器与界面逻辑
-- `docs`
+- `../docs/client`
   - 项目文档、联调基线、阶段说明、归档资料
 
 ## 四、当前工作重点
@@ -39,15 +39,15 @@
 ## 五、文档入口
 详细文档请查看：
 
-- [docs/README.md](E:/buddy-client/docs/README.md)
+- [../docs/client/README.md](../docs/client/README.md)
 
 建议优先阅读：
-- `docs/05-决策记录/DECISION-RESULT-FROZEN-V1.0.md`
-- `docs/03-API接口/API-MVP-BASELINE-V1.0.md`
-- `docs/06-开发规范/客户端架构设计-V1.0.md`
-- `docs/开发进度报告-2026-04-02-学生端修复说明.md`
+- `../docs/client/05-决策记录/DECISION-RESULT-FROZEN-V1.0.md`
+- `../docs/client/03-API接口/API-MVP-BASELINE-V1.0.md`
+- `../docs/client/06-开发规范/客户端架构设计-V1.0.md`
+- `../docs/client/90-archive/2026-04-14-阶段报告归档/开发进度报告-2026-04-02-学生端修复说明.md`
 
 ## 六、说明
 - 根目录 `README.md` 用于说明“这个仓库是什么、怎么定位”。
-- `docs/README.md` 用于说明“项目文档怎么查、当前以哪份为准”。
+- `../docs/client/README.md` 用于说明“项目文档怎么查、当前以哪份为准”。
 - 若代码与文档口径冲突，优先回看冻结决策与当前有效基线文档。

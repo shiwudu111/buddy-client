@@ -16,6 +16,7 @@ export type PetCreationViewActions = {
   // 这些回调由上层控制器传入，界面点击后会通知控制器继续流程。
   onOpenNaming: () => void;
   onBackToIntro: () => void;
+  onRandomName: () => string;
   onSubmitCreate: () => void | Promise<void>;
   onEnterPetHome: () => void;
 };
@@ -137,27 +138,45 @@ export function renderPetCreationFlow(
       width: 420,
       height: 60,
       defaultValue: state.petName,
-      maxLength: 20,
+      maxLength: 4,
     }).editBox;
 
     const backButton = RuntimeUI.createButton(panel, {
       name: "BackToIntroButton",
       text: "\u8fd4\u56de\u8bf4\u660e",
-      x: -110,
+      x: -190,
       y: -185,
-      width: 180,
+      width: 150,
       height: 54,
       color: SECONDARY_ACTION_COLOR,
       fontSize: 18,
     });
     backButton.button.node.on(Button.EventType.CLICK, actions.onBackToIntro, context);
 
+    const randomButton = RuntimeUI.createButton(panel, {
+      name: "RandomPetNameButton",
+      text: "\u968f\u673a\u8d77\u540d",
+      x: 0,
+      y: -185,
+      width: 150,
+      height: 54,
+      color: new Color(121, 160, 255, 255),
+      fontSize: 18,
+    });
+    randomButton.button.node.on(
+      Button.EventType.CLICK,
+      () => {
+        nameInput.string = actions.onRandomName();
+      },
+      context
+    );
+
     const submitButton = RuntimeUI.createButton(panel, {
       name: "SubmitCreatePetButton",
       text: "\u786e\u8ba4\u521b\u5efa",
-      x: 110,
+      x: 190,
       y: -185,
-      width: 180,
+      width: 150,
       height: 54,
       color: PRIMARY_ACTION_COLOR,
       fontSize: 18,

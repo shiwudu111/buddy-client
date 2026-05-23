@@ -1,31 +1,24 @@
-﻿import {
+import {
   _decorator,
   Button,
   Color,
-  EffectAsset,
   Graphics,
   HorizontalTextAlignment,
-  ImageAsset,
   Label,
   Mask,
   Material,
   Node,
-  Rect,
-  resources,
   Size,
   Sprite,
-  SpriteAtlas,
   SpriteFrame,
   ScrollView,
-  Texture2D,
   UITransform,
-  Vec2,
   Vec3,
   Vec4,
   view,
 } from "cc";
 import { appState } from "../../app/AppState";
-import { STORAGE_KEYS, storage } from "../../core/storage";
+import { storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
 import { homeworkService } from "../../services/HomeworkService";
@@ -35,7 +28,6 @@ import type {
   HomeworkSubject,
   OfflineDecaySummary,
   PetFoodInventoryItem,
-  TimeContextDayPeriod,
   TimeContextPayload,
 } from "../../types/api";
 import { formatHomeworkHistory } from "../../utils/format";
@@ -47,6 +39,7 @@ import {
   type HomeworkCenterLayoutTuning,
   type HomeworkCenterViewRefs,
 } from "../homework/HomeworkCenterView";
+import { MainAssetStore } from "./MainAssetStore";
 import {
   ART_TUNING_DEFAULTS,
   ART_TUNING_FIELDS,
@@ -56,6 +49,40 @@ import {
   type ArtTuningKey,
   type ArtTuningState,
 } from "./MainArtTuning";
+import { renderBagPanelContent, renderFoodSelectionPanel } from "./MainBagPanel";
+import {
+  renderCloudBadge,
+  renderCompanionCloudIcon,
+  renderDottedDivider,
+  renderFlowerCluster,
+  renderPawTitleDecor,
+} from "./MainDecorations";
+import { ART_DEBUG_PAGE_HTML, REFERENCE_PAGE_HTML } from "./MainDebugPages";
+import { renderMainStageBase, type MainStageRendererContext } from "./MainStageRenderer";
+import {
+  formatOfflineDecayDetail,
+  resolveCurrentSeenAt,
+  resolveHighPriorityOpeningBubble,
+  resolveLastMainSeenAtStorageKey,
+  resolveNormalOpeningBubble,
+  type OpeningBubblePriority,
+  type PetBubble,
+  type PetBubbleSource,
+} from "./MainLifeFeedback";
+import { renderJournalPanelContent } from "./MainJournalPanel";
+import { MainPetAnimator } from "./MainPetAnimator";
+import { MainPetCreationGateController } from "./MainPetCreationGateController";
+import { MainPetInteractionController, type CorePetAction } from "./MainPetInteractionController";
+import { MainProceduralTextureFactory } from "./MainProceduralTextureFactory";
+import {
+  isPetSnapshotSleeping,
+  resolveMainViewModel,
+  resolveStatusIcon,
+  type LocalPetMode,
+  type MainPetDisplayStatus,
+  type MainViewModel,
+  type PetVisualState,
+} from "./MainViewModel";
 
 const { ccclass } = _decorator;
 
@@ -71,44 +98,6 @@ const BREAKPOINTS = [0.86, 1, 4 / 3, 16 / 9];
 // 这个按钮主要用于打开测试面板或参考页。
 const REFERENCE_BUTTON_LABEL = "REF";
 
-// 主背景渐变 LUT 资源路径。
-// 这张图用来提供壳层和背景的主色阶，不是独立装饰物。
-const MAIN_BG_GRADIENT_LUT_PATH = "ui/main/background/main_bg_gradient_lut/spriteFrame";
-
-// 左源路径。上柔光资
-// 用于背景里左上角那团偏暖的柔和光晕。
-const MAIN_BG_GLOW_TOP_LEFT_PATH = "ui/main/background/main_bg_glow_tl/spriteFrame";
-
-// 右下柔光资源路径。
-// 用于背景里右下角那团偏橙的柔和光晕。
-const MAIN_BG_GLOW_BOTTOM_RIGHT_PATH = "ui/main/background/main_bg_glow_br/spriteFrame";
-
-// 主舞台白云资源路径。
-// 使用现成云朵贴图替换运行时拼形云，并按 stage 尺寸动态缩放。
-const MAIN_STAGE_CLOUD_PATH = "ui/main/background/云朵/spriteFrame";
-
-// 主舞台背景资源路径。
-// 这张图只铺在中部 Stage 区域，不覆盖顶栏和底栏。
-const MAIN_STAGE_SCENE_BACKGROUND_PATH = "ui/main/background/主界面背景/spriteFrame";
-
-// 主舞台角色静态展示资源。
-// 当前只作为 Milestone 5 收尾的学生端静态视觉层，不接业务宠物状态。
-const MAIN_CHARACTER_RESTING_FOX_PATH = "ui/main/character/九尾狐休息中/spriteFrame";
-
-const MAIN_FOX_IDLE_DEFAULT_ATLAS_PATH = "ui/main/fox/pet_idle";
-const MAIN_FOX_IDLE_SHOW_ATLAS_PATH = "ui/main/fox/pet_idle_show";
-const MAIN_FOX_IDLE_DEFAULT_PREFIX = "pet_idle_";
-const MAIN_FOX_IDLE_SHOW_PREFIX = "pet_idle_show_";
-
-// 径向 LUT 采样效果资源路径。
-// 它让柔光贴图更像“散开的光”，而不是普通平面贴图。
-const RADIAL_LUT_EFFECT_PATH = "effects/radial-lut";
-// 云朵 SDF shader。
-// 用来实现“主体实心 + 外轮廓向外羽化”的云彩。
-const CLOUD_SOFT_EFFECT_PATH = "effects/cloud-soft";
-// 通用按钮纵向渐变 shader。
-// 用于导航激活按钮这类“Sprite + 材质 + Label”结构。
-const BUTTON_GRADIENT_EFFECT_PATH = "effects/button-gradient";
 // 调试入口的小按钮尺寸。
 // 右上角那个小圆点测试入口就靠它控制大小。
 const DEBUG_ENTRY_SIZE = 18;
@@ -133,10 +122,6 @@ const DEBUG_TOGGLE_HEIGHT = 34;
 // 控制开关之间的呼吸感。
 const DEBUG_TOGGLE_GAP = 8;
 
-// 核心互动的前端最小点击间隔。
-// 后端仍应保留限频或业务冷却；这里主要避免单个客户端误触连发。
-const CORE_PET_ACTION_COOLDOWN_MS = 300;
-
 const PET_BUBBLE_DURATION_MS = 4000;
 const PET_VISUAL_FEED_DURATION_MS = 1800;
 const PET_VISUAL_PLAY_DURATION_MS = 2200;
@@ -145,10 +130,6 @@ const PET_VISUAL_SOOTHED_DURATION_MS = 2000;
 const RETURN_GREETING_SHORT_MINUTES = 10;
 const RETURN_GREETING_NORMAL_MINUTES = 60;
 const RETURN_GREETING_LONG_MINUTES = 360;
-const FOX_IDLE_DEFAULT_FRAME_DURATION_MS = 83;
-const FOX_IDLE_SHOW_FRAME_DURATION_MS = Math.round(FOX_IDLE_DEFAULT_FRAME_DURATION_MS * 1.5);
-const FOX_IDLE_SHOW_TRIGGER_MS = 8000;
-
 // 美术调参页的窗口名。
 // 固定名字可以避免每次点击都弹出一堆重复窗口。
 const ART_DEBUG_WINDOW_NAME = "BuddyMainArtDebug";
@@ -227,94 +208,28 @@ type TopBarNavTab = "petHome" | "bag" | "journal";
 
 type BottomDockAction = "feed" | "play" | "bath" | "sleep" | "music" | "care";
 
-type CorePetAction = "sleep" | "play" | "care";
-
 type MainInteractionEntry = {
   title: string;
   detail: string;
   createdAt: string;
 };
 
-type MainPetDisplayStatus =
-  | "待同步"
-  | "饥饿"
-  | "疲惫"
-  | "低落"
-  | "休息中"
-  | "玩耍中"
-  | "状态良好";
-
-type LocalPetMode = "resting" | null;
-
-type PetVisualState =
-  | "serverDerived"
-  | "eating"
-  | "playing"
-  | "sleeping"
-  | "listening"
-  | "soothed";
-
-type PetBubbleSource =
-  | "timeContext"
-  | "localFallbackGreeting"
-  | "stateBubble"
-  | "actionFeedback";
-
-type PetBubble = {
-  text: string;
-  source: PetBubbleSource;
-  createdAt: string;
-};
-
-type OpeningBubblePriority = "high" | "normal";
-
-type LocalGreetingWindow = "short" | "normal" | "long" | "overnight";
-
-type MainViewModel = {
-  petName: string;
-  levelBadgeText: string;
-  levelText: string;
-  satiety: number | null;
-  stamina: number | null;
-  mood: number | null;
-  foods: PetFoodInventoryItem[];
-  displayStatus: MainPetDisplayStatus;
-  isDashboardReady: boolean;
-  statusValueText: string;
-};
-
-
 @ccclass("MainController")
 export class MainController extends ScreenController {
   private referencePageUrl: string | null = null;
   private artDebugPageWindow: Window | null = null;
   private lastReferenceOpenAt = 0;
-  private backgroundGradientSpriteFrame: SpriteFrame | null = null;
-  private backgroundGlowTopLeftSpriteFrame: SpriteFrame | null = null;
-  private backgroundGlowBottomRightSpriteFrame: SpriteFrame | null = null;
-  private stageCloudSpriteFrame: SpriteFrame | null = null;
-  private stageSceneBackgroundSpriteFrame: SpriteFrame | null = null;
-  private mainCharacterRestingFoxSpriteFrame: SpriteFrame | null = null;
-  private foxIdleDefaultFrames: SpriteFrame[] = [];
-  private foxIdleShowFrames: SpriteFrame[] = [];
-  private foxAnimationState: "default" | "show" = "default";
-  private foxAnimationFrameIndex = 0;
-  private foxAnimationElapsedMs = 0;
-  private foxIdleElapsedMs = 0;
-  private radialGlowEffectAsset: EffectAsset | null = null;
+  private petAnimator = new MainPetAnimator();
+  private assetStore = new MainAssetStore(() => this.requestRender());
+  private proceduralTextureFactory = new MainProceduralTextureFactory();
   private shellShadowSpriteFrame: SpriteFrame | null = null;
   private mainViewportShadowSpriteFrame: SpriteFrame | null = null;
   private topBarShadowSpriteFrame: SpriteFrame | null = null;
   private bottomDockShadowSpriteFrame: SpriteFrame | null = null;
-  private cloudSoftEffectAsset: EffectAsset | null = null;
-  private buttonGradientEffectAsset: EffectAsset | null = null;
-  private whiteSpriteFrame: SpriteFrame | null = null;
   private shellShadowLayoutKey = "";
   private mainViewportShadowLayoutKey = "";
   private topBarShadowLayoutKey = "";
   private bottomDockShadowLayoutKey = "";
-  private backgroundAssetLoadRequested = false;
-  private buttonGradientEffectLoadRequested = false;
   private showBackgroundGradient = true;
   private showBackgroundGlowTopLeft = true;
   private showBackgroundGlowBottomRight = true;
@@ -340,8 +255,7 @@ export class MainController extends ScreenController {
   private dashboardFailureLogged = false;
   private feedRequestInFlight = false;
   private inventoryUseRequestInFlight = false;
-  private activePetAction: CorePetAction | null = null;
-  private corePetActionCooldownUntil = 0;
+  private petInteraction = new MainPetInteractionController();
   private journalEventsLoading = false;
   private journalEventsLoaded = false;
   private journalSyncMessage: string | null = null;
@@ -349,6 +263,15 @@ export class MainController extends ScreenController {
   private isHomeworkCenterOpen = false;
   private homeworkCenterRefs: HomeworkCenterViewRefs | null = null;
   private homeworkCenterCoordinator = new HomeworkCenterCoordinator();
+  private petCreationGate = new MainPetCreationGateController({
+    onGateOpened: () => this.handlePetCreationGateOpened(),
+    onPetCreated: (petName) => this.handlePetCreatedFromGate(petName),
+    onEnterPetHome: () => this.handleEnterPetHomeFromGate(),
+    onRenderRequested: () => this.render(),
+    onDashboardRefreshRequested: () => {
+      void this.tryRefreshMainDashboard();
+    },
+  });
   private homeworkDevResetting = false;
   private homeworkDevResetMessage: string | null = null;
   private lastOfflineDecay: OfflineDecaySummary | null = null;
@@ -359,6 +282,9 @@ export class MainController extends ScreenController {
   private petBubbleTimer: ReturnType<typeof setTimeout> | null = null;
   private activeVisualState: PetVisualState = "serverDerived";
   private visualStateTimer: ReturnType<typeof setTimeout> | null = null;
+  private renderFrameHandle: number | null = null;
+  private renderFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  private renderScheduled = false;
   private openingBubbleShownThisSession = false;
   private highPriorityOpeningBubbleVisible = false;
   private handleMainVisibilityChange = (): void => {
@@ -382,6 +308,10 @@ export class MainController extends ScreenController {
   onDestroy(): void {
     this.persistCurrentMainSeenAt();
     this.clearLifeRuntimeState();
+    this.cancelScheduledRender();
+    this.assetStore.dispose();
+    this.petCreationGate.dispose();
+    this.petInteraction.dispose();
     this.uninstallLifeContextListeners();
     view.off("canvas-resize", this.render, this);
     this.releaseArtDebugPage();
@@ -390,27 +320,42 @@ export class MainController extends ScreenController {
   }
 
   update(deltaTime: number): void {
-    this.updateFoxIdleAnimation(deltaTime);
+    this.petAnimator.update(deltaTime, this.activeTopBarNavTab === "petHome");
   }
 
   async start(): Promise<void> {
+    const hasSession = await this.redirectToLoginWhenSessionMissing();
+    if (!hasSession) {
+      return;
+    }
+
+    if (this.openFirstPetCreationIfNeeded()) {
+      this.render();
+      return;
+    }
+
     this.render();
-    await this.redirectToLoginWhenSessionMissing();
     await this.tryRefreshMainDashboard();
+    if (this.openFirstPetCreationIfNeeded()) {
+      this.render();
+    }
   }
 
-  private async redirectToLoginWhenSessionMissing(): Promise<void> {
+  private async redirectToLoginWhenSessionMissing(): Promise<boolean> {
     try {
       const user = appState.getCurrentUser() ?? (await authService.bootstrapSession());
       if (!user) {
         this.persistCurrentMainSeenAt();
         this.clearLifeRuntimeState();
         sceneRouter.goToLogin();
+        return false;
       }
+      return true;
     } catch {
       this.persistCurrentMainSeenAt();
       this.clearLifeRuntimeState();
       sceneRouter.goToLogin();
+      return false;
     }
   }
 
@@ -441,11 +386,55 @@ export class MainController extends ScreenController {
     transform.setContentSize(layout.viewportWidth, layout.viewportHeight);
 
     RuntimeUI.clear(root);
+    this.petAnimator.clearSprite();
+    this.petCreationGate.clearRefs();
     this.installArtDebugBridge();
     this.ensureButtonGradientEffectLoaded();
     this.renderBackdrop(root, layout);
+    if (this.petCreationGate.isActive()) {
+      this.petCreationGate.render(root, layout);
+      this.renderBackgroundDebugEntry(root, layout);
+      return;
+    }
     this.renderShell(root, layout);
     this.renderBackgroundDebugEntry(root, layout);
+  }
+
+  private requestRender(): void {
+    if (this.renderScheduled) {
+      return;
+    }
+
+    this.renderScheduled = true;
+    const flushRender = (): void => {
+      this.renderScheduled = false;
+      this.renderFrameHandle = null;
+      this.renderFallbackTimer = null;
+      this.render();
+    };
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      this.renderFrameHandle = window.requestAnimationFrame(flushRender);
+      return;
+    }
+
+    this.renderFallbackTimer = setTimeout(flushRender, 0);
+  }
+
+  private cancelScheduledRender(): void {
+    this.renderScheduled = false;
+    if (
+      this.renderFrameHandle !== null &&
+      typeof window !== "undefined" &&
+      typeof window.cancelAnimationFrame === "function"
+    ) {
+      window.cancelAnimationFrame(this.renderFrameHandle);
+    }
+    if (this.renderFallbackTimer) {
+      clearTimeout(this.renderFallbackTimer);
+    }
+    this.renderFrameHandle = null;
+    this.renderFallbackTimer = null;
   }
 
   private async tryRefreshMainDashboard(): Promise<boolean> {
@@ -485,6 +474,10 @@ export class MainController extends ScreenController {
             "主页同步失败",
             result.message ? `${result.message}；当前保留已有状态。` : "dashboard 暂不可用，当前保留已有状态。"
           );
+          if (this.openFirstPetCreationIfNeeded()) {
+            this.render();
+            return false;
+          }
           this.render();
         }
         return false;
@@ -492,6 +485,10 @@ export class MainController extends ScreenController {
         if (requestSeq === this.dashboardRequestSeq && !this.dashboardFailureLogged) {
           this.dashboardFailureLogged = true;
           this.appendMainInteraction("主页同步失败", "dashboard 请求异常，当前保留已有状态。");
+          if (this.openFirstPetCreationIfNeeded()) {
+            this.render();
+            return false;
+          }
           this.render();
         }
         return false;
@@ -519,7 +516,7 @@ export class MainController extends ScreenController {
   ): void {
     this.timeContext = timeContext;
     this.showOpeningBubbleIfNeeded(timeContext, offlineDecay, dailyBasicFood);
-    this.currentSeenAt = this.resolveCurrentSeenAt(timeContext);
+    this.currentSeenAt = resolveCurrentSeenAt(timeContext);
   }
 
   private showOpeningBubbleIfNeeded(
@@ -531,7 +528,13 @@ export class MainController extends ScreenController {
       return;
     }
 
-    const highPriorityBubble = this.resolveHighPriorityOpeningBubble(timeContext, offlineDecay, dailyBasicFood);
+    const highPriorityBubble = resolveHighPriorityOpeningBubble({
+      timeContext,
+      offlineDecay,
+      dailyBasicFood,
+      petId: appState.getPetId(),
+      storage,
+    });
     if (highPriorityBubble) {
       this.openingBubbleShownThisSession = true;
       this.showPetBubble(highPriorityBubble.text, highPriorityBubble.source, {
@@ -540,7 +543,10 @@ export class MainController extends ScreenController {
       return;
     }
 
-    const normalBubble = this.resolveNormalOpeningBubble(timeContext);
+    const normalBubble = resolveNormalOpeningBubble({
+      timeContext,
+      pet: appState.getCurrentPet(),
+    });
     if (!normalBubble) {
       return;
     }
@@ -551,213 +557,12 @@ export class MainController extends ScreenController {
     });
   }
 
-  private resolveHighPriorityOpeningBubble(
-    timeContext: TimeContextPayload | null,
-    offlineDecay: OfflineDecaySummary | undefined,
-    dailyBasicFood: DailyBasicFoodPayload | undefined
-  ): { text: string; source: PetBubbleSource } | null {
-    if (dailyBasicFood?.granted) {
-      return {
-        text: "今日基础口粮已送达，记得照顾小橘哦。",
-        source: "timeContext",
-      };
-    }
-    if (offlineDecay?.applied) {
-      return {
-        text: this.formatOfflineDecayDetail(offlineDecay),
-        source: "timeContext",
-      };
-    }
-    const backendGreeting = this.resolveBackendReturnGreeting(timeContext);
-    if (backendGreeting) {
-      return backendGreeting;
-    }
-    return this.resolveLocalFallbackGreeting(timeContext);
-  }
-
-  private resolveNormalOpeningBubble(
-    timeContext: TimeContextPayload | null
-  ): { text: string; source: PetBubbleSource } | null {
-    const stateBubble = this.resolveStateBubbleCopy();
-    if (stateBubble) {
-      return {
-        text: stateBubble,
-        source: "stateBubble",
-      };
-    }
-
-    if (!timeContext) {
-      return null;
-    }
-
-    const timePeriodCopy = this.resolveTimePeriodCopy(timeContext.dayPeriod);
-    return timePeriodCopy
-      ? {
-          text: timePeriodCopy,
-          source: "timeContext",
-        }
-      : null;
-  }
-
-  private resolveBackendReturnGreeting(
-    timeContext: TimeContextPayload | null
-  ): { text: string; source: PetBubbleSource } | null {
-    const greeting = timeContext?.returnGreeting;
-    if (!greeting?.shouldShow || !greeting.text.trim()) {
-      return null;
-    }
-    const petId = appState.getPetId();
-    const shownKey = this.resolveReturnGreetingShownStorageKey(
-      petId,
-      this.resolveGreetingLocalDate(timeContext),
-      this.mapReturnGreetingReasonToWindow(greeting.reason)
-    );
-    if (shownKey && storage.get(shownKey)) {
-      return null;
-    }
-    if (shownKey) {
-      storage.set(shownKey, this.resolveCurrentSeenAt(timeContext));
-    }
-    return {
-      text: greeting.text.trim(),
-      source: "timeContext",
-    };
-  }
-
-  private resolveLocalFallbackGreeting(
-    timeContext: TimeContextPayload | null
-  ): { text: string; source: PetBubbleSource } | null {
-    const petId = appState.getPetId();
-    if (!petId) {
-      return null;
-    }
-    const lastSeenAt = storage.get(this.resolveLastMainSeenAtStorageKey(petId));
-    if (!lastSeenAt) {
-      return null;
-    }
-    const now = new Date(this.resolveCurrentSeenAt(timeContext));
-    const lastSeen = new Date(lastSeenAt);
-    if (!Number.isFinite(now.getTime()) || !Number.isFinite(lastSeen.getTime())) {
-      return null;
-    }
-    const elapsedMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / 60000);
-    if (elapsedMinutes < RETURN_GREETING_SHORT_MINUTES) {
-      return null;
-    }
-
-    const localDate = this.resolveGreetingLocalDate(timeContext);
-    const lastSeenDate = this.getLocalDateKey(lastSeen);
-    const windowKey: LocalGreetingWindow =
-      lastSeenDate !== localDate
-        ? "overnight"
-        : elapsedMinutes >= RETURN_GREETING_LONG_MINUTES
-          ? "long"
-          : elapsedMinutes >= RETURN_GREETING_NORMAL_MINUTES
-            ? "normal"
-            : "short";
-    const shownKey = this.resolveReturnGreetingShownStorageKey(petId, localDate, windowKey);
-    if (shownKey && storage.get(shownKey)) {
-      return null;
-    }
-    if (shownKey) {
-      storage.set(shownKey, now.toISOString());
-    }
-    return {
-      text: this.resolveLocalFallbackGreetingCopy(windowKey),
-      source: "localFallbackGreeting",
-    };
-  }
-
-  private resolveStateBubbleCopy(): string | null {
-    const pet = appState.getCurrentPet();
-    if (!pet) {
-      return null;
-    }
-    const hunger = this.normalizeStatusValue(pet.hunger);
-    const energy = this.normalizeStatusValue(pet.energy);
-    const mood = this.normalizeStatusValue(pet.mood);
-    if (hunger !== null && hunger < 35) {
-      return "肚子有点空空的，要不要看看背包？";
-    }
-    if (energy !== null && energy < 30) {
-      return "有点困了，想安静休息一下。";
-    }
-    if (mood !== null && mood < 35) {
-      return "今天有点没精神，想被陪一会儿。";
-    }
-    if (hunger !== null || energy !== null || mood !== null) {
-      return "今天状态不错，见到你很开心。";
-    }
-    return null;
-  }
-
-  private resolveTimePeriodCopy(dayPeriod: TimeContextDayPeriod): string | null {
-    const copy: Record<TimeContextDayPeriod, string> = {
-      morning: "早上好呀，今天也一起慢慢来。",
-      noon: "中午啦，要不要休息一下？",
-      afternoon: "下午还有精神吗？我在这里陪你。",
-      evening: "晚上变安静了，我有点想和你待一会儿。",
-      night: "有点晚了，今天也辛苦啦。",
-      lateNight: "这么晚还在呀，要不要早点休息？",
-    };
-    return copy[dayPeriod] ?? null;
-  }
-
-  private resolveLocalFallbackGreetingCopy(windowKey: LocalGreetingWindow): string {
-    const copy: Record<LocalGreetingWindow, string> = {
-      short: "你回来啦，我刚刚在这里待了一会儿。",
-      normal: "你回来啦，见到你真好。",
-      long: "等了一阵子，看到你回来我安心啦。",
-      overnight: "今天又见到你啦，我们继续一起慢慢来。",
-    };
-    return copy[windowKey];
-  }
-
-  private mapReturnGreetingReasonToWindow(reason: string): LocalGreetingWindow {
-    if (reason === "overnight" || reason === "new_day") {
-      return "overnight";
-    }
-    if (reason === "long_return") {
-      return "long";
-    }
-    return "short";
-  }
-
-  private resolveGreetingLocalDate(timeContext: TimeContextPayload | null): string {
-    return timeContext?.localDate || this.getLocalDateKey(new Date());
-  }
-
-  private getLocalDateKey(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
-  private resolveCurrentSeenAt(timeContext: TimeContextPayload | null): string {
-    return timeContext?.serverNow || new Date().toISOString();
-  }
-
-  private resolveLastMainSeenAtStorageKey(petId: string): string {
-    return `${STORAGE_KEYS.petLifeLastMainSeenAtPrefix}${petId}`;
-  }
-
-  private resolveReturnGreetingShownStorageKey(
-    petId: string | null,
-    localDate: string,
-    windowKey: LocalGreetingWindow
-  ): string | null {
-    return petId
-      ? `${STORAGE_KEYS.petLifeReturnGreetingShownPrefix}${petId}:${localDate}:${windowKey}`
-      : null;
-  }
-
   private persistCurrentMainSeenAt(): void {
     const petId = appState.getPetId();
     if (!petId) {
       return;
     }
-    storage.set(this.resolveLastMainSeenAtStorageKey(petId), this.currentSeenAt ?? new Date().toISOString());
+    storage.set(resolveLastMainSeenAtStorageKey(petId), this.currentSeenAt ?? new Date().toISOString());
   }
 
   private showPetBubble(
@@ -831,132 +636,34 @@ export class MainController extends ScreenController {
     this.highPriorityOpeningBubbleVisible = false;
   }
 
-  private resolveMainViewModel(): MainViewModel {
-    const pet = appState.getCurrentPet();
-    const foods = appState.getPetFoodInventory();
-    const satiety = this.normalizeStatusValue(pet?.hunger);
-    const stamina = this.normalizeStatusValue(pet?.energy);
-    const mood = this.normalizeStatusValue(pet?.mood);
-    const level =
-      typeof pet?.level === "number" && Number.isFinite(pet.level)
-        ? Math.max(0, Math.floor(pet.level))
-        : null;
-    const displayStatus = this.resolveDisplayStatus(
-      pet?.display_status ?? pet?.status,
-      satiety,
-      stamina,
-      mood
-    );
-
-    return {
-      petName: pet?.name?.trim() || "待同步",
-      levelBadgeText: level === null ? "--" : `Lv.${level}`,
-      levelText: level === null ? "等级 待同步" : `等级 Lv.${level}`,
-      satiety,
-      stamina,
-      mood,
-      foods,
-      displayStatus,
-      isDashboardReady: Boolean(pet),
-      statusValueText: displayStatus,
-    };
+  private createMainViewModel(): MainViewModel {
+    return resolveMainViewModel({
+      pet: appState.getCurrentPet(),
+      foods: appState.getPetFoodInventory(),
+      localPetMode: this.localPetMode,
+      activeVisualState: this.activeVisualState,
+    });
   }
 
-  private normalizeStatusValue(value: unknown): number | null {
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return null;
-    }
-    return Math.max(0, Math.min(100, Math.round(value)));
+  private openFirstPetCreationIfNeeded(): boolean {
+    return this.petCreationGate.openIfNeeded();
   }
 
-  private resolveDisplayStatus(
-    status: unknown,
-    satiety: number | null,
-    stamina: number | null,
-    mood: number | null
-  ): MainPetDisplayStatus {
-    if (this.activeVisualState === "sleeping") {
-      return "休息中";
-    }
-    if (this.activeVisualState === "playing") {
-      return "玩耍中";
-    }
-    if (this.localPetMode === "resting") {
-      return "休息中";
-    }
-    const serverStatus = this.mapServerStatus(status);
-    if (serverStatus) {
-      return serverStatus;
-    }
-    if (satiety !== null && satiety < 30) {
-      return "饥饿";
-    }
-    if (stamina !== null && stamina < 30) {
-      return "疲惫";
-    }
-    if (mood !== null && mood < 40) {
-      return "低落";
-    }
-    if (satiety === null && stamina === null && mood === null) {
-      return "待同步";
-    }
-    return "状态良好";
+  private handlePetCreationGateOpened(): void {
+    this.isFoodSelectionPanelOpen = false;
+    this.isHomeworkCenterOpen = false;
+    this.activeTopBarNavTab = "petHome";
+    this.appendMainInteraction("等待创建宠物", "当前孩子账号还没有宠物，请先完成首次创建。");
   }
 
-  private mapServerStatus(status: unknown): MainPetDisplayStatus | null {
-    if (typeof status === "boolean") {
-      return status ? "状态良好" : null;
-    }
-    if (typeof status !== "string") {
-      return null;
-    }
-
-    const normalized = status.trim().toLowerCase();
-    if (!normalized) {
-      return null;
-    }
-    if (["rest", "resting", "sleep", "sleeping", "休息", "休息中", "睡觉"].includes(normalized)) {
-      return "休息中";
-    }
-    if (["play", "playing", "玩耍", "玩耍中"].includes(normalized)) {
-      return "玩耍中";
-    }
-    if (["hungry", "hunger", "starving", "饥饿"].includes(normalized)) {
-      return "饥饿";
-    }
-    if (["tired", "fatigue", "fatigued", "low_energy", "疲惫"].includes(normalized)) {
-      return "疲惫";
-    }
-    if (["sad", "down", "low_mood", "低落"].includes(normalized)) {
-      return "低落";
-    }
-    if (["idle", "good", "normal", "active", "healthy", "ok", "状态良好"].includes(normalized)) {
-      return "状态良好";
-    }
-    return null;
+  private handlePetCreatedFromGate(petName: string): void {
+    this.backendFeedBlocked = false;
+    this.dashboardFailureLogged = false;
+    this.appendMainInteraction("宠物创建成功", `${petName} 已加入你的主页。`);
   }
 
-  private isPetSnapshotSleeping(pet: { display_status?: string; status?: boolean }): boolean {
-    return this.mapServerStatus(pet.display_status ?? pet.status) === "休息中";
-  }
-
-  private resolveStatusIcon(status: MainPetDisplayStatus): string {
-    switch (status) {
-      case "饥饿":
-        return "🍚";
-      case "疲惫":
-      case "休息中":
-        return "Zz";
-      case "玩耍中":
-        return "☆";
-      case "低落":
-        return "♡";
-      case "状态良好":
-        return "✓";
-      case "待同步":
-      default:
-        return "...";
-    }
+  private handleEnterPetHomeFromGate(): void {
+    this.activeTopBarNavTab = "petHome";
   }
 
   private hydrateArtTuningFromStorage(): void {
@@ -1293,19 +1000,19 @@ export class MainController extends ScreenController {
 
     // 背景层只负责大画布氛围，不参与主舞台的结构本身。
     // 这里的背景开关是给调试和人工验收用的。
-    if (this.showBackgroundGradient && this.backgroundGradientSpriteFrame) {
+    if (this.showBackgroundGradient && this.assetStore.backgroundGradientSpriteFrame) {
       RuntimeUI.createSpriteFrame(root, {
         name: "CanvasBackdropGradientLut",
         x: 0,
         y: 0,
         width: layout.viewportHeight,
         height: layout.viewportWidth,
-        spriteFrame: this.backgroundGradientSpriteFrame,
+        spriteFrame: this.assetStore.backgroundGradientSpriteFrame,
         rotation: -90,
       });
     }
 
-    if (this.showBackgroundGlowTopLeft && this.backgroundGlowTopLeftSpriteFrame) {
+    if (this.showBackgroundGlowTopLeft && this.assetStore.backgroundGlowTopLeftSpriteFrame) {
       const size = Math.max(420, layout.viewportWidth * 0.46);
       RuntimeUI.createSpriteFrame(root, {
         name: "CanvasBackdropGlowTopLeft",
@@ -1313,12 +1020,12 @@ export class MainController extends ScreenController {
         y: layout.viewportHeight * 0.28,
         width: size,
         height: size,
-        spriteFrame: this.backgroundGlowTopLeftSpriteFrame,
+        spriteFrame: this.assetStore.backgroundGlowTopLeftSpriteFrame,
         material: this.createRadialGlowMaterial(),
       });
     }
 
-    if (this.showBackgroundGlowBottomRight && this.backgroundGlowBottomRightSpriteFrame) {
+    if (this.showBackgroundGlowBottomRight && this.assetStore.backgroundGlowBottomRightSpriteFrame) {
       const size = Math.max(480, layout.viewportHeight * 0.72);
       RuntimeUI.createSpriteFrame(root, {
         name: "CanvasBackdropGlowBottomRight",
@@ -1326,273 +1033,16 @@ export class MainController extends ScreenController {
         y: -layout.viewportHeight * 0.32,
         width: size,
         height: size,
-        spriteFrame: this.backgroundGlowBottomRightSpriteFrame,
+        spriteFrame: this.assetStore.backgroundGlowBottomRightSpriteFrame,
         material: this.createRadialGlowMaterial(),
       });
     }
   }
 
   private ensureBackgroundAssetsLoaded(): void {
-    if (this.backgroundAssetLoadRequested) {
-      return;
-    }
-
-    this.backgroundAssetLoadRequested = true;
-    resources.load(MAIN_BG_GRADIENT_LUT_PATH, SpriteFrame, (error, spriteFrame) => {
-      if (error || !spriteFrame) {
-        console.warn("[MainController] failed to load background gradient LUT", error);
-        return;
-      }
-
-      this.backgroundGradientSpriteFrame = spriteFrame;
-      this.render();
-    });
-
-    resources.load(MAIN_BG_GLOW_TOP_LEFT_PATH, SpriteFrame, (error, spriteFrame) => {
-      if (error || !spriteFrame) {
-        console.warn("[MainController] failed to load top-left background glow", error);
-        return;
-      }
-
-      this.backgroundGlowTopLeftSpriteFrame = spriteFrame;
-      this.render();
-    });
-
-    resources.load(MAIN_BG_GLOW_BOTTOM_RIGHT_PATH, SpriteFrame, (error, spriteFrame) => {
-      if (error || !spriteFrame) {
-        console.warn("[MainController] failed to load bottom-right background glow", error);
-        return;
-      }
-
-      this.backgroundGlowBottomRightSpriteFrame = spriteFrame;
-      this.render();
-    });
-    resources.load(MAIN_STAGE_CLOUD_PATH, SpriteFrame, (error, spriteFrame) => {
-      if (error || !spriteFrame) {
-        console.warn("[MainController] failed to load stage cloud sprite", error);
-        return;
-      }
-
-      this.stageCloudSpriteFrame = spriteFrame;
-      this.render();
-    });
-    resources.load(MAIN_STAGE_SCENE_BACKGROUND_PATH, SpriteFrame, (error, spriteFrame) => {
-      if (error || !spriteFrame) {
-        console.warn("[MainController] failed to load stage scene background sprite", error);
-        return;
-      }
-
-      this.stageSceneBackgroundSpriteFrame = spriteFrame;
-      this.render();
-    });
-    resources.load(MAIN_CHARACTER_RESTING_FOX_PATH, SpriteFrame, (error, spriteFrame) => {
-      if (error || !spriteFrame) {
-        console.warn("[MainController] failed to load resting fox sprite", error);
-        return;
-      }
-
-      this.mainCharacterRestingFoxSpriteFrame = spriteFrame;
-      this.render();
-    });
-    resources.load(MAIN_FOX_IDLE_DEFAULT_ATLAS_PATH, SpriteAtlas, (error, atlas) => {
-      if (error || !atlas) {
-        console.warn("[MainController] failed to load fox idle default atlas", error);
-        return;
-      }
-
-      this.foxIdleDefaultFrames = this.resolveFoxAtlasFrames(atlas, MAIN_FOX_IDLE_DEFAULT_PREFIX);
-      this.resetFoxAnimation("default");
-      this.render();
-    });
-    resources.load(MAIN_FOX_IDLE_SHOW_ATLAS_PATH, SpriteAtlas, (error, atlas) => {
-      if (error || !atlas) {
-        console.warn("[MainController] failed to load fox idle show atlas", error);
-        return;
-      }
-
-      this.foxIdleShowFrames = this.resolveFoxAtlasFrames(atlas, MAIN_FOX_IDLE_SHOW_PREFIX);
-      this.render();
-    });
-    resources.load(CLOUD_SOFT_EFFECT_PATH, EffectAsset, (error, effectAsset) => {
-	  if (error || !effectAsset) {
-		console.warn("[MainController] failed to load cloud soft effect", error);
-		return;
-	  }
-
-	  this.cloudSoftEffectAsset = effectAsset;
-	  this.render();
-	});
-    resources.load(RADIAL_LUT_EFFECT_PATH, EffectAsset, (error, effectAsset) => {
-      if (error || !effectAsset) {
-        console.warn("[MainController] failed to load radial LUT effect", error);
-        return;
-      }
-
-      this.radialGlowEffectAsset = effectAsset;
-      this.render();
-    });
+    this.assetStore.ensureMainAssetsLoaded(this.petAnimator);
   }
 
-  private resolveFoxAtlasFrames(atlas: SpriteAtlas, framePrefix: string): SpriteFrame[] {
-    return atlas
-      .getSpriteFrames()
-      .filter((spriteFrame) => spriteFrame.name.startsWith(framePrefix))
-      .sort((left, right) => this.resolveFoxFrameOrder(left.name) - this.resolveFoxFrameOrder(right.name));
-  }
-
-  private resolveFoxFrameOrder(frameName: string): number {
-    const match = frameName.match(/(\d+)/);
-    return match ? Number(match[1]) : 0;
-  }
-
-  private getCurrentFoxSpriteFrame(): SpriteFrame | null {
-    const frames =
-      this.foxAnimationState === "show" && this.foxIdleShowFrames.length > 0
-        ? this.foxIdleShowFrames
-        : this.foxIdleDefaultFrames;
-    if (frames.length > 0) {
-      return frames[Math.min(this.foxAnimationFrameIndex, frames.length - 1)] ?? null;
-    }
-    return this.mainCharacterRestingFoxSpriteFrame;
-  }
-
-  private resolveCurrentFoxStableSize(spriteFrame: SpriteFrame): Size {
-    const sequenceFrames = this.foxIdleDefaultFrames.length > 0
-      ? this.foxIdleDefaultFrames
-      : this.foxAnimationState === "show" && this.foxIdleShowFrames.length > 0
-        ? this.foxIdleShowFrames
-        : this.foxIdleDefaultFrames;
-    const sourceFrames = sequenceFrames.length > 0 ? sequenceFrames : [spriteFrame];
-    return sourceFrames.reduce((stableSize, frame) => {
-      const frameSize = this.resolveFoxFrameSourceSize(frame);
-      return new Size(
-        Math.max(stableSize.width, frameSize.width),
-        Math.max(stableSize.height, frameSize.height)
-      );
-    }, this.resolveFoxFrameSourceSize(spriteFrame));
-  }
-
-  private resolveFoxFrameSourceSize(spriteFrame: SpriteFrame): Size {
-    const originalSize = spriteFrame.originalSize;
-    if (originalSize.width > 0 && originalSize.height > 0) {
-      return originalSize;
-    }
-    const frameRect = spriteFrame.rect;
-    return frameRect.width > 0 && frameRect.height > 0
-      ? new Size(frameRect.width, frameRect.height)
-      : new Size(1, 1);
-  }
-
-  private createFoxSpriteNode(
-    parent: Node,
-    options: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      sourceSize: Size;
-      spriteFrame: SpriteFrame;
-    }
-  ): void {
-    const node = new Node("MainCharacterFoxSprite");
-    node.setParent(parent);
-    const transform = node.addComponent(UITransform);
-    transform.setContentSize(options.width, options.height);
-    node.setPosition(options.x, options.y, 0);
-
-    const spriteNode = new Node("MainCharacterFoxSpriteFrame");
-    spriteNode.setParent(node);
-    const sprite = spriteNode.addComponent(Sprite);
-    sprite.spriteFrame = options.spriteFrame;
-    sprite.type = Sprite.Type.SIMPLE;
-    sprite.trim = false;
-    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-    const sourceSize = options.sourceSize;
-    const spriteTransform = spriteNode.getComponent(UITransform);
-    if (spriteTransform) {
-      spriteTransform.setContentSize(sourceSize.width, sourceSize.height);
-    }
-    spriteNode.setScale(
-      sourceSize.width > 0 ? options.width / sourceSize.width : 1,
-      sourceSize.height > 0 ? options.height / sourceSize.height : 1,
-      1
-    );
-  }
-
-  private resetFoxAnimation(state: "default" | "show"): void {
-    this.foxAnimationState = state;
-    this.foxAnimationFrameIndex = 0;
-    this.foxAnimationElapsedMs = 0;
-    if (state === "default") {
-      this.foxIdleElapsedMs = 0;
-    }
-  }
-
-  private resetFoxInactivity(): void {
-    this.foxIdleElapsedMs = 0;
-    if (this.foxAnimationState === "show") {
-      this.resetFoxAnimation("default");
-      this.render();
-    }
-  }
-
-  private updateFoxIdleAnimation(deltaTime: number): void {
-    if (this.activeTopBarNavTab !== "petHome") {
-      return;
-    }
-
-    if (this.foxIdleDefaultFrames.length === 0 && this.foxIdleShowFrames.length === 0) {
-      return;
-    }
-
-    const deltaMs = Math.min(250, Math.max(0, deltaTime * 1000));
-    if (this.foxAnimationState === "default") {
-      this.foxIdleElapsedMs += deltaMs;
-      if (this.foxIdleShowFrames.length > 0 && this.foxIdleElapsedMs >= FOX_IDLE_SHOW_TRIGGER_MS) {
-        this.resetFoxAnimation("show");
-        this.render();
-        return;
-      }
-      this.advanceFoxAnimationFrame(this.foxIdleDefaultFrames, FOX_IDLE_DEFAULT_FRAME_DURATION_MS, deltaMs, true);
-      return;
-    }
-
-    this.advanceFoxAnimationFrame(this.foxIdleShowFrames, FOX_IDLE_SHOW_FRAME_DURATION_MS, deltaMs, false);
-  }
-
-  private advanceFoxAnimationFrame(
-    frames: SpriteFrame[],
-    frameDurationMs: number,
-    deltaMs: number,
-    shouldLoop: boolean
-  ): void {
-    if (frames.length <= 1 || frameDurationMs <= 0) {
-      return;
-    }
-
-    this.foxAnimationElapsedMs += deltaMs;
-    let didAdvance = false;
-    while (this.foxAnimationElapsedMs >= frameDurationMs) {
-      this.foxAnimationElapsedMs -= frameDurationMs;
-      const nextFrameIndex = this.foxAnimationFrameIndex + 1;
-      if (nextFrameIndex >= frames.length) {
-        if (shouldLoop) {
-          this.foxAnimationFrameIndex = 0;
-        } else {
-          this.resetFoxAnimation("default");
-          didAdvance = true;
-          break;
-        }
-      } else {
-        this.foxAnimationFrameIndex = nextFrameIndex;
-      }
-      didAdvance = true;
-    }
-
-    if (didAdvance) {
-      this.render();
-    }
-  }
 
   private ensureShellShadowAssetsForLayout(options: {
     shellWidth: number;
@@ -1609,7 +1059,7 @@ export class MainController extends ScreenController {
     ].join(":");
     if (this.shellShadowLayoutKey !== layoutKey) {
       this.shellShadowLayoutKey = layoutKey;
-      this.shellShadowSpriteFrame = this.createLayoutShellShadowSpriteFrame({
+      this.shellShadowSpriteFrame = this.proceduralTextureFactory.createLayoutShellShadowSpriteFrame({
         shellWidth: options.shellWidth,
         shellHeight: options.shellHeight,
         spread: options.spread,
@@ -1636,7 +1086,7 @@ export class MainController extends ScreenController {
     ].join(":");
     if (this.mainViewportShadowLayoutKey !== layoutKey) {
       this.mainViewportShadowLayoutKey = layoutKey;
-      this.mainViewportShadowSpriteFrame = this.createLayoutShellShadowSpriteFrame({
+      this.mainViewportShadowSpriteFrame = this.proceduralTextureFactory.createLayoutShellShadowSpriteFrame({
         shellWidth: options.viewportWidth,
         shellHeight: options.viewportHeight,
         spread: options.spread,
@@ -1663,7 +1113,7 @@ export class MainController extends ScreenController {
     ].join(":");
     if (this.topBarShadowLayoutKey !== layoutKey) {
       this.topBarShadowLayoutKey = layoutKey;
-      this.topBarShadowSpriteFrame = this.createLayoutShellShadowSpriteFrame({
+      this.topBarShadowSpriteFrame = this.proceduralTextureFactory.createLayoutShellShadowSpriteFrame({
         shellWidth: options.topBarWidth,
         shellHeight: options.topBarHeight,
         spread: options.spread,
@@ -1690,7 +1140,7 @@ export class MainController extends ScreenController {
     ].join(":");
     if (this.bottomDockShadowLayoutKey !== layoutKey) {
       this.bottomDockShadowLayoutKey = layoutKey;
-      this.bottomDockShadowSpriteFrame = this.createLayoutShellShadowSpriteFrame({
+      this.bottomDockShadowSpriteFrame = this.proceduralTextureFactory.createLayoutShellShadowSpriteFrame({
         shellWidth: options.bottomDockWidth,
         shellHeight: options.bottomDockHeight,
         spread: options.spread,
@@ -1703,13 +1153,13 @@ export class MainController extends ScreenController {
   }
 
   private createRadialGlowMaterial(): Material | undefined {
-    if (!this.radialGlowEffectAsset) {
+    if (!this.assetStore.radialGlowEffectAsset) {
       return undefined;
     }
 
     const material = new Material();
     material.initialize({
-      effectAsset: this.radialGlowEffectAsset,
+      effectAsset: this.assetStore.radialGlowEffectAsset,
     });
     return material;
   }
@@ -1721,13 +1171,13 @@ export class MainController extends ScreenController {
     glossColor?: Color;
     glossRange?: Vec4;
   }): Material | undefined {
-    if (!this.buttonGradientEffectAsset) {
+    if (!this.assetStore.buttonGradientEffectAsset) {
       return undefined;
     }
 
     const material = new Material();
     material.initialize({
-      effectAsset: this.buttonGradientEffectAsset,
+      effectAsset: this.assetStore.buttonGradientEffectAsset,
     });
     const topColor =
       options?.topColor ??
@@ -1763,356 +1213,33 @@ export class MainController extends ScreenController {
   }
 
   private getButtonGradientCarrierSpriteFrame(): SpriteFrame | null {
-    return this.getWhiteSpriteFrame();
+    return this.proceduralTextureFactory.getWhiteSpriteFrame();
   }
 
-	  private getWhiteSpriteFrame(): SpriteFrame | null {
-	  if (this.whiteSpriteFrame) {
-		return this.whiteSpriteFrame;
-	  }
-
-	  if (typeof document === "undefined") {
-		return null;
-	  }
-
-	  const canvas = document.createElement("canvas");
-	  canvas.width = 2;
-	  canvas.height = 2;
-
-	  const context = canvas.getContext("2d");
-	  if (!context) {
-		return null;
-	  }
-
-	  context.fillStyle = "#ffffff";
-	  context.fillRect(0, 0, 2, 2);
-
-	  const texture = new Texture2D();
-	  texture.image = new ImageAsset(canvas);
-
-	  const spriteFrame = new SpriteFrame();
-	  spriteFrame.reset({
-		texture,
-		originalSize: new Size(2, 2),
-		rect: new Rect(0, 0, 2, 2),
-		offset: new Vec2(0, 0),
-		isRotate: false,
-	  });
-
-	  this.whiteSpriteFrame = spriteFrame;
-	  return spriteFrame;
-	}
-
-	private createCloudSoftMaterial(options: {
-	  width: number;
-	  height: number;
-	  circleA: Vec4;
-	  circleB: Vec4;
-	  feather: number;
-	  color: Color;
-	}): Material | undefined {
-	  if (!this.cloudSoftEffectAsset) {
-		return undefined;
-	  }
-
-	  const material = new Material();
-	  material.initialize({
-		effectAsset: this.cloudSoftEffectAsset,
-	  });
-
-	  material.setProperty("cloudColor", options.color);
-	  material.setProperty("shapeSize", new Vec4(options.width, options.height, 0, 0));
-	  material.setProperty("circleA", options.circleA);
-	  material.setProperty("circleB", options.circleB);
-	  material.setProperty("cloudParams", new Vec4(options.feather, 0, 0, 0));
-
-	  return material;
-	}
-
-	private createCloudOutlineSpriteFrame(options: {
-	  width: number;
-	  height: number;
-	  spread: number;
-	  sigmaFar: number;
-	  sigmaNear: number;
-	  strength: number;
-	  ellipses: Array<{
-		centerX: number;
-		centerY: number;
-		radiusX: number;
-		radiusY: number;
-	  }>;
-	}): SpriteFrame | null {
-	  if (typeof document === "undefined") {
-		return null;
-	  }
-
-	  const canvasWidth = Math.max(1, Math.round(options.width + options.spread * 2));
-	  const canvasHeight = Math.max(1, Math.round(options.height + options.spread * 2));
-	  const canvas = document.createElement("canvas");
-	  canvas.width = canvasWidth;
-	  canvas.height = canvasHeight;
-
-	  const context = canvas.getContext("2d");
-	  if (!context) {
-		return null;
-	  }
-
-	  const image = context.createImageData(canvasWidth, canvasHeight);
-	  const data = image.data;
-	  const sampleScale = 2;
-	  const offsetX = options.spread + options.width / 2;
-	  const offsetY = options.spread + options.height / 2;
-
-	  for (let y = 0; y < canvasHeight; y += 1) {
-		for (let x = 0; x < canvasWidth; x += 1) {
-		  let alpha = 0;
-		  for (let sy = 0; sy < sampleScale; sy += 1) {
-			for (let sx = 0; sx < sampleScale; sx += 1) {
-			  const sampleX = x + (sx + 0.5) / sampleScale;
-			  const sampleY = y + (sy + 0.5) / sampleScale;
-			  let distance = Number.POSITIVE_INFINITY;
-
-			  for (const ellipse of options.ellipses) {
-				const ellipseDistance = this.sampleEllipseDistance(
-				  sampleX,
-				  sampleY,
-				  offsetX + ellipse.centerX,
-				  offsetY + ellipse.centerY,
-				  ellipse.radiusX,
-				  ellipse.radiusY
-				);
-				distance = Math.min(distance, ellipseDistance);
-			  }
-
-			  if (distance > 0) {
-				const far = Math.exp(-(distance * distance) / (2 * options.sigmaFar * options.sigmaFar));
-				const near = Math.exp(-(distance * distance) / (2 * options.sigmaNear * options.sigmaNear));
-				alpha += Math.min(1, (far * 0.7 + near * 0.3) * options.strength);
-			  }
-			}
-		  }
-
-		  alpha /= sampleScale * sampleScale;
-		  const index = (y * canvasWidth + x) * 4;
-		  data[index] = 255;
-		  data[index + 1] = 255;
-		  data[index + 2] = 255;
-		  data[index + 3] = Math.round(alpha * 255);
-		}
-	  }
-
-	  context.putImageData(image, 0, 0);
-
-	  const texture = new Texture2D();
-	  texture.image = new ImageAsset(canvas);
-
-	  const spriteFrame = new SpriteFrame();
-	  spriteFrame.texture = texture;
-	  return spriteFrame;
-	}
-
-	private createSdfCloud(
-	  parent: Node,
-	  options: {
-		name: string;
-		x: number;
-		y: number;
-		baseWidth: number;
-		scale: number;
-		flipX?: boolean;
-		color: Color;
-	  }
-	): void {
-	  // 用现成云图替换运行时拼形云。
-	  // 这里把“位置”和“大小”彻底拆开：
-	  // - x / y 只负责摆放
-	  // - baseWidth * scale 只负责尺寸
-	  // 这样后续调位置时，不会再连带改变云的大小。
-	  if (!this.stageCloudSpriteFrame) {
-		return;
-	  }
-
-	  const cloudAspect = 606 / 346;
-	  const spriteWidth = Math.max(1, Math.round(options.baseWidth * options.scale));
-	  const spriteHeight = Math.max(1, Math.round(spriteWidth / cloudAspect));
-
-	  const shadow = RuntimeUI.createSpriteFrame(parent, {
-		name: `${options.name}Shadow`,
-		x: options.x,
-		y: options.y - Math.round(spriteHeight * 0.02),
-		width: Math.round(spriteWidth * 1.06),
-		height: Math.round(spriteHeight * 1.08),
-		spriteFrame: this.stageCloudSpriteFrame,
-		color: new Color(255, 255, 255, 92),
-	  });
-	  shadow.node.setSiblingIndex(0);
-
-	  const cloudGroup = new Node(options.name);
-	  cloudGroup.setParent(parent);
-	  cloudGroup.setPosition(options.x, options.y, 0);
-	  const cloudGroupTransform = cloudGroup.getComponent(UITransform) ?? cloudGroup.addComponent(UITransform);
-	  cloudGroupTransform.setContentSize(spriteWidth, spriteHeight);
-
-	  // 外层淡云直接铺整张图。
-	  // 它保留完整轮廓，但透明度更低，让云的边缘自然变淡。
-	  RuntimeUI.createSpriteFrame(cloudGroup, {
-		name: `${options.name}Outer`,
-		x: 0,
-		y: 0,
-		width: spriteWidth,
-		height: spriteHeight,
-		spriteFrame: this.stageCloudSpriteFrame,
-		color: new Color(options.color.r, options.color.g, options.color.b, 180),
-	  });
-
-	  // 内层用缩小一点的云图做蒙版，只保留更实的中心区域。
-	  // 这样边缘不会整片都一样实，而是变成“外淡内实”的层次。
-	  const innerMaskNode = new Node(`${options.name}InnerMask`);
-	  innerMaskNode.setParent(cloudGroup);
-	  innerMaskNode.setPosition(0, 0, 0);
-	  const innerMaskWidth = Math.round(spriteWidth * 0.88);
-	  const innerMaskHeight = Math.round(spriteHeight * 0.88);
-	  const innerMaskTransform = innerMaskNode.getComponent(UITransform) ?? innerMaskNode.addComponent(UITransform);
-	  innerMaskTransform.setContentSize(innerMaskWidth, innerMaskHeight);
-
-	  const innerMask = innerMaskNode.addComponent(Mask);
-	  innerMask.type = Mask.Type.GRAPHICS_STENCIL;
-	  innerMask.inverted = false;
-	  const innerMaskGraphics = this.getGraphicsMaskSubComp(innerMask);
-	  if (!innerMaskGraphics) {
-		return;
-	  }
-	  const innerMaskRadius = Math.min(innerMaskWidth, innerMaskHeight);
-	  innerMaskGraphics.clear();
-	  innerMaskGraphics.fillColor = Color.WHITE;
-	  innerMaskGraphics.ellipse(-innerMaskWidth * 0.18, 0, innerMaskWidth * 0.28, innerMaskHeight * 0.26);
-	  innerMaskGraphics.ellipse(innerMaskWidth * 0.2, innerMaskHeight * 0.02, innerMaskWidth * 0.32, innerMaskHeight * 0.28);
-	  innerMaskGraphics.ellipse(0, -innerMaskHeight * 0.08, innerMaskWidth * 0.22, innerMaskHeight * 0.2);
-	  innerMaskGraphics.circle(0, -innerMaskHeight * 0.02, innerMaskRadius * 0.12);
-	  innerMaskGraphics.fill();
-
-	  RuntimeUI.createSpriteFrame(innerMaskNode, {
-		name: `${options.name}Inner`,
-		x: 0,
-		y: 0,
-		width: spriteWidth,
-		height: spriteHeight,
-		spriteFrame: this.stageCloudSpriteFrame,
-		color: new Color(options.color.r, options.color.g, options.color.b, 238),
-	  });
-
-	  if (options.flipX) {
-		shadow.node.setScale(-1, 1, 1);
-		cloudGroup.setScale(-1, 1, 1);
-	  }
-	}
-  private createLayoutShellShadowSpriteFrame(options: {
-    shellWidth: number;
-    shellHeight: number;
-    spread: number;
-    radius: number;
-    sigmaFar: number;
-    sigmaNear: number;
-    strength: number;
-  }): SpriteFrame | null {
-    if (typeof document === "undefined") {
-      return null;
+  private createCloudSoftMaterial(options: {
+    width: number;
+    height: number;
+    circleA: Vec4;
+    circleB: Vec4;
+    feather: number;
+    color: Color;
+  }): Material | undefined {
+    if (!this.assetStore.cloudSoftEffectAsset) {
+      return undefined;
     }
 
-    const canvasWidth = Math.max(1, Math.round(options.shellWidth + options.spread * 2));
-    const canvasHeight = Math.max(1, Math.round(options.shellHeight + options.spread * 2));
-    const canvas = document.createElement("canvas");
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      return null;
-    }
+    const material = new Material();
+    material.initialize({
+      effectAsset: this.assetStore.cloudSoftEffectAsset,
+    });
 
-    const image = context.createImageData(canvasWidth, canvasHeight);
-    const data = image.data;
-    const rectX = options.spread;
-    const rectY = options.spread;
-    const sampleScale = 2;
-    for (let y = 0; y < canvasHeight; y += 1) {
-      for (let x = 0; x < canvasWidth; x += 1) {
-        let alpha = 0;
-        for (let sy = 0; sy < sampleScale; sy += 1) {
-          for (let sx = 0; sx < sampleScale; sx += 1) {
-            const distance = this.sampleRoundedRectDistance(
-              x + (sx + 0.5) / sampleScale,
-              y + (sy + 0.5) / sampleScale,
-              rectX,
-              rectY,
-              options.shellWidth,
-              options.shellHeight,
-              options.radius
-            );
-            if (distance > 0) {
-              const far = Math.exp(-(distance * distance) / (2 * options.sigmaFar * options.sigmaFar));
-              const near = Math.exp(-(distance * distance) / (2 * options.sigmaNear * options.sigmaNear));
-              const ny = (y - canvasHeight / 2) / (canvasHeight / 2);
-              const directional = Math.max(0.75, Math.min(1, 0.88 + ny * 0.12));
-              alpha += Math.min(1, (far * 0.68 + near * 0.32) * options.strength * directional);
-            }
-          }
-        }
-        alpha /= sampleScale * sampleScale;
+    material.setProperty("cloudColor", options.color);
+    material.setProperty("shapeSize", new Vec4(options.width, options.height, 0, 0));
+    material.setProperty("circleA", options.circleA);
+    material.setProperty("circleB", options.circleB);
+    material.setProperty("cloudParams", new Vec4(options.feather, 0, 0, 0));
 
-        const index = (y * canvasWidth + x) * 4;
-        data[index] = 255;
-        data[index + 1] = 255;
-        data[index + 2] = 255;
-        data[index + 3] = Math.round(alpha * 255);
-      }
-    }
-    context.putImageData(image, 0, 0);
-
-    const texture = new Texture2D();
-    texture.image = new ImageAsset(canvas);
-
-    const spriteFrame = new SpriteFrame();
-    spriteFrame.texture = texture;
-    return spriteFrame;
-  }
-
-  private sampleRoundedRectDistance(
-    px: number,
-    py: number,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    radius: number
-  ): number {
-    const centerX = x + width / 2;
-    const centerY = y + height / 2;
-    const halfWidth = Math.max(0, width / 2 - radius);
-    const halfHeight = Math.max(0, height / 2 - radius);
-    const dx = Math.abs(px - centerX) - halfWidth;
-    const dy = Math.abs(py - centerY) - halfHeight;
-    const outsideX = Math.max(dx, 0);
-    const outsideY = Math.max(dy, 0);
-    const outside = Math.hypot(outsideX, outsideY);
-    const inside = Math.min(Math.max(dx, dy), 0);
-    return outside + inside - radius;
-  }
-
-  private sampleEllipseDistance(
-	px: number,
-	py: number,
-	centerX: number,
-	centerY: number,
-	radiusX: number,
-	radiusY: number
-  ): number {
-	const safeRadiusX = Math.max(1, radiusX);
-	const safeRadiusY = Math.max(1, radiusY);
-	const dx = px - centerX;
-	const dy = py - centerY;
-	const normalized = Math.hypot(dx / safeRadiusX, dy / safeRadiusY);
-	return (normalized - 1) * Math.min(safeRadiusX, safeRadiusY);
+    return material;
   }
 
   private renderBackgroundDebugEntry(root: Node, layout: MainLayout): void {
@@ -2388,7 +1515,7 @@ export class MainController extends ScreenController {
         radius: shellInnerRadius,
       });
 
-      if (this.backgroundGradientSpriteFrame) {
+      if (this.assetStore.backgroundGradientSpriteFrame) {
         const gradientMask = new Node("AppShellGradientMask");
         gradientMask.setParent(shellSurface);
         const gradientMaskTransform = gradientMask.addComponent(UITransform);
@@ -2415,7 +1542,7 @@ export class MainController extends ScreenController {
             y: 0,
             width: shellInnerHeight + SHELL_SURFACE_GRADIENT_OVERSCAN * 2,
             height: shellInnerWidth + SHELL_SURFACE_GRADIENT_OVERSCAN * 2,
-            spriteFrame: this.backgroundGradientSpriteFrame,
+            spriteFrame: this.assetStore.backgroundGradientSpriteFrame,
             rotation: -90,
             color: new Color(255, 255, 255, 110),
           });
@@ -2429,6 +1556,31 @@ export class MainController extends ScreenController {
     // 当前这一步只负责把“承载结构”搭出来，不把舞台骨架塞满。
     this.renderMainStageLayer(shellContentHost, shellWidth, shellHeight, borderWidth);
     return shellContentHost;
+  }
+
+  private createMainStageRendererContext(): MainStageRendererContext {
+    return {
+      assets: {
+        stageSceneBackgroundSpriteFrame: this.assetStore.stageSceneBackgroundSpriteFrame,
+        stageCloudSpriteFrame: this.assetStore.stageCloudSpriteFrame,
+      },
+      state: {
+        petAnimator: this.petAnimator,
+        showShaderDebugBlock: this.showShaderDebugBlock,
+        petBubble: this.petBubble,
+        activeVisualState: this.activeVisualState,
+      },
+      tuning: {
+        mainStageRadius: MAIN_STAGE_RADIUS,
+        getValue: (key) => this.getArtTuningValue(key),
+      },
+      utils: {
+        getGraphicsMaskSubComp: (mask) => this.getGraphicsMaskSubComp(mask),
+        getButtonGradientCarrierSpriteFrame: () => this.getButtonGradientCarrierSpriteFrame(),
+        createButtonGradientMaterial: (options) => this.createButtonGradientMaterial(options),
+        resolveSpriteWorldRect: (node, width, height) => this.resolveSpriteWorldRect(node, width, height),
+      },
+    };
   }
 
   private renderMainStageLayer(shell: Node, shellWidth: number, shellHeight: number, shellBorderWidth: number): void {
@@ -2580,7 +1732,7 @@ export class MainController extends ScreenController {
       stageAreaTransform.setContentSize(stageWidth, stageHeight);
     }
 
-	this.renderStageBase(stageArea, stageWidth, stageHeight, {
+	renderMainStageBase(this.createMainStageRendererContext(), stageArea, stageWidth, stageHeight, {
       borderThickness: 2,
       radius: mainViewportRadius,
     });
@@ -2799,10 +1951,21 @@ export class MainController extends ScreenController {
       height: bottomDockHeight,
     });
 
-    this.renderFoodSelectionPanel(hostLayer, {
+    renderFoodSelectionPanel({
+      parent: hostLayer,
       stageY,
       stageWidth,
       stageHeight,
+      isOpen: this.isFoodSelectionPanelOpen,
+      foods: appState.getPetFoodInventory(),
+      feedRequestInFlight: this.feedRequestInFlight,
+      onClose: () => {
+        this.isFoodSelectionPanelOpen = false;
+        this.render();
+      },
+      onSelectFood: (food) => void this.handleFoodSelection(food),
+      onOpenHomework: () => this.openHomeworkCenterFromFoodShortage(),
+      eventTarget: this,
     });
 
     this.renderHomeworkCenterOverlay(hostLayer, {
@@ -2816,21 +1979,7 @@ export class MainController extends ScreenController {
   }
 
   private ensureButtonGradientEffectLoaded(): void {
-    if (this.buttonGradientEffectAsset || this.buttonGradientEffectLoadRequested) {
-      return;
-    }
-
-    this.buttonGradientEffectLoadRequested = true;
-    resources.load(BUTTON_GRADIENT_EFFECT_PATH, EffectAsset, (error, effectAsset) => {
-      if (error || !effectAsset) {
-        console.warn("[MainController] failed to load button gradient effect", error);
-        this.buttonGradientEffectLoadRequested = false;
-        return;
-      }
-
-      this.buttonGradientEffectAsset = effectAsset;
-      this.render();
-    });
+    this.assetStore.ensureButtonGradientEffectLoaded();
   }
 
   private handleTopBarTabSelect(tab: TopBarNavTab): void {
@@ -2838,7 +1987,7 @@ export class MainController extends ScreenController {
       return;
     }
 
-    this.resetFoxInactivity();
+    this.petAnimator.resetInactivity();
     this.activeTopBarNavTab = tab;
     if (tab === "bag") {
       this.appendMainInteraction("背包已打开", "当前展示 dashboard 同步到的口粮库存。");
@@ -2863,7 +2012,7 @@ export class MainController extends ScreenController {
       return;
     }
 
-    const viewModel = this.resolveMainViewModel();
+    const viewModel = this.createMainViewModel();
     const isBag = this.activeTopBarNavTab === "bag";
     const panelWidth = Math.max(300, Math.min(460, Math.round(options.stageWidth * 0.38)));
     const panelHeight = Math.max(180, Math.min(270, Math.round(options.stageHeight * 0.42)));
@@ -2891,299 +2040,30 @@ export class MainController extends ScreenController {
       color: new Color(126, 68, 32, 242),
     });
     if (isBag) {
-      this.renderBagPanelContent(panel, viewModel, panelWidth, panelHeight);
+      renderBagPanelContent({
+      panel,
+      foods: viewModel.foods,
+      panelWidth,
+      panelHeight,
+      inventoryUseRequestInFlight: this.inventoryUseRequestInFlight,
+      formatFoodName: (food) => this.formatFoodName(food),
+      resolveFoodIcon: (food) => this.resolveFoodIcon(food),
+      resolveFoodEffectText: (food) => this.resolveFoodEffectText(food),
+      onUseFood: (food) => void this.handleFoodSelection(food),
+      onOpenHomework: () => this.openHomeworkCenterFromFoodShortage(),
+      eventTarget: this,
+    });
       return;
     }
-    this.renderJournalPanelContent(panel, panelWidth, panelHeight);
-  }
-
-  private renderBagPanelContent(
-    panel: Node,
-    viewModel: MainViewModel,
-    panelWidth: number,
-    panelHeight: number
-  ): void {
-    const foods = viewModel.foods;
-    if (!foods.length) {
-      this.renderFoodShortageGuide(panel, {
-        name: "BagFoodShortage",
-        y: -Math.round(panelHeight * 0.08),
-        width: panelWidth - 52,
-      });
-      return;
-    }
-
-    const rowTop = Math.round(panelHeight * 0.13);
-    const rowGap = Math.max(46, Math.round(panelHeight * 0.22));
-    foods.slice(0, 3).forEach((food, index) => {
-      const y = rowTop - index * rowGap;
-      const isAvailable = food.count > 0 && !this.inventoryUseRequestInFlight;
-      RuntimeUI.createBox(panel, {
-        name: `BagFood${index}IconBg`,
-        x: -Math.round(panelWidth * 0.36),
-        y,
-        width: 34,
-        height: 34,
-        color: new Color(255, 244, 226, 210),
-        radius: 17,
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `BagFood${index}Icon`,
-        text: this.resolveFoodIcon(food),
-        x: -Math.round(panelWidth * 0.36),
-        y,
-        width: 30,
-        height: 30,
-        fontSize: 18,
-        color: new Color(126, 68, 32, 226),
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `BagFood${index}Name`,
-        text: this.formatFoodName(food),
-        x: -Math.round(panelWidth * 0.17),
-        y: y + 12,
-        width: Math.round(panelWidth * 0.34),
-        height: 24,
-        fontSize: Math.max(13, Math.min(18, Math.round(panelWidth * 0.042))),
-        color: new Color(126, 68, 32, 228),
-        horizontalAlign: HorizontalTextAlignment.LEFT,
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `BagFood${index}Effect`,
-        text: this.resolveFoodEffectText(food),
-        x: -Math.round(panelWidth * 0.17),
-        y: y - 12,
-        width: Math.round(panelWidth * 0.45),
-        height: 24,
-        fontSize: Math.max(11, Math.min(15, Math.round(panelWidth * 0.034))),
-        color: new Color(151, 105, 76, 220),
-        horizontalAlign: HorizontalTextAlignment.LEFT,
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `BagFood${index}Count`,
-        text: `数量 ${food.count}`,
-        x: Math.round(panelWidth * 0.17),
-        y: y + 12,
-        width: Math.round(panelWidth * 0.18),
-        height: 24,
-        fontSize: Math.max(13, Math.min(18, Math.round(panelWidth * 0.04))),
-        color: new Color(151, 105, 76, 220),
-      });
-      const useButton = RuntimeUI.createButton(panel, {
-        name: `BagFood${index}UseButton`,
-        text: food.count <= 0 ? "已用完" : this.inventoryUseRequestInFlight ? "处理中" : "使用",
-        x: Math.round(panelWidth * 0.34),
-        y,
-        width: Math.round(panelWidth * 0.18),
-        height: 30,
-        color: isAvailable ? new Color(238, 145, 84, 230) : new Color(190, 178, 164, 160),
-        textColor: new Color(255, 255, 255, isAvailable ? 255 : 190),
-        fontSize: Math.max(12, Math.min(15, Math.round(panelWidth * 0.036))),
-        radius: 15,
-      });
-      useButton.button.transition = Button.Transition.NONE;
-      if (isAvailable) {
-        useButton.node.on(Button.EventType.CLICK, () => void this.handleFoodSelection(food), this);
-      }
+    renderJournalPanelContent({
+      panel,
+      panelWidth,
+      panelHeight,
+      diaryDays: appState.getDiaryDays(),
+      isLoading: this.journalEventsLoading,
+      isLoaded: this.journalEventsLoaded,
+      syncMessage: this.journalSyncMessage,
     });
-
-    if (foods.length > 3) {
-      RuntimeUI.createLabel(panel, {
-        name: "BagMoreText",
-        text: `还有 ${foods.length - 3} 种道具未显示`,
-        x: 0,
-        y: -Math.round(panelHeight * 0.38),
-        width: panelWidth - 60,
-        height: 20,
-        fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.032))),
-        color: new Color(151, 105, 76, 188),
-      });
-    }
-
-    if (!this.hasUsableFood(foods)) {
-      this.renderFoodShortageGuide(panel, {
-        name: "BagEmptyUsableFood",
-        y: -Math.round(panelHeight * 0.36),
-        width: panelWidth - 52,
-        compact: true,
-      });
-    }
-  }
-
-  private hasUsableFood(foods = appState.getPetFoodInventory()): boolean {
-    return foods.some((food) => food.count > 0);
-  }
-
-  private renderFoodShortageGuide(
-    parent: Node,
-    options: {
-      name: string;
-      y: number;
-      width: number;
-      compact?: boolean;
-    }
-  ): void {
-    const guideHeight = options.compact ? 58 : 86;
-    RuntimeUI.createCard(parent, {
-      name: `${options.name}Card`,
-      x: 0,
-      y: options.y,
-      width: options.width,
-      height: guideHeight,
-      color: new Color(255, 244, 226, 168),
-      innerColor: new Color(255, 252, 247, 160),
-      radius: 18,
-      borderThickness: 2,
-      innerRadius: 16,
-    });
-    RuntimeUI.createLabel(parent, {
-      name: `${options.name}Text`,
-      text: "粮食不太够啦，完成一次学习任务可以获得新的口粮。",
-      x: -Math.round(options.width * 0.12),
-      y: options.y + (options.compact ? 12 : 18),
-      width: Math.round(options.width * 0.68),
-      height: options.compact ? 32 : 44,
-      fontSize: Math.max(12, Math.min(16, Math.round(options.width * 0.038))),
-      color: new Color(151, 105, 76, 218),
-      horizontalAlign: HorizontalTextAlignment.LEFT,
-    });
-    const homeworkButton = RuntimeUI.createButton(parent, {
-      name: `${options.name}HomeworkButton`,
-      text: "去提交作业",
-      x: Math.round(options.width * 0.3),
-      y: options.y - (options.compact ? 14 : 18),
-      width: Math.max(102, Math.round(options.width * 0.28)),
-      height: 32,
-      color: new Color(238, 145, 84, 230),
-      textColor: new Color(255, 255, 255, 255),
-      fontSize: Math.max(12, Math.min(15, Math.round(options.width * 0.036))),
-      radius: 16,
-    });
-    homeworkButton.button.transition = Button.Transition.NONE;
-    homeworkButton.node.on(Button.EventType.CLICK, () => this.openHomeworkCenterFromFoodShortage(), this);
-  }
-
-  private renderJournalPanelContent(panel: Node, panelWidth: number, panelHeight: number): void {
-    const diaryDays = appState.getDiaryDays();
-    if (this.journalEventsLoading && !diaryDays.length) {
-      RuntimeUI.createLabel(panel, {
-        name: "JournalLoadingText",
-        text: "正在读取成长日记...",
-        x: 0,
-        y: -Math.round(panelHeight * 0.08),
-        width: panelWidth - 48,
-        height: Math.round(panelHeight * 0.34),
-        fontSize: Math.max(14, Math.min(18, Math.round(panelWidth * 0.044))),
-        color: new Color(151, 105, 76, 208),
-      });
-      return;
-    }
-    if (!diaryDays.length) {
-      RuntimeUI.createLabel(panel, {
-        name: "JournalEmptyText",
-        text: this.journalSyncMessage ?? (this.journalEventsLoaded ? "最近还没有成长记录" : "日记暂未同步，请稍后再试"),
-        x: 0,
-        y: -Math.round(panelHeight * 0.08),
-        width: panelWidth - 48,
-        height: Math.round(panelHeight * 0.34),
-        fontSize: Math.max(14, Math.min(18, Math.round(panelWidth * 0.044))),
-        color: new Color(151, 105, 76, 208),
-      });
-      return;
-    }
-
-    const scrollWidth = panelWidth - 44;
-    const scrollHeight = Math.max(88, Math.round(panelHeight * 0.58));
-    const scrollY = -Math.round(panelHeight * 0.04);
-    const scrollArea = RuntimeUI.createBox(panel, {
-      name: "JournalScrollArea",
-      x: 0,
-      y: scrollY,
-      width: scrollWidth,
-      height: scrollHeight,
-      color: new Color(255, 244, 226, 68),
-      radius: 16,
-    });
-    const mask = scrollArea.addComponent(Mask);
-    mask.enabled = true;
-
-    const scrollView = scrollArea.addComponent(ScrollView);
-    scrollView.horizontal = false;
-    scrollView.vertical = true;
-    scrollView.inertia = true;
-    scrollView.brake = 0.35;
-    scrollView.elastic = true;
-
-    const content = new Node("JournalScrollContent");
-    content.setParent(scrollArea);
-    const contentTransform = content.addComponent(UITransform);
-    const contentWidth = scrollWidth - 18;
-    const dayHeaderHeight = 24;
-    const entryHeight = 23;
-    const dayBottomGap = 12;
-    const contentPadding = 10;
-    const totalHeight = Math.max(
-      scrollHeight,
-      contentPadding * 2 +
-        diaryDays.reduce((sum, day) => {
-          return sum + dayHeaderHeight + day.entries.length * entryHeight + dayBottomGap;
-        }, 0)
-    );
-    contentTransform.setContentSize(contentWidth, totalHeight);
-
-    let cursorY = totalHeight / 2 - contentPadding;
-    diaryDays.forEach((day, dayIndex) => {
-      RuntimeUI.createLabel(content, {
-        name: `JournalDay${dayIndex}Title`,
-        text: `${day.dateText}  ${day.summary}`,
-        x: 0,
-        y: cursorY - dayHeaderHeight / 2,
-        width: contentWidth,
-        height: 22,
-        fontSize: Math.max(12, Math.min(16, Math.round(panelWidth * 0.038))),
-        color: new Color(126, 68, 32, 228),
-        horizontalAlign: HorizontalTextAlignment.LEFT,
-      });
-
-      cursorY -= dayHeaderHeight;
-      day.entries.forEach((entry, entryIndex) => {
-        RuntimeUI.createLabel(content, {
-          name: `JournalDay${dayIndex}Entry${entryIndex}`,
-          text: `${entry.timeText} ${entry.title}：${entry.detail}`,
-          x: 0,
-          y: cursorY - entryHeight / 2,
-          width: contentWidth,
-          height: 20,
-          fontSize: Math.max(10, Math.min(14, Math.round(panelWidth * 0.032))),
-          color: new Color(151, 105, 76, 208),
-          horizontalAlign: HorizontalTextAlignment.LEFT,
-        });
-        cursorY -= entryHeight;
-      });
-
-      cursorY -= dayBottomGap;
-    });
-    content.setPosition(Vec3.ZERO);
-    scrollView.content = content;
-    scrollView.scheduleOnce(() => {
-      if (scrollView.node.isValid) {
-        scrollView.scrollToTop(0);
-      }
-    }, 0);
-
-    const footerText = this.journalSyncMessage ?? (totalHeight > scrollHeight ? "上下拖动查看最近 7 天全部记录" : "");
-    if (footerText) {
-      RuntimeUI.createLabel(panel, {
-        name: "JournalFooterText",
-        text: footerText,
-        x: 0,
-        y: -Math.round(panelHeight * 0.38),
-        width: panelWidth - 60,
-        height: 20,
-        fontSize: Math.max(10, Math.min(13, Math.round(panelWidth * 0.03))),
-        color: new Color(151, 105, 76, 188),
-      });
-    }
   }
 
   private async tryRefreshJournalEvents(): Promise<void> {
@@ -3212,186 +2092,6 @@ export class MainController extends ScreenController {
       if (this.activeTopBarNavTab === "journal") {
         this.render();
       }
-    }
-  }
-
-  private renderFoodSelectionPanel(
-    parent: Node,
-    options: {
-      stageY: number;
-      stageWidth: number;
-      stageHeight: number;
-    }
-  ): void {
-    if (!this.isFoodSelectionPanelOpen) {
-      return;
-    }
-
-    const foods = appState.getPetFoodInventory();
-    const availableFoods = foods.filter((food) => food.count > 0);
-    const panelWidth = Math.max(330, Math.min(500, Math.round(options.stageWidth * 0.44)));
-    const panelHeight = Math.max(230, Math.min(330, Math.round(options.stageHeight * 0.5)));
-    const panel = RuntimeUI.createCard(parent, {
-      name: "FoodSelectionPanel",
-      x: 0,
-      y: Math.round(options.stageY),
-      width: panelWidth,
-      height: panelHeight,
-      color: new Color(235, 207, 180, 238),
-      innerColor: new Color(255, 252, 247, 246),
-      radius: 24,
-      borderThickness: 2,
-      innerRadius: 22,
-    });
-
-    RuntimeUI.createLabel(panel, {
-      name: "FoodSelectionTitle",
-      text: "选择口粮",
-      x: 0,
-      y: Math.round(panelHeight * 0.36),
-      width: panelWidth - 80,
-      height: 32,
-      fontSize: Math.max(20, Math.min(28, Math.round(panelWidth * 0.06))),
-      color: new Color(126, 68, 32, 242),
-    });
-
-    const closeButton = RuntimeUI.createButton(panel, {
-      name: "FoodSelectionClose",
-      text: "关闭",
-      x: Math.round(panelWidth * 0.34),
-      y: Math.round(panelHeight * 0.36),
-      width: 68,
-      height: 28,
-      color: new Color(110, 74, 51, 130),
-      textColor: new Color(255, 255, 255, 255),
-      fontSize: 13,
-      radius: 14,
-    });
-    closeButton.button.transition = Button.Transition.NONE;
-    closeButton.node.on(
-      Button.EventType.CLICK,
-      () => {
-        this.isFoodSelectionPanelOpen = false;
-        this.render();
-      },
-      this
-    );
-
-    if (!availableFoods.length) {
-      this.renderFoodShortageGuide(panel, {
-        name: "FoodSelectionShortage",
-        y: -Math.round(panelHeight * 0.06),
-        width: panelWidth - 56,
-      });
-      return;
-    }
-
-    const headerY = Math.round(panelHeight * 0.2);
-    const headerColor = new Color(151, 105, 76, 210);
-    RuntimeUI.createLabel(panel, {
-      name: "FoodSelectionTypeHeader",
-      text: "food_type",
-      x: -Math.round(panelWidth * 0.25),
-      y: headerY,
-      width: Math.round(panelWidth * 0.28),
-      height: 22,
-      fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.033))),
-      color: headerColor,
-      horizontalAlign: HorizontalTextAlignment.LEFT,
-    });
-    RuntimeUI.createLabel(panel, {
-      name: "FoodSelectionQualityHeader",
-      text: "food_quality",
-      x: 0,
-      y: headerY,
-      width: Math.round(panelWidth * 0.28),
-      height: 22,
-      fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.033))),
-      color: headerColor,
-    });
-    RuntimeUI.createLabel(panel, {
-      name: "FoodSelectionCountHeader",
-      text: "count",
-      x: Math.round(panelWidth * 0.27),
-      y: headerY,
-      width: Math.round(panelWidth * 0.16),
-      height: 22,
-      fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.033))),
-      color: headerColor,
-    });
-
-    const rowTop = Math.round(panelHeight * 0.08);
-    const rowGap = Math.max(36, Math.round(panelHeight * 0.16));
-    const rowWidth = Math.round(panelWidth * 0.82);
-    const rowHeight = Math.max(30, Math.round(rowGap * 0.74));
-    availableFoods.slice(0, 5).forEach((food, index) => {
-      const y = rowTop - index * rowGap;
-      RuntimeUI.createBox(panel, {
-        name: `FoodSelectionRowBg${index}`,
-        x: 0,
-        y,
-        width: rowWidth,
-        height: rowHeight,
-        color: new Color(255, 244, 226, this.feedRequestInFlight ? 108 : 184),
-        radius: Math.round(rowHeight / 2),
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `FoodSelectionType${index}`,
-        text: food.food_type,
-        x: -Math.round(panelWidth * 0.25),
-        y,
-        width: Math.round(panelWidth * 0.28),
-        height: 24,
-        fontSize: Math.max(13, Math.min(17, Math.round(panelWidth * 0.039))),
-        color: new Color(126, 68, 32, 230),
-        horizontalAlign: HorizontalTextAlignment.LEFT,
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `FoodSelectionQuality${index}`,
-        text: food.food_quality,
-        x: 0,
-        y,
-        width: Math.round(panelWidth * 0.28),
-        height: 24,
-        fontSize: Math.max(13, Math.min(17, Math.round(panelWidth * 0.039))),
-        color: new Color(126, 68, 32, 220),
-      });
-      RuntimeUI.createLabel(panel, {
-        name: `FoodSelectionCount${index}`,
-        text: String(food.count),
-        x: Math.round(panelWidth * 0.27),
-        y,
-        width: Math.round(panelWidth * 0.16),
-        height: 24,
-        fontSize: Math.max(13, Math.min(17, Math.round(panelWidth * 0.039))),
-        color: new Color(151, 105, 76, 224),
-      });
-
-      const rowHitArea = RuntimeUI.createBox(panel, {
-        name: `FoodSelectionHit${index}`,
-        x: 0,
-        y,
-        width: rowWidth,
-        height: rowHeight,
-        color: new Color(255, 255, 255, 0),
-        radius: Math.round(rowHeight / 2),
-      });
-      const rowButton = rowHitArea.addComponent(Button);
-      rowButton.transition = Button.Transition.NONE;
-      rowHitArea.on(Button.EventType.CLICK, () => void this.handleFoodSelection(food), this);
-    });
-
-    if (availableFoods.length > 5) {
-      RuntimeUI.createLabel(panel, {
-        name: "FoodSelectionMore",
-        text: `还有 ${availableFoods.length - 5} 种口粮未显示`,
-        x: 0,
-        y: -Math.round(panelHeight * 0.38),
-        width: panelWidth - 60,
-        height: 20,
-        fontSize: Math.max(11, Math.min(14, Math.round(panelWidth * 0.032))),
-        color: new Color(151, 105, 76, 188),
-      });
     }
   }
 
@@ -3688,7 +2388,7 @@ export class MainController extends ScreenController {
       height: number;
     }
   ): void {
-    const viewModel = this.resolveMainViewModel();
+    const viewModel = this.createMainViewModel();
     const radius = Math.round(options.height * 0.38);
     const topBarShellAlpha = Math.round(this.getArtTuningValue("topBarShellAlpha"));
     const topBarInnerAlpha = Math.round(this.getArtTuningValue("topBarInnerAlpha"));
@@ -4055,7 +2755,7 @@ export class MainController extends ScreenController {
     });
     RuntimeUI.createLabel(statusShell, {
       name: "TopBarStatusIcon",
-      text: this.resolveStatusIcon(viewModel.displayStatus),
+      text: resolveStatusIcon(viewModel.displayStatus),
       x: -statusWidth / 2 + 24,
       y: 0,
       width: 22,
@@ -4525,7 +3225,7 @@ export class MainController extends ScreenController {
       height: number;
     }
   ): void {
-    const viewModel = this.resolveMainViewModel();
+    const viewModel = this.createMainViewModel();
     const cardWidth = options.width;
     const cardHeight = options.height;
     const topY = cardHeight / 2;
@@ -4535,7 +3235,7 @@ export class MainController extends ScreenController {
     const pawY = titleY + Math.round(this.getArtTuningValue("leftStatusPawYOffset"));
     const pawScale = this.getArtTuningValue("leftStatusPawScale");
 
-    this.renderPawTitleDecor(card, {
+    renderPawTitleDecor(card, {
       name: `${options.name}LeftPaw`,
       x: -pawX,
       y: pawY,
@@ -4544,15 +3244,15 @@ export class MainController extends ScreenController {
     });
     RuntimeUI.createLabel(card, {
       name: `${options.name}Title`,
-      text: "小橘状态",
+      text: viewModel.petName,
       x: 0,
       y: titleY,
       width: Math.round(cardWidth * 0.58),
       height: 38,
-      fontSize: Math.max(18, Math.min(42, Math.round(cardWidth * this.getArtTuningValue("leftStatusTitleFontScale")))),
+      fontSize: Math.max(16, Math.min(32, Math.round(cardWidth * this.getArtTuningValue("leftStatusTitleFontScale")))),
       color: new Color(126, 68, 32, 240),
     });
-    this.renderPawTitleDecor(card, {
+    renderPawTitleDecor(card, {
       name: `${options.name}RightPaw`,
       x: pawX,
       y: pawY,
@@ -4582,7 +3282,7 @@ export class MainController extends ScreenController {
       color: new Color(255, 255, 255, 76),
       radius: Math.round(levelPillHeight * 0.16),
     });
-    this.renderCloudBadge(card, {
+    renderCloudBadge(card, {
       name: `${options.name}LevelBadge`,
       x: Math.round(leftX + cardWidth * this.getArtTuningValue("leftStatusLevelBadgeXRatio")),
       y: levelY,
@@ -4606,7 +3306,7 @@ export class MainController extends ScreenController {
     });
 
     const dividerY = Math.round(topY - cardHeight * this.getArtTuningValue("leftStatusDividerYRatio"));
-    this.renderDottedDivider(card, {
+    renderDottedDivider(card, {
       name: `${options.name}DottedDivider`,
       y: dividerY,
       width: Math.round(cardWidth * this.getArtTuningValue("leftStatusDividerWidthRatio")),
@@ -4633,259 +3333,11 @@ export class MainController extends ScreenController {
       });
     });
 
-    this.renderFlowerCluster(card, {
+    renderFlowerCluster(card, {
       name: `${options.name}FlowerDecor`,
       x: Math.round(cardWidth * this.getArtTuningValue("leftStatusFlowerXRatio")),
       y: Math.round(-cardHeight / 2 + this.getArtTuningValue("leftStatusFlowerYOffset")),
       scale: Math.max(0.45, Math.min(1.4, (cardWidth / 310) * this.getArtTuningValue("leftStatusFlowerScale"))),
-    });
-  }
-
-  private renderPawTitleDecor(
-    parent: Node,
-    options: { name: string; x: number; y: number; mirrored: boolean; scale?: number }
-  ): void {
-    const direction = options.mirrored ? -1 : 1;
-    const scale = options.scale ?? 1;
-    const pawColor = new Color(248, 177, 126, 138);
-    const dotColor = new Color(248, 177, 126, 120);
-    const pad = (suffix: string, x: number, y: number, width: number, height: number, alpha = pawColor.a): void => {
-      RuntimeUI.createBox(parent, {
-        name: `${options.name}${suffix}`,
-        x: Math.round(options.x + x * scale * direction),
-        y: Math.round(options.y + y * scale),
-        width: Math.max(1, Math.round(width * scale)),
-        height: Math.max(1, Math.round(height * scale)),
-        color: new Color(pawColor.r, pawColor.g, pawColor.b, alpha),
-        radius: Math.round((Math.max(width, height) * scale) / 2),
-      });
-    };
-
-    RuntimeUI.createBox(parent, {
-      name: `${options.name}Dot`,
-      x: Math.round(options.x - 24 * scale * direction),
-      y: options.y,
-      width: Math.max(1, Math.round(4 * scale)),
-      height: Math.max(1, Math.round(4 * scale)),
-      color: dotColor,
-      radius: Math.max(1, Math.round(2 * scale)),
-    });
-    pad("Main", 0, -3, 13, 11);
-    pad("ToeTop", -1, 8, 7, 8);
-    pad("ToeLeft", -9, 4, 6, 7);
-    pad("ToeRight", 8, 4, 6, 7);
-    pad("ToeFar", 14, -1, 5, 6, 104);
-  }
-
-  private renderDottedDivider(
-    parent: Node,
-    options: { name: string; y: number; width: number; dotCount?: number }
-  ): void {
-    const dotCount = Math.max(8, options.dotCount ?? 22);
-    const startX = -options.width / 2;
-    const gap = options.width / (dotCount - 1);
-    for (let index = 0; index < dotCount; index += 1) {
-      RuntimeUI.createBox(parent, {
-        name: `${options.name}${index}`,
-        x: Math.round(startX + index * gap),
-        y: options.y,
-        width: 4,
-        height: 2,
-        color: new Color(241, 194, 147, 112),
-        radius: 1,
-      });
-    }
-  }
-
-  private renderFlowerCluster(
-    parent: Node,
-    options: { name: string; x: number; y: number; scale: number }
-  ): void {
-    const drawFlower = (name: string, x: number, y: number, scale: number): void => {
-      const petalColor = new Color(255, 133, 162, 214);
-      const centerColor = new Color(255, 227, 102, 226);
-      const petalSize = Math.round(8 * scale);
-      const petalOffset = Math.round(6 * scale);
-      const petals = [
-        { x: 0, y: petalOffset },
-        { x: 0, y: -petalOffset },
-        { x: -petalOffset, y: 0 },
-        { x: petalOffset, y: 0 },
-      ];
-      petals.forEach((petal, index) => {
-        RuntimeUI.createBox(parent, {
-          name: `${name}Petal${index}`,
-          x: Math.round(x + petal.x),
-          y: Math.round(y + petal.y),
-          width: petalSize,
-          height: petalSize,
-          color: petalColor,
-          radius: Math.round(petalSize / 2),
-        });
-      });
-      RuntimeUI.createBox(parent, {
-        name: `${name}Center`,
-        x: Math.round(x),
-        y: Math.round(y),
-        width: Math.round(7 * scale),
-        height: Math.round(7 * scale),
-        color: centerColor,
-        radius: Math.round(4 * scale),
-      });
-    };
-
-    RuntimeUI.createBox(parent, {
-      name: `${options.name}Stem`,
-      x: options.x - Math.round(8 * options.scale),
-      y: options.y - Math.round(9 * options.scale),
-      width: Math.round(4 * options.scale),
-      height: Math.round(28 * options.scale),
-      color: new Color(126, 199, 116, 178),
-      radius: Math.round(2 * options.scale),
-    });
-    RuntimeUI.createBox(parent, {
-      name: `${options.name}Leaf`,
-      x: options.x - Math.round(18 * options.scale),
-      y: options.y - Math.round(16 * options.scale),
-      width: Math.round(18 * options.scale),
-      height: Math.round(10 * options.scale),
-      color: new Color(126, 199, 116, 178),
-      radius: Math.round(8 * options.scale),
-    });
-    drawFlower(`${options.name}Large`, options.x, options.y, options.scale);
-    drawFlower(
-      `${options.name}Small`,
-      options.x - Math.round(24 * options.scale),
-      options.y - Math.round(15 * options.scale),
-      options.scale * 0.62
-    );
-  }
-
-  private renderCompanionCloudIcon(
-    parent: Node,
-    options: { name: string; x: number; y: number; size: number }
-  ): void {
-    const haloSize = Math.round(options.size * 1.18);
-    RuntimeUI.createBox(parent, {
-      name: `${options.name}Halo`,
-      x: options.x,
-      y: options.y,
-      width: haloSize,
-      height: haloSize,
-      color: new Color(255, 224, 164, 124),
-      radius: Math.round(haloSize / 2),
-    });
-
-    const cloudColor = new Color(255, 252, 241, 248);
-    const shadowColor = new Color(239, 156, 92, 62);
-    const parts = [
-      { suffix: "BaseShadow", x: 0, y: -0.14, w: 0.84, h: 0.38, color: shadowColor },
-      { suffix: "LeftShadow", x: -0.23, y: 0.02, w: 0.4, h: 0.4, color: shadowColor },
-      { suffix: "TopShadow", x: 0.02, y: 0.12, w: 0.46, h: 0.46, color: shadowColor },
-      { suffix: "RightShadow", x: 0.25, y: -0.02, w: 0.38, h: 0.38, color: shadowColor },
-      { suffix: "Base", x: 0, y: -0.1, w: 0.84, h: 0.38, color: cloudColor },
-      { suffix: "Left", x: -0.23, y: 0.06, w: 0.4, h: 0.4, color: cloudColor },
-      { suffix: "Top", x: 0.02, y: 0.16, w: 0.46, h: 0.46, color: cloudColor },
-      { suffix: "Right", x: 0.25, y: 0.02, w: 0.38, h: 0.38, color: cloudColor },
-    ];
-    parts.forEach((part) => {
-      RuntimeUI.createBox(parent, {
-        name: `${options.name}${part.suffix}`,
-        x: Math.round(options.x + options.size * part.x),
-        y: Math.round(options.y + options.size * part.y),
-        width: Math.round(options.size * part.w),
-        height: Math.round(options.size * part.h),
-        color: part.color,
-        radius: Math.round(options.size * 0.22),
-      });
-    });
-    RuntimeUI.createLabel(parent, {
-      name: `${options.name}Face`,
-      text: "⌣",
-      x: options.x,
-      y: Math.round(options.y - options.size * 0.03),
-      width: Math.round(options.size * 0.5),
-      height: Math.round(options.size * 0.28),
-      fontSize: Math.max(10, Math.round(options.size * 0.22)),
-      color: new Color(212, 117, 74, 170),
-    });
-    RuntimeUI.createBox(parent, {
-      name: `${options.name}Star`,
-      x: Math.round(options.x - options.size * 0.42),
-      y: Math.round(options.y + options.size * 0.22),
-      width: Math.round(options.size * 0.12),
-      height: Math.round(options.size * 0.12),
-      color: new Color(255, 255, 255, 176),
-      radius: Math.round(options.size * 0.06),
-    });
-  }
-
-  private renderCloudBadge(
-    parent: Node,
-    options: { name: string; x: number; y: number; size: number; text: string }
-  ): void {
-    const shadowColor = new Color(201, 116, 47, 44);
-    const outlineColor = new Color(248, 158, 74, 224);
-    const petalColor = new Color(255, 250, 231, 252);
-    const highlightColor = new Color(255, 255, 255, 92);
-    const radius = Math.round(options.size * 0.45);
-    const offsets = [
-      { x: 0, y: 0, scale: 0.9 },
-      { x: -0.23, y: 0.15, scale: 0.64 },
-      { x: 0.23, y: 0.15, scale: 0.64 },
-      { x: -0.18, y: -0.17, scale: 0.62 },
-      { x: 0.18, y: -0.17, scale: 0.62 },
-    ];
-    offsets.forEach((offset, index) => {
-      const petalX = Math.round(options.x + options.size * offset.x);
-      const petalY = Math.round(options.y + options.size * offset.y);
-      const petalSize = Math.round(options.size * offset.scale);
-      RuntimeUI.createBox(parent, {
-        name: `${options.name}PetalShadow${index}`,
-        x: petalX,
-        y: petalY - Math.round(options.size * 0.035),
-        width: petalSize,
-        height: petalSize,
-        color: shadowColor,
-        radius,
-      });
-      RuntimeUI.createBox(parent, {
-        name: `${options.name}PetalOutline${index}`,
-        x: petalX,
-        y: petalY,
-        width: petalSize,
-        height: petalSize,
-        color: outlineColor,
-        radius,
-      });
-      RuntimeUI.createBox(parent, {
-        name: `${options.name}Petal${index}`,
-        x: petalX,
-        y: petalY,
-        width: Math.max(1, petalSize - 4),
-        height: Math.max(1, petalSize - 4),
-        color: petalColor,
-        radius,
-      });
-    });
-    RuntimeUI.createBox(parent, {
-      name: `${options.name}TopGloss`,
-      x: Math.round(options.x - options.size * 0.08),
-      y: Math.round(options.y + options.size * 0.18),
-      width: Math.round(options.size * 0.46),
-      height: Math.round(options.size * 0.18),
-      color: highlightColor,
-      radius: Math.round(options.size * 0.09),
-    });
-    RuntimeUI.createLabel(parent, {
-      name: `${options.name}Text`,
-      text: options.text,
-      x: options.x,
-      y: options.y - Math.round(options.size * 0.01),
-      width: Math.round(options.size * 0.9),
-      height: Math.round(options.size * 0.34),
-      fontSize: Math.max(15, Math.round(options.size * 0.28)),
-      color: new Color(126, 68, 32, 232),
     });
   }
 
@@ -5009,7 +3461,7 @@ export class MainController extends ScreenController {
   }
 
   private handleBottomDockAction(action: BottomDockAction): void {
-    this.resetFoxInactivity();
+    this.petAnimator.resetInactivity();
     if (action === "feed") {
       void this.handleFeedAction();
       return;
@@ -5049,52 +3501,45 @@ export class MainController extends ScreenController {
       return;
     }
 
-    if (this.activePetAction) {
+    const beginResult = this.petInteraction.beginCoreAction(action);
+    if (beginResult.ok === false) {
+      if (beginResult.reason === "disposed") {
+        return;
+      }
       this.appendMainInteraction("操作进行中", "已有互动请求在处理，已忽略重复点击。");
       this.render();
       return;
     }
-
-    this.activePetAction = action;
 
     if (this.dashboardLoading) {
       this.appendMainInteraction("正在同步精灵状态", "正在等待 dashboard 同步完成，随后继续本次互动。");
       this.render();
       await (this.dashboardRefreshPromise ?? Promise.resolve(false));
       if (this.dashboardLoading) {
-        if (this.activePetAction === action) {
-          this.activePetAction = null;
-        }
+        this.petInteraction.clearCoreAction(action);
         this.appendMainInteraction("互动暂不可用", "dashboard 仍在同步中，请稍后再试。");
         this.render();
         return;
       }
     }
 
-    const viewModel = this.resolveMainViewModel();
+    const viewModel = this.createMainViewModel();
     if (action === "sleep" && viewModel.stamina !== null && viewModel.stamina >= 90) {
-      if (this.activePetAction === action) {
-        this.activePetAction = null;
-      }
+      this.petInteraction.clearCoreAction(action);
       this.appendMainInteraction("精灵现在还不困哦", "体力已经很充足，本次不发起休息请求。");
       this.render();
       return;
     }
     if (action === "play" && viewModel.stamina !== null && viewModel.stamina <= 10) {
-      if (this.activePetAction === action) {
-        this.activePetAction = null;
-      }
+      this.petInteraction.clearCoreAction(action);
       this.appendMainInteraction("精灵有点累", "先休息一下吧，本次不发起玩耍请求。");
       this.render();
       return;
     }
 
-    const now = Date.now();
-    const cooldownRemainingMs = this.corePetActionCooldownUntil - now;
+    const cooldownRemainingMs = this.petInteraction.getCoreActionCooldownRemainingMs();
     if (cooldownRemainingMs > 0) {
-      if (this.activePetAction === action) {
-        this.activePetAction = null;
-      }
+      this.petInteraction.clearCoreAction(action);
       const waitSeconds = Math.max(0.3, Math.ceil(cooldownRemainingMs / 100) / 10);
       this.appendMainInteraction("操作太快啦", `请稍等 ${waitSeconds.toFixed(1)} 秒再继续互动。`);
       this.render();
@@ -5129,7 +3574,7 @@ export class MainController extends ScreenController {
         failureTitle: "关怀失败",
         request: () => petService.careCurrentPet(),
       },
-    };
+  };
 
     const config = actionConfig[action];
     this.appendMainInteraction(config.runningTitle, "正在请求真实互动接口，不修改口粮库存。");
@@ -5137,7 +3582,7 @@ export class MainController extends ScreenController {
 
     try {
       const result = await config.request();
-      if (this.activePetAction !== action) {
+      if (!this.petInteraction.isCurrentCoreAction(action)) {
         return;
       }
 
@@ -5145,11 +3590,11 @@ export class MainController extends ScreenController {
         this.backendFeedBlocked = false;
         this.localPetMode = null;
         this.lastOfflineDecay = result.offlineDecay ?? null;
-        this.corePetActionCooldownUntil = Date.now() + CORE_PET_ACTION_COOLDOWN_MS;
+        this.petInteraction.startCoreActionCooldown();
         if (action === "sleep") {
           this.triggerVisualState(
             "sleeping",
-            this.isPetSnapshotSleeping(result.data) ? null : PET_VISUAL_PLAY_DURATION_MS
+            isPetSnapshotSleeping(result.data) ? null : PET_VISUAL_PLAY_DURATION_MS
           );
           this.showPetBubble("我休息一下……", "actionFeedback");
         } else if (action === "play") {
@@ -5161,22 +3606,20 @@ export class MainController extends ScreenController {
         }
         this.appendMainInteraction(config.successTitle, config.successDetail);
         this.render();
-        if (this.activePetAction === action) {
-          this.activePetAction = null;
-        }
+        this.petInteraction.clearCoreAction(action);
         return;
       }
 
-      this.corePetActionCooldownUntil = Date.now() + CORE_PET_ACTION_COOLDOWN_MS;
-      this.activePetAction = null;
+      this.petInteraction.startCoreActionCooldown();
+      this.petInteraction.clearCoreAction(action);
       const detail = result.message
         ? `${result.message}；未修改正式宠物状态，未修改口粮库存。`
         : "互动接口暂不可用，未修改正式宠物状态，未修改口粮库存。";
       this.appendMainInteraction(config.failureTitle, detail);
       this.render();
     } catch {
-      if (this.activePetAction === action) {
-        this.activePetAction = null;
+      if (this.petInteraction.isCurrentCoreAction(action)) {
+        this.petInteraction.clearCoreAction(action);
         this.appendMainInteraction(config.failureTitle, "请求异常，未修改正式宠物状态，未修改口粮库存。");
         this.render();
       }
@@ -5184,7 +3627,7 @@ export class MainController extends ScreenController {
   }
 
   private async handleFeedAction(): Promise<void> {
-    this.resetFoxInactivity();
+    this.petAnimator.resetInactivity();
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
       this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
       this.render();
@@ -5209,7 +3652,7 @@ export class MainController extends ScreenController {
   }
 
   private async handleFoodSelection(selectedFood: PetFoodInventoryItem): Promise<void> {
-    this.resetFoxInactivity();
+    this.petAnimator.resetInactivity();
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
       this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
       this.render();
@@ -5354,16 +3797,6 @@ export class MainController extends ScreenController {
     }
   }
 
-  private formatOfflineDecayDetail(summary: OfflineDecaySummary): string {
-    if (summary.message?.trim()) {
-      return summary.message;
-    }
-    if (typeof summary.elapsedHours === "number" && Number.isFinite(summary.elapsedHours)) {
-      return `后端已按 ${summary.elapsedHours} 小时结算离线状态，页面只展示接口返回结果。`;
-    }
-    return "后端已结算离线状态，页面只展示接口返回结果。";
-  }
-
   private resolveDashboardSyncDetail(
     offlineDecay: OfflineDecaySummary | undefined,
     dailyBasicFood: DailyBasicFoodPayload | undefined
@@ -5372,7 +3805,7 @@ export class MainController extends ScreenController {
       return "今日基础口粮已送达，记得照顾小橘哦。";
     }
     if (offlineDecay?.applied) {
-      return this.formatOfflineDecayDetail(offlineDecay);
+      return formatOfflineDecayDetail(offlineDecay);
     }
     return "已尝试读取宠物状态与口粮库存。";
   }
@@ -5385,7 +3818,7 @@ export class MainController extends ScreenController {
       return "宠物状态待同步\n不会使用假成长数值";
     }
     if (this.lastOfflineDecay?.applied) {
-      return this.formatOfflineDecayDetail(this.lastOfflineDecay);
+      return formatOfflineDecayDetail(this.lastOfflineDecay);
     }
     return `当前宠物：${viewModel.petName}\n状态来自 appState`;
   }
@@ -5398,7 +3831,7 @@ export class MainController extends ScreenController {
       height: number;
     }
   ): void {
-    const viewModel = this.resolveMainViewModel();
+    const viewModel = this.createMainViewModel();
     const cardWidth = options.width;
     const cardHeight = options.height;
     const topY = cardHeight / 2;
@@ -5407,7 +3840,7 @@ export class MainController extends ScreenController {
     const pawY = titleY + Math.round(this.getArtTuningValue("rightLogPawYOffset"));
     const pawScale = this.getArtTuningValue("rightLogPawScale");
 
-    this.renderPawTitleDecor(card, {
+    renderPawTitleDecor(card, {
       name: `${options.name}LeftPaw`,
       x: -pawX,
       y: pawY,
@@ -5424,7 +3857,7 @@ export class MainController extends ScreenController {
       fontSize: Math.max(18, Math.min(42, Math.round(cardWidth * this.getArtTuningValue("rightLogTitleFontScale")))),
       color: new Color(126, 68, 32, 240),
     });
-    this.renderPawTitleDecor(card, {
+    renderPawTitleDecor(card, {
       name: `${options.name}RightPaw`,
       x: pawX,
       y: pawY,
@@ -5469,7 +3902,7 @@ export class MainController extends ScreenController {
     });
 
     const dividerY = Math.round(topY - cardHeight * this.getArtTuningValue("rightLogDividerYRatio"));
-    this.renderDottedDivider(card, {
+    renderDottedDivider(card, {
       name: `${options.name}DottedDivider`,
       y: dividerY,
       width: Math.round(cardWidth * this.getArtTuningValue("rightLogDividerWidthRatio")),
@@ -5502,7 +3935,7 @@ export class MainController extends ScreenController {
       color: new Color(255, 255, 255, 54),
       radius: Math.round(tipHeight * 0.1),
     });
-    this.renderCompanionCloudIcon(card, {
+    renderCompanionCloudIcon(card, {
       name: `${options.name}TipIcon`,
       x: tipX + Math.round(tipWidth * this.getArtTuningValue("rightLogTipIconXRatio")),
       y: tipY + Math.round(tipHeight * this.getArtTuningValue("rightLogTipIconYRatio")),
@@ -5532,541 +3965,13 @@ export class MainController extends ScreenController {
     });
     tipBody.lineHeight = Math.round(tipBody.fontSize * 1.42);
 
-    this.renderFlowerCluster(card, {
+    renderFlowerCluster(card, {
       name: `${options.name}FlowerDecor`,
       x: Math.round(cardWidth * this.getArtTuningValue("rightLogFlowerXRatio")),
       y: Math.round(-cardHeight / 2 + this.getArtTuningValue("rightLogFlowerYOffset")),
       scale: Math.max(0.45, Math.min(1.4, (cardWidth / 310) * this.getArtTuningValue("rightLogFlowerScale"))),
     });
   }
-    // 给 MainStage 加天空 + 地面，并按 MainStage 圆角裁剪
-	// 给 MainStage 加天空 + 地面渐变底图
-	private renderStageBase(
-    stage: Node,
-    stageWidth: number,
-    stageHeight: number,
-    options?: {
-      borderThickness?: number;
-      radius?: number;
-    }
-  ): void {
-	  // 当前舞台内容区直接贴合 MainViewport 内边界。
-	  // 这里用传入的边框厚度和圆角语义算裁剪盒，避免再套一层独立舞台卡片。
-	  const stageBorderThickness = options?.borderThickness ?? 0;
-
-	  const contentWidth = Math.max(1, stageWidth - stageBorderThickness * 2);
-	  const contentHeight = Math.max(1, stageHeight - stageBorderThickness * 2);
-
-	  const contentRadius = Math.max(0, (options?.radius ?? MAIN_STAGE_RADIUS) - stageBorderThickness);
-
-	  // 创建一个真正的“圆角裁剪盒子”。
-	  // 后面的天空、地面都放进这个盒子里，而不是用一张矩形 Sprite 去盖边框。
-	  const clip = new Node("StageContentClip");
-	  clip.setParent(stage);
-	  clip.setPosition(0, 0, 0);
-
-	  const clipTransform = clip.getComponent(UITransform) ?? clip.addComponent(UITransform);
-	  clipTransform.setContentSize(contentWidth, contentHeight);
-
-	  const clipMask = clip.addComponent(Mask);
-	  clipMask.type = Mask.Type.GRAPHICS_STENCIL;
-	  clipMask.inverted = false;
-
-	  const maskGraphics = this.getGraphicsMaskSubComp(clipMask);
-	  if (!maskGraphics) {
-		return;
-	  }
-
-	  maskGraphics.clear();
-	  maskGraphics.fillColor = Color.WHITE;
-	  maskGraphics.roundRect(
-		-contentWidth / 2,
-		-contentHeight / 2,
-		contentWidth,
-		contentHeight,
-		contentRadius
-	  );
-	  maskGraphics.fill();
-
-	if (this.stageSceneBackgroundSpriteFrame) {
-	  const backgroundRect = this.stageSceneBackgroundSpriteFrame.rect;
-	  const backgroundSize =
-		backgroundRect.width > 0 && backgroundRect.height > 0
-		  ? new Size(backgroundRect.width, backgroundRect.height)
-		  : this.stageSceneBackgroundSpriteFrame.originalSize;
-	  const backgroundAspect = backgroundSize.height > 0 ? backgroundSize.width / backgroundSize.height : 1;
-	  const contentAspect = contentHeight > 0 ? contentWidth / contentHeight : 1;
-	  const backgroundWidth =
-		backgroundAspect > contentAspect ? contentHeight * backgroundAspect : contentWidth;
-	  const backgroundHeight =
-		backgroundAspect > contentAspect ? contentHeight : contentWidth / backgroundAspect;
-	  const backgroundScale = this.getArtTuningValue("stageBackgroundScale");
-	  const backgroundWidthScale = this.getArtTuningValue("stageBackgroundWidthScale");
-	  const backgroundHeightScale = this.getArtTuningValue("stageBackgroundHeightScale");
-	  const backgroundOffsetX = contentWidth * this.getArtTuningValue("stageBackgroundOffsetXRatio");
-	  const backgroundOffsetY = contentHeight * this.getArtTuningValue("stageBackgroundOffsetYRatio");
-
-	  RuntimeUI.createSpriteFrame(clip, {
-		name: "StageSceneBackground",
-		x: Math.round(backgroundOffsetX),
-		y: Math.round(backgroundOffsetY),
-		width: Math.round(backgroundWidth * backgroundScale * backgroundWidthScale),
-		height: Math.round(backgroundHeight * backgroundScale * backgroundHeightScale),
-		spriteFrame: this.stageSceneBackgroundSpriteFrame,
-	  });
-	} else {
-	  // 资源加载失败时保留旧天空 + 地面作为兜底，避免 Stage 空白。
-	  // 天空 / 地面分界线，略低于中心，接近参考页感觉。
-	const horizonY = -contentHeight * 0.03;
-
-	// 过渡带高度：先做窄一点，避免又变成一大片脏渐变。
-	const transitionHeight = 4;
-
-	const topY = contentHeight / 2;
-	const bottomY = -contentHeight / 2;
-
-	const skyBottomY = horizonY + transitionHeight / 2;
-	const floorTopY = horizonY - transitionHeight / 2;
-
-	const skyHeight = Math.max(0, topY - skyBottomY);
-	const floorHeight = Math.max(0, floorTopY - bottomY);
-
-	RuntimeUI.createBox(clip, {
-	  name: "StageSkyBase",
-	  x: 0,
-	  y: skyBottomY + skyHeight / 2,
-	  width: contentWidth,
-	  height: skyHeight,
-	  color: new Color(255, 245, 234, 255),
-	  radius: 0,
-	});
-
-	RuntimeUI.createBox(clip, {
-	  name: "StageFloorBase",
-	  x: 0,
-	  y: bottomY + floorHeight / 2,
-	  width: contentWidth,
-	  height: floorHeight,
-	  color: new Color(246, 228, 193, 255),
-	  radius: 0,
-	});
-
-	// 用少量横向色带模拟柔和过渡。
-	// 这里先用 10 条，足够柔，但不会太复杂。
-	const blendSteps = 5;
-	const bandHeight = transitionHeight / blendSteps + 1;
-
-	const skyColor = { r: 255, g: 243, b: 231 };
-	const floorColor = { r: 246, g: 228, b: 193 };
-
-	for (let index = 0; index < blendSteps; index += 1) {
-	  const t = blendSteps <= 1 ? 0 : index / (blendSteps - 1);
-
-	  const r = Math.round(skyColor.r + (floorColor.r - skyColor.r) * t);
-	  const g = Math.round(skyColor.g + (floorColor.g - skyColor.g) * t);
-	  const b = Math.round(skyColor.b + (floorColor.b - skyColor.b) * t);
-
-	  RuntimeUI.createBox(clip, {
-		name: `StageHorizonBand${index}`,
-		x: 0,
-		y: skyBottomY - bandHeight / 2 - index * (transitionHeight / blendSteps),
-		width: contentWidth,
-		height: bandHeight,
-		color: new Color(r, g, b, 255),
-		radius: 0,
-	  });
-	}
-	}
-	// 顶部云朵层：使用现成云图，并把“位置”和“大小”拆成单独参数。
-	// 美术后续只需要调这几个值：
-	// - leftCloudX / rightCloudX：左右位置
-	// - cloudY：整体高度
-	// - leftCloudScale / rightCloudScale：左右云的大小
-	const cloudY = contentHeight * this.getArtTuningValue("cloudYRatio");
-	const cloudBaseWidth = contentWidth * this.getArtTuningValue("cloudBaseWidthRatio");
-	const cloudColor = new Color(255, 255, 255, 215);
-	const leftCloudX = contentWidth * this.getArtTuningValue("leftCloudXRatio");
-	const rightCloudX = contentWidth * this.getArtTuningValue("rightCloudXRatio");
-	const leftCloudScale = this.getArtTuningValue("leftCloudScale");
-	const rightCloudScale = this.getArtTuningValue("rightCloudScale");
-	const rightCloudYOffset = contentHeight * this.getArtTuningValue("rightCloudYOffsetRatio");
-
-	this.createSdfCloud(clip, {
-	  name: "StageCloudLeftSdf",
-	  x: leftCloudX,
-	  y: cloudY,
-	  baseWidth: cloudBaseWidth,
-	  scale: leftCloudScale,
-	  color: cloudColor,
-	});
-
-	this.createSdfCloud(clip, {
-	  name: "StageCloudRightSdf",
-	  x: rightCloudX,
-	  y: cloudY + rightCloudYOffset,
-	  baseWidth: cloudBaseWidth,
-	  scale: rightCloudScale,
-	  flipX: true,
-	  color: cloudColor,
-	});
-
-	// 主舞台底部的弧形承托层。
-	// 这层对应参考页里的 StageBaseArc，作用是把地面中心轻轻托起来，
-	// 让后续安全区或角色站位不会直接“坐死”在平地上。
-	const stageBaseArcWidth = Math.min(contentWidth * this.getArtTuningValue("stageBaseArcWidthRatio"), 560);
-	const stageBaseArcHeight = Math.max(76, contentHeight * this.getArtTuningValue("stageBaseArcHeightRatio"));
-	const stageBaseArcBottom = Math.max(58, contentHeight * this.getArtTuningValue("stageBaseArcBottomRatio"));
-	RuntimeUI.createRadialGlow(clip, {
-	  name: "StageBaseArcGlow",
-	  x: 0,
-	  y: -contentHeight / 2 + stageBaseArcBottom + stageBaseArcHeight / 2,
-	  width: Math.round(stageBaseArcWidth),
-	  height: Math.round(stageBaseArcHeight),
-	  color: new Color(255, 255, 255, 54),
-	  steps: 8,
-	});
-
-	RuntimeUI.createBox(clip, {
-	  name: "StageBaseArc",
-	  x: 0,
-	  y: -contentHeight / 2 + stageBaseArcBottom + stageBaseArcHeight / 2,
-	  width: Math.round(stageBaseArcWidth * 0.9),
-	  height: Math.round(stageBaseArcHeight * 0.72),
-	  color: new Color(255, 255, 255, 44),
-	  radius: Math.round(stageBaseArcHeight),
-	});
-
-	// 地平线前面的细线层。
-	// 它不是功能线，只是帮地面和天空之间建立一个更明确的舞台“前后关系”。
-	const groundLineWidth = Math.round(contentWidth * 0.82);
-	const groundLineY = contentHeight * this.getArtTuningValue("stageGroundLineYRatio");
-	RuntimeUI.createBox(clip, {
-	  name: "StageGroundLine",
-	  x: 0,
-	  y: groundLineY,
-	  width: groundLineWidth,
-	  height: 2,
-	  color: new Color(213, 171, 118, 166),
-	  radius: 1,
-	});
-
-	// 顶部星点提示。
-	// 这层只负责补参考页上方那组很轻的小星星，让天空不再太空。
-	RuntimeUI.createLabel(clip, {
-	  name: "StageSparkles",
-	  text: "✦   ✧   ✦",
-	  x: 0,
-	  y: contentHeight * 0.43,
-	  width: 180,
-	  height: 28,
-	  fontSize: 18,
-	  color: new Color(244, 183, 79, 210),
-	});
-
-	// 中央角色展示区。
-	// 这里只接入表现层精灵图动画，正式宠物状态仍以后端快照为准。
-  const safeZoneWidth = Math.max(260, Math.min(contentWidth * this.getArtTuningValue("safeZoneWidthRatio") * 0.86, 360));
-  const safeZoneHeight = Math.max(240, Math.min(contentHeight * this.getArtTuningValue("safeZoneHeightRatio") * 0.82, 340));
-	const safeZoneY = contentHeight * this.getArtTuningValue("safeZoneYRatio");
-	const foxOffsetX = Math.round(contentWidth * this.getArtTuningValue("foxCharacterOffsetXRatio"));
-	const foxOffsetY = Math.round(contentHeight * this.getArtTuningValue("foxCharacterOffsetYRatio"));
-	const foxVisualScale = this.getArtTuningValue("foxCharacterScale");
-	const foxSpriteWidthScale = this.getArtTuningValue("foxSpriteWidthScale");
-	const foxSpriteHeightScale = this.getArtTuningValue("foxSpriteHeightScale");
-	const foxShadowAlpha = Math.round(this.getArtTuningValue("foxShadowAlpha"));
-	const foxSpriteFrame = this.getCurrentFoxSpriteFrame();
-	RuntimeUI.createBox(clip, {
-	  name: "MainCharacterGroundShadow",
-	  x: foxOffsetX,
-	  y: safeZoneY + foxOffsetY - safeZoneHeight * 0.34 * foxVisualScale,
-	  width: Math.round(safeZoneWidth * 0.58 * foxVisualScale * this.getArtTuningValue("foxShadowWidthScale")),
-	  height: Math.round(safeZoneHeight * 0.1 * foxVisualScale * this.getArtTuningValue("foxShadowHeightScale")),
-	  color: new Color(126, 88, 56, foxShadowAlpha),
-	  radius: Math.round(safeZoneHeight * 0.05),
-	});
-
-	if (foxSpriteFrame) {
-	  const characterOriginalSize = this.resolveCurrentFoxStableSize(foxSpriteFrame);
-	  const characterAspect =
-		characterOriginalSize.height > 0 ? characterOriginalSize.width / characterOriginalSize.height : 1;
-	  const parentScaleX = Math.abs(clip.worldScale.x) || 1;
-	  const parentScaleY = Math.abs(clip.worldScale.y) || 1;
-	  const characterMaxScreenWidth = safeZoneWidth * 0.92 * foxVisualScale * foxSpriteWidthScale * parentScaleX;
-	  const characterMaxScreenHeight = safeZoneHeight * 0.9 * foxVisualScale * foxSpriteHeightScale * parentScaleY;
-	  let characterScreenWidth = characterMaxScreenWidth;
-	  let characterScreenHeight = characterScreenWidth / characterAspect;
-	  if (characterScreenHeight > characterMaxScreenHeight) {
-		characterScreenHeight = characterMaxScreenHeight;
-		characterScreenWidth = characterScreenHeight * characterAspect;
-	  }
-	  this.createFoxSpriteNode(clip, {
-		x: foxOffsetX,
-		y: Math.round(safeZoneY + foxOffsetY - safeZoneHeight * 0.02 * foxVisualScale),
-		width: Math.round(characterScreenWidth / parentScaleX),
-		height: Math.round(characterScreenHeight / parentScaleY),
-		sourceSize: characterOriginalSize,
-		spriteFrame: foxSpriteFrame,
-	  });
-	} else {
-	  RuntimeUI.createBox(clip, {
-		name: "MainCharacterRestingFoxFallback",
-		x: foxOffsetX,
-		y: safeZoneY + foxOffsetY,
-		width: Math.round(safeZoneWidth * 0.55 * foxVisualScale),
-		height: Math.round(safeZoneHeight * 0.42 * foxVisualScale),
-		color: new Color(255, 255, 255, 48),
-		radius: 32,
-	  });
-	}
-
-	this.renderPetLifeOverlay(clip, {
-	  safeZoneWidth,
-	  safeZoneHeight,
-	  safeZoneY,
-	  foxOffsetX,
-	  foxOffsetY,
-	  foxVisualScale,
-	});
-
-	if (this.showShaderDebugBlock) {
-	  const shaderDebugSize = Math.min(128, Math.max(92, Math.round(Math.min(safeZoneWidth, safeZoneHeight) * 0.26)));
-	  const shaderDebugY = safeZoneY + 6;
-	  const shaderDebugRadius = 18;
-	  const shaderDebugFrame = this.getButtonGradientCarrierSpriteFrame();
-	  const shaderDebugNode = RuntimeUI.createRoundedClip(clip, {
-		name: "PetSafeZoneShaderDebug",
-		x: 0,
-		y: Math.round(shaderDebugY),
-		width: shaderDebugSize,
-		height: shaderDebugSize,
-		radius: shaderDebugRadius,
-	  });
-	  if (shaderDebugFrame) {
-		const shaderDebugSprite = RuntimeUI.createSpriteFrame(shaderDebugNode, {
-		  name: "PetSafeZoneShaderDebugFill",
-		  x: 0,
-		  y: 0,
-		  width: shaderDebugSize,
-		  height: shaderDebugSize,
-		  spriteFrame: shaderDebugFrame,
-		});
-		const shaderDebugMaterial = this.createButtonGradientMaterial({
-		  shapeRect: this.resolveSpriteWorldRect(shaderDebugSprite.node, shaderDebugSize, shaderDebugSize),
-		});
-		if (shaderDebugMaterial) {
-		  shaderDebugSprite.sprite.customMaterial = shaderDebugMaterial;
-		  shaderDebugSprite.sprite.setMaterial(shaderDebugMaterial, 0);
-		}
-	  } else {
-		RuntimeUI.createBox(shaderDebugNode, {
-		  name: "PetSafeZoneShaderDebugFallback",
-		  x: 0,
-		  y: 0,
-		  width: shaderDebugSize,
-		  height: shaderDebugSize,
-		  color: new Color(255, 0, 255, 255),
-		  radius: shaderDebugRadius,
-		});
-	  }
-	  RuntimeUI.createCard(clip, {
-		name: "PetSafeZoneShaderDebugOutline",
-		x: 0,
-		y: Math.round(shaderDebugY),
-		width: shaderDebugSize,
-		height: shaderDebugSize,
-		style: "shell",
-		borderColor: new Color(235, 207, 180, 214),
-		radius: shaderDebugRadius,
-		lineWidth: 1,
-	  });
-	  RuntimeUI.createLabel(clip, {
-		name: "PetSafeZoneShaderDebugLabel",
-		text: shaderDebugFrame ? "SHADER MATERIAL" : "SHADER FALLBACK",
-		x: 0,
-		y: Math.round(shaderDebugY - shaderDebugSize / 2 - 18),
-		width: 132,
-		height: 18,
-		fontSize: 11,
-		color: new Color(126, 93, 69, 188),
-	  });
-	}
-
-	// 地面两侧草丛占位。
-	// 这里先用几团半圆草包建立左右落点，避免画面底部太空。
-	const grassY = contentHeight * this.getArtTuningValue("grassYRatio");
-	const grassTufts = [
-	  { x: -contentWidth * 0.44, width: 28, height: 18, color: new Color(114, 211, 154, 228) },
-	  { x: -contentWidth * 0.34, width: 24, height: 16, color: new Color(140, 221, 173, 224) },
-	  { x: contentWidth * 0.26, width: 30, height: 18, color: new Color(167, 230, 190, 220) },
-	  { x: contentWidth * 0.41, width: 30, height: 20, color: new Color(111, 202, 149, 228) },
-	];
-	for (const tuft of grassTufts) {
-	  RuntimeUI.createBox(clip, {
-		name: `GrassTuft${Math.round(tuft.x)}`,
-		x: tuft.x,
-		y: grassY,
-		width: tuft.width,
-		height: tuft.height,
-		color: tuft.color,
-		radius: Math.max(tuft.width, tuft.height),
-	  });
-	}
-
-	// 两侧花形标记。
-	// 先用“花芯 + 四瓣”的方式做近似，尽量贴近参考页的小花落点。
-	const createStageMarker = (name: string, x: number, y: number, scale: number): void => {
-	  const marker = new Node(name);
-	  marker.setParent(clip);
-	  marker.setPosition(x, y, 0);
-	  marker.setScale(scale, scale, 1);
-	  const markerTransform = marker.getComponent(UITransform) ?? marker.addComponent(UITransform);
-	  markerTransform.setContentSize(32, 32);
-
-	  const petals = [
-		{ x: 0, y: 9 },
-		{ x: 0, y: -9 },
-		{ x: -9, y: 0 },
-		{ x: 9, y: 0 },
-	  ];
-	  for (const petal of petals) {
-		RuntimeUI.createBox(marker, {
-		  name: `${name}Petal${petal.x}_${petal.y}`,
-		  x: petal.x,
-		  y: petal.y,
-		  width: 10,
-		  height: 10,
-		  color: new Color(255, 255, 255, 246),
-		  radius: 5,
-		});
-	  }
-	  RuntimeUI.createBox(marker, {
-		name: `${name}CenterOuter`,
-		x: 0,
-		y: 0,
-		width: 18,
-		height: 18,
-		color: new Color(255, 255, 255, 246),
-		radius: 9,
-	  });
-	  RuntimeUI.createBox(marker, {
-		name: `${name}CenterInner`,
-		x: 0,
-		y: 0,
-		width: 8,
-		height: 8,
-		color: new Color(247, 184, 200, 255),
-		radius: 4,
-	  });
-	};
-	createStageMarker("StageMarkerLeft", -contentWidth * 0.31, -contentHeight * 0.285, 1);
-	createStageMarker("StageMarkerRight", contentWidth * 0.39, -contentHeight * 0.278, 0.85);
-
-	clip.setSiblingIndex(1);
-	}
-
-  private renderPetLifeOverlay(
-    clip: Node,
-    options: {
-      safeZoneWidth: number;
-      safeZoneHeight: number;
-      safeZoneY: number;
-      foxOffsetX: number;
-      foxOffsetY: number;
-      foxVisualScale: number;
-    }
-  ): void {
-    const petCenterX = options.foxOffsetX;
-    const petCenterY = Math.round(options.safeZoneY + options.foxOffsetY);
-    const visualCopy = this.resolveVisualStateCopy();
-    if (visualCopy) {
-      RuntimeUI.createCard(clip, {
-        name: "PetLifeVisualStatePill",
-        x: petCenterX + Math.round(options.safeZoneWidth * 0.31),
-        y: petCenterY + Math.round(options.safeZoneHeight * 0.18 * options.foxVisualScale),
-        width: 84,
-        height: 34,
-        color: new Color(255, 245, 221, 214),
-        innerColor: new Color(255, 255, 255, 96),
-        borderColor: new Color(242, 203, 154, 190),
-        radius: 17,
-        innerRadius: 13,
-        borderThickness: 2,
-      });
-      RuntimeUI.createLabel(clip, {
-        name: "PetLifeVisualStateText",
-        text: visualCopy,
-        x: petCenterX + Math.round(options.safeZoneWidth * 0.31),
-        y: petCenterY + Math.round(options.safeZoneHeight * 0.18 * options.foxVisualScale),
-        width: 72,
-        height: 24,
-        fontSize: 16,
-        color: new Color(126, 68, 32, 232),
-      });
-    }
-
-    if (!this.petBubble) {
-      return;
-    }
-
-    const bubbleWidth = Math.max(210, Math.min(330, Math.round(options.safeZoneWidth * 0.86)));
-    const bubbleHeight = 68;
-    const bubbleX = Math.round(petCenterX + options.safeZoneWidth * 0.02);
-    const bubbleY = Math.round(petCenterY + options.safeZoneHeight * 0.45);
-    RuntimeUI.createCard(clip, {
-      name: "PetLifeBubble",
-      x: bubbleX,
-      y: bubbleY,
-      width: bubbleWidth,
-      height: bubbleHeight,
-      color: new Color(238, 180, 112, 218),
-      innerColor: new Color(255, 249, 237, 240),
-      borderColor: new Color(255, 226, 190, 220),
-      radius: 22,
-      innerRadius: 18,
-      borderThickness: 2,
-    });
-    RuntimeUI.createBox(clip, {
-      name: "PetLifeBubbleTail",
-      x: bubbleX - Math.round(bubbleWidth * 0.25),
-      y: bubbleY - Math.round(bubbleHeight * 0.44),
-      width: 24,
-      height: 14,
-      color: new Color(238, 180, 112, 218),
-      radius: 7,
-    });
-    const bubbleLabel = RuntimeUI.createLabel(clip, {
-      name: "PetLifeBubbleText",
-      text: this.petBubble.text,
-      x: bubbleX,
-      y: bubbleY,
-      width: bubbleWidth - 34,
-      height: bubbleHeight - 18,
-      fontSize: 18,
-      color: new Color(116, 72, 43, 240),
-    });
-    bubbleLabel.lineHeight = 24;
-    bubbleLabel.enableWrapText = true;
-    bubbleLabel.overflow = Label.Overflow.CLAMP;
-  }
-
-  private resolveVisualStateCopy(): string | null {
-    switch (this.activeVisualState) {
-      case "eating":
-        return "好吃";
-      case "playing":
-        return "☆ 玩耍";
-      case "sleeping":
-        return "Zz";
-      case "listening":
-        return "♪";
-      case "soothed":
-        return "♡";
-      case "serverDerived":
-      default:
-        return null;
-    }
-  }
-
   private renderReferenceButton(shell: Node, layout: MainLayout): void {
     RuntimeUI.createBox(shell, {
       name: "ReferenceButtonShadow",
@@ -6104,7 +4009,7 @@ export class MainController extends ScreenController {
     if (existing && !existing.closed) {
       existing.focus();
       existing.document.open();
-      existing.document.write(this.getArtDebugPageHtml());
+      existing.document.write(ART_DEBUG_PAGE_HTML);
       existing.document.close();
       return;
     }
@@ -6116,7 +4021,7 @@ export class MainController extends ScreenController {
 
     this.artDebugPageWindow = popup;
     popup.document.open();
-    popup.document.write(this.getArtDebugPageHtml());
+    popup.document.write(ART_DEBUG_PAGE_HTML);
     popup.document.close();
     popup.focus();
   }
@@ -6167,869 +4072,4 @@ export class MainController extends ScreenController {
 
     this.artDebugPageWindow = null;
   }
-
-  private getArtDebugPageHtml(): string {
-    return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>主界面美术调参页</title>
-  <style>
-    :root {
-      --bg: #fdf5ec;
-      --panel: rgba(255, 250, 243, 0.92);
-      --panel-strong: #fffaf4;
-      --line: #ebcfb4;
-      --text: #6e4a33;
-      --muted: #9c7b63;
-      --brand: #f79b34;
-      --brand-soft: rgba(247, 155, 52, 0.14);
-      --shadow: 0 18px 36px rgba(187, 129, 62, 0.12);
-    }
-
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(255,255,255,0.88) 0%, transparent 30%),
-        radial-gradient(circle at bottom right, rgba(255,225,192,0.55) 0%, transparent 28%),
-        linear-gradient(180deg, #fcf2e6 0%, #f6e6d4 100%);
-      color: var(--text);
-      padding: 18px;
-    }
-
-    .app {
-      max-width: 960px;
-      margin: 0 auto;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 26px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-
-    .hero {
-      padding: 22px 24px 16px;
-      border-bottom: 1px solid rgba(235, 207, 180, 0.72);
-      background: linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,248,241,0.78) 100%);
-    }
-
-    .hero h1 {
-      margin: 0 0 8px;
-      font-size: 26px;
-      line-height: 1.2;
-    }
-
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      padding: 16px 24px 0;
-    }
-
-    .toolbar button {
-      border: 0;
-      border-radius: 999px;
-      padding: 10px 16px;
-      background: var(--panel-strong);
-      color: var(--text);
-      font-size: 14px;
-      cursor: pointer;
-      box-shadow: inset 0 0 0 1px rgba(235, 207, 180, 0.95);
-    }
-
-    .toolbar button.primary {
-      background: linear-gradient(180deg, #ffb760 0%, #f79b34 100%);
-      color: #fff;
-      box-shadow: 0 10px 20px rgba(247, 155, 52, 0.24);
-    }
-
-    .status {
-      padding: 10px 24px 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 14px;
-      padding: 18px 24px 24px;
-    }
-
-    .section {
-      background: rgba(255,255,255,0.62);
-      border: 1px solid rgba(235, 207, 180, 0.9);
-      border-radius: 22px;
-      padding: 16px;
-    }
-
-    .section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin: 0 0 12px;
-    }
-
-    .section h2 {
-      margin: 0;
-      font-size: 17px;
-    }
-
-    .section-toggle {
-      width: 34px;
-      height: 28px;
-      border: 0;
-      border-radius: 999px;
-      background: rgba(255, 250, 243, 0.92);
-      color: var(--brand);
-      cursor: pointer;
-      font-size: 15px;
-      line-height: 28px;
-      box-shadow: inset 0 0 0 1px rgba(235, 207, 180, 0.95);
-    }
-
-    .section-body[hidden] {
-      display: none;
-    }
-
-    .section.is-collapsed {
-      padding-bottom: 12px;
-    }
-
-    .section.is-collapsed .section-head {
-      margin-bottom: 0;
-    }
-
-    .field {
-      padding: 12px;
-      border-radius: 18px;
-      background: rgba(255, 250, 243, 0.9);
-      box-shadow: inset 0 0 0 1px rgba(242, 221, 200, 0.9);
-    }
-
-    .field + .field {
-      margin-top: 10px;
-    }
-
-    .field-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
-    }
-
-    .field-title {
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .field-value {
-      font-size: 12px;
-      color: var(--brand);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .field-desc {
-      margin: 0 0 10px;
-      font-size: 12px;
-      line-height: 1.5;
-      color: var(--muted);
-    }
-
-    .field-controls {
-      display: grid;
-      grid-template-columns: 52px 1fr 52px 92px;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .field-bound {
-      font-size: 11px;
-      color: var(--muted);
-      text-align: center;
-      font-variant-numeric: tabular-nums;
-    }
-
-    input[type="range"] {
-      width: 100%;
-      accent-color: var(--brand);
-    }
-
-    input[type="number"] {
-      width: 100%;
-      border: 1px solid rgba(235, 207, 180, 0.95);
-      border-radius: 12px;
-      background: #fffefb;
-      color: var(--text);
-      padding: 8px 10px;
-      font-size: 13px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .footer {
-      padding: 0 24px 24px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.6;
-    }
-  </style>
-</head>
-<body>
-  <main class="app">
-    <section class="hero">
-      <h1>主界面美术调参页</h1>
-      <p>这里集中管理当前 Main 运行时 UI 的关键视觉参数。滑杆或数值框修改后会立即回写到主界面，并保存在当前浏览器本地缓存中，方便美术连续调效果。</p>
-    </section>
-    <section class="toolbar">
-      <button id="refreshButton">同步当前值</button>
-      <button id="referenceButton">打开参考页</button>
-      <button id="resetButton" class="primary">恢复默认</button>
-    </section>
-    <div class="status" id="status">正在连接主界面…</div>
-    <section class="grid" id="sections"></section>
-    <div class="footer">
-      当前仅暴露主界面最影响视觉效果的一组参数：壳层、舞台、顶栏、底栏。后续如果某个区块还需要更细颗粒度，我们可以继续往这张调参页里补。
-    </div>
-  </main>
-  <script>
-    (function () {
-      var BRIDGE_KEY = "__BUDDY_CLIENT_ART_DEBUG__";
-      var controlsByKey = {};
-      var fieldByKey = {};
-      var collapsedSections = {};
-
-      function getBridge() {
-        return window.opener && window.opener[BRIDGE_KEY];
-      }
-
-      function getSnapshot() {
-        var bridge = getBridge();
-        return bridge ? bridge.getSnapshot() : null;
-      }
-
-      function resolveDecimals(step) {
-        var text = String(step);
-        var dot = text.indexOf(".");
-        return dot === -1 ? 0 : text.length - dot - 1;
-      }
-
-      function formatValue(field, value) {
-        return Number(value).toFixed(resolveDecimals(field.step));
-      }
-
-      function formatBound(field, value) {
-        return Number(value).toFixed(resolveDecimals(field.step));
-      }
-
-      function setStatus(text, tone) {
-        var status = document.getElementById("status");
-        if (!status) return;
-        status.textContent = text;
-        status.style.color = tone || "#9c7b63";
-      }
-
-      function isSectionCollapsed(sectionName) {
-        return collapsedSections[sectionName] !== false;
-      }
-
-      function build(snapshot) {
-        var container = document.getElementById("sections");
-        if (!container) return;
-        container.innerHTML = "";
-        controlsByKey = {};
-        fieldByKey = {};
-
-        var grouped = {};
-        snapshot.fields.forEach(function (field) {
-          fieldByKey[field.key] = field;
-          if (!grouped[field.section]) grouped[field.section] = [];
-          grouped[field.section].push(field);
-        });
-
-        Object.keys(grouped).forEach(function (sectionName) {
-          var sectionCollapsed = isSectionCollapsed(sectionName);
-          var section = document.createElement("section");
-          section.className = "section";
-          if (sectionCollapsed) {
-            section.classList.add("is-collapsed");
-          }
-
-          var sectionHead = document.createElement("div");
-          sectionHead.className = "section-head";
-
-          var title = document.createElement("h2");
-          title.textContent = sectionName;
-          sectionHead.appendChild(title);
-
-          var toggle = document.createElement("button");
-          toggle.type = "button";
-          toggle.className = "section-toggle";
-          toggle.setAttribute("aria-label", sectionName + " 参数卷展");
-          toggle.setAttribute("aria-expanded", sectionCollapsed ? "false" : "true");
-          toggle.textContent = sectionCollapsed ? "∨" : "∧";
-          sectionHead.appendChild(toggle);
-          section.appendChild(sectionHead);
-
-          var body = document.createElement("div");
-          body.className = "section-body";
-          body.hidden = sectionCollapsed;
-
-          toggle.addEventListener("click", function () {
-            var collapsed = !body.hidden;
-            body.hidden = collapsed;
-            collapsedSections[sectionName] = collapsed;
-            section.classList.toggle("is-collapsed", collapsed);
-            toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-            toggle.textContent = collapsed ? "∨" : "∧";
-          });
-
-          grouped[sectionName].forEach(function (field) {
-            var row = document.createElement("div");
-            row.className = "field";
-
-            var head = document.createElement("div");
-            head.className = "field-head";
-
-            var label = document.createElement("div");
-            label.className = "field-title";
-            label.textContent = field.label;
-
-            var value = document.createElement("div");
-            value.className = "field-value";
-            value.textContent = formatValue(field, snapshot.state[field.key]);
-
-            head.appendChild(label);
-            head.appendChild(value);
-            row.appendChild(head);
-
-            var desc = document.createElement("p");
-            desc.className = "field-desc";
-            desc.textContent = field.description;
-            row.appendChild(desc);
-
-            var controls = document.createElement("div");
-            controls.className = "field-controls";
-
-            var minLabel = document.createElement("div");
-            minLabel.className = "field-bound";
-            minLabel.textContent = formatBound(field, field.min);
-
-            var range = document.createElement("input");
-            range.id = "main-art-tuning-" + field.key + "-range";
-            range.name = field.key + "_range";
-            range.type = "range";
-            range.min = String(field.min);
-            range.max = String(field.max);
-            range.step = String(field.step);
-            range.value = String(snapshot.state[field.key]);
-
-            var maxLabel = document.createElement("div");
-            maxLabel.className = "field-bound";
-            maxLabel.textContent = formatBound(field, field.max);
-
-            var number = document.createElement("input");
-            number.id = "main-art-tuning-" + field.key + "-number";
-            number.name = field.key + "_number";
-            number.type = "number";
-            number.min = String(field.min);
-            number.max = String(field.max);
-            number.step = String(field.step);
-            number.value = String(snapshot.state[field.key]);
-
-            controls.appendChild(minLabel);
-            controls.appendChild(range);
-            controls.appendChild(maxLabel);
-            controls.appendChild(number);
-            row.appendChild(controls);
-            body.appendChild(row);
-
-            controlsByKey[field.key] = { value: value, range: range, number: number };
-
-            range.addEventListener("input", function () {
-              number.value = range.value;
-              commit(field.key, range.value);
-            });
-
-            number.addEventListener("change", function () {
-              range.value = number.value;
-              commit(field.key, number.value);
-            });
-          });
-
-          section.appendChild(body);
-          container.appendChild(section);
-        });
-      }
-
-      function applyState(state) {
-        Object.keys(controlsByKey).forEach(function (key) {
-          var controls = controlsByKey[key];
-          var field = fieldByKey[key];
-          if (!controls || !field) return;
-          var formatted = formatValue(field, state[key]);
-          controls.value.textContent = formatted;
-          if (document.activeElement !== controls.range) {
-            controls.range.value = String(state[key]);
-          }
-          if (document.activeElement !== controls.number) {
-            controls.number.value = String(state[key]);
-          }
-        });
-      }
-
-      function commit(key, rawValue) {
-        var bridge = getBridge();
-        if (!bridge) {
-          setStatus("主界面连接已断开，请回到游戏重新打开调参页。", "#c55b38");
-          return;
-        }
-
-        var value = Number(rawValue);
-        if (!Number.isFinite(value)) {
-          return;
-        }
-
-        bridge.setValue(key, value);
-        var snapshot = bridge.getSnapshot();
-        applyState(snapshot.state);
-        setStatus("已回写到主界面，可直接对照场景看效果。");
-      }
-
-      function boot() {
-        var snapshot = getSnapshot();
-        if (!snapshot) {
-          setStatus("未连接到主界面。请从游戏里的“测试面板”重新打开。", "#c55b38");
-          return;
-        }
-
-        build(snapshot);
-        applyState(snapshot.state);
-        setStatus("已连接主界面，当前数值与运行时同步。");
-      }
-
-      document.getElementById("refreshButton").addEventListener("click", function () {
-        boot();
-      });
-
-      document.getElementById("referenceButton").addEventListener("click", function () {
-        var bridge = getBridge();
-        if (bridge) {
-          bridge.openReferencePage();
-        }
-      });
-
-      document.getElementById("resetButton").addEventListener("click", function () {
-        var bridge = getBridge();
-        if (!bridge) {
-          return;
-        }
-
-        bridge.reset();
-        boot();
-      });
-
-      window.setInterval(function () {
-        var snapshot = getSnapshot();
-        if (!snapshot) {
-          return;
-        }
-
-        if (!Object.keys(controlsByKey).length) {
-          build(snapshot);
-        }
-        applyState(snapshot.state);
-      }, 900);
-
-      boot();
-    })();
-  </script>
-</body>
-</html>`;
-  }
 }
-
-const REFERENCE_PAGE_HTML = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>电子宠物乐园 - 主舞台底层场景</title>
-  <style>
-    :root {
-      --bg-primary: #FBF2E8;
-      --bg-secondary: #F7E9D8;
-      --brand: #F79B34;
-      --gold: #F4B74F;
-      --mint: #72D39A;
-      --text-primary: #6E4A33;
-      --border-soft: #EBCFB4;
-      --border-inner: #F2DDC8;
-      --shadow: 0 14px 28px rgba(187, 129, 62, 0.10), 0 6px 12px rgba(187, 129, 62, 0.07);
-      --inner-shadow: inset 0 0 0 2px rgba(255,255,255,0.45);
-      --radius-xl: 32px;
-      --radius-lg: 24px;
-      --radius-pill: 999px;
-    }
-
-    * { box-sizing: border-box; }
-
-    html, body {
-      height: 100%;
-      margin: 0;
-      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-      background:
-        radial-gradient(circle at top left, #fff7ef 0%, transparent 32%),
-        radial-gradient(circle at bottom right, #fce6ce 0%, transparent 26%),
-        linear-gradient(180deg, #FDF5EC 0%, #F8EBDD 100%);
-      color: var(--text-primary);
-    }
-
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .AppShell {
-      width: min(1280px, 100%);
-      aspect-ratio: 4 / 3;
-      min-height: 720px;
-      background: linear-gradient(180deg, var(--bg-primary), #F9EEDF);
-      border: 2px solid var(--border-soft);
-      border-radius: 38px;
-      box-shadow: var(--shadow);
-      position: relative;
-      overflow: hidden;
-      padding: 18px;
-    }
-
-    .AppShell::before,
-    .AppShell::after {
-      content: "";
-      position: absolute;
-      pointer-events: none;
-      border-radius: 50%;
-      opacity: 0.35;
-    }
-
-    .AppShell::before {
-      width: 240px;
-      height: 240px;
-      left: -70px;
-      top: -70px;
-      background: radial-gradient(circle, #FFE8C8 0%, transparent 70%);
-    }
-
-    .AppShell::after {
-      width: 300px;
-      height: 300px;
-      right: -90px;
-      bottom: -110px;
-      background: radial-gradient(circle, #FFD8C4 0%, transparent 72%);
-    }
-
-    .ShellFrame {
-      height: 100%;
-      border-radius: 30px;
-      border: 2px solid rgba(255,255,255,0.55);
-      box-shadow: var(--inner-shadow);
-      padding: 22px;
-      position: relative;
-      z-index: 1;
-      display: flex;
-    }
-
-    .MainViewport {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      border-radius: var(--radius-xl);
-      border: 2px solid var(--border-soft);
-      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.45);
-      background: rgba(255, 249, 241, 0.72);
-      padding: 16px;
-      overflow: hidden;
-    }
-
-    .MainStage {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      border-radius: 28px;
-      border: 1.5px solid var(--border-inner);
-      overflow: hidden;
-      background:
-        linear-gradient(180deg, #FFF8F4 0%, #FFF4E8 48%, #F8E7C9 49%, #F1DEB8 100%);
-      isolation: isolate;
-    }
-
-    .MainStage::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        radial-gradient(circle at 18% 16%, rgba(255,255,255,0.96) 0 9%, transparent 9.5%),
-        radial-gradient(circle at 26% 20%, rgba(255,255,255,0.84) 0 7%, transparent 7.5%),
-        radial-gradient(circle at 72% 14%, rgba(255,255,255,0.94) 0 10%, transparent 10.5%),
-        radial-gradient(circle at 82% 20%, rgba(255,255,255,0.82) 0 7%, transparent 7.5%),
-        radial-gradient(circle at 10% 70%, rgba(247, 223, 162, 0.7) 0 1.8%, transparent 1.9%),
-        radial-gradient(circle at 20% 76%, rgba(155, 223, 163, 0.8) 0 2.3%, transparent 2.4%),
-        radial-gradient(circle at 76% 72%, rgba(243, 168, 196, 0.7) 0 1.8%, transparent 1.9%),
-        radial-gradient(circle at 84% 78%, rgba(160, 221, 182, 0.8) 0 2.1%, transparent 2.2%);
-      z-index: 0;
-    }
-
-    .AmbientLayer {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    .AmbientLayer::before {
-      content: "✦  ✧  ✦";
-      position: absolute;
-      top: 18px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: rgba(244, 183, 79, 0.82);
-      font-size: 18px;
-      letter-spacing: 10px;
-      text-shadow: 0 0 12px rgba(255,255,255,0.65);
-    }
-
-    .AmbientGlow {
-      position: absolute;
-      inset: 0;
-      background:
-        radial-gradient(circle at 50% 12%, rgba(255,255,255,0.38) 0%, transparent 28%),
-        radial-gradient(circle at 50% 100%, rgba(255, 214, 161, 0.22) 0%, transparent 38%);
-      z-index: 1;
-    }
-
-    .StageSkeleton {
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      pointer-events: none;
-    }
-
-    .StageFloor {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 46%;
-      background: linear-gradient(180deg, rgba(249,232,204,0) 0%, rgba(244,225,189,0.82) 22%, #F4E1BD 100%);
-    }
-
-    .StageBaseArc {
-      position: absolute;
-      left: 50%;
-      bottom: 58px;
-      transform: translateX(-50%);
-      width: min(70%, 720px);
-      height: 132px;
-      border-radius: 50%;
-      background: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.15) 38%, rgba(231,197,149,0.42) 66%, rgba(209,168,111,0.18) 100%);
-      filter: blur(2px);
-      opacity: 0.9;
-    }
-
-    .StageGroundLine {
-      position: absolute;
-      left: 8%;
-      right: 8%;
-      bottom: 92px;
-      height: 2px;
-      background: linear-gradient(90deg, transparent 0%, rgba(213,171,118,0.65) 16%, rgba(213,171,118,0.65) 84%, transparent 100%);
-    }
-
-    .PetSafeZone {
-      position: absolute;
-      left: 50%;
-      bottom: 86px;
-      transform: translateX(-50%);
-      width: min(42%, 420px);
-      height: min(56%, 420px);
-      min-width: 280px;
-      min-height: 280px;
-      border-radius: 28px;
-      border: 2px dashed rgba(247, 155, 52, 0.34);
-      background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 100%);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22);
-      z-index: 3;
-    }
-
-    .PetSafeZone::before {
-      content: "PET SAFE ZONE";
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 6px 12px;
-      border-radius: var(--radius-pill);
-      background: rgba(255,255,255,0.78);
-      border: 1px solid rgba(247, 155, 52, 0.18);
-      color: rgba(110, 74, 51, 0.72);
-      font-size: 12px;
-      letter-spacing: 0.14em;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .PetAnchor {
-      position: absolute;
-      left: 50%;
-      bottom: 36px;
-      transform: translateX(-50%);
-      width: 110px;
-      height: 18px;
-      border-radius: var(--radius-pill);
-      background: rgba(247, 155, 52, 0.18);
-      border: 1px solid rgba(247, 155, 52, 0.24);
-    }
-
-    .GrassLayer {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 74px;
-      height: 58px;
-      background:
-        radial-gradient(circle at 9% 90%, #72D39A 0 13px, transparent 14px),
-        radial-gradient(circle at 18% 100%, #8CDDAD 0 12px, transparent 13px),
-        radial-gradient(circle at 72% 100%, #A7E6BE 0 15px, transparent 16px),
-        radial-gradient(circle at 86% 92%, #6FCA95 0 14px, transparent 15px);
-      opacity: 0.64;
-      z-index: 2;
-    }
-
-    .StageMarker {
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: #fff;
-      box-shadow:
-        0 -8px 0 0 #fff,
-        0 8px 0 0 #fff,
-        -8px 0 0 0 #fff,
-        8px 0 0 0 #fff,
-        0 0 0 5px #F7B8C8 inset;
-      opacity: 0.92;
-      z-index: 2;
-    }
-
-    .StageMarker.left { left: 18%; bottom: 96px; }
-    .StageMarker.right { right: 14%; bottom: 100px; transform: scale(0.85); }
-
-    .StageHint {
-      position: absolute;
-      top: 18px;
-      right: 18px;
-      z-index: 4;
-      padding: 10px 14px;
-      border-radius: var(--radius-pill);
-      background: rgba(255,255,255,0.74);
-      border: 1px solid var(--border-inner);
-      color: rgba(110, 74, 51, 0.78);
-      font-size: 13px;
-      font-weight: 700;
-      backdrop-filter: blur(4px);
-    }
-
-    .FooterTip {
-      position: absolute;
-      left: 26px;
-      bottom: 24px;
-      font-size: 12px;
-      color: rgba(156, 123, 99, 0.8);
-      z-index: 2;
-    }
-
-    @media (max-width: 1100px) {
-      body { padding: 12px; }
-      .AppShell { min-height: 660px; }
-      .PetSafeZone { width: min(50%, 420px); }
-    }
-
-    @media (max-width: 920px) {
-      .AppShell {
-        aspect-ratio: auto;
-        min-height: auto;
-      }
-
-      .ShellFrame {
-        min-height: 78vh;
-      }
-
-      .PetSafeZone {
-        width: min(68%, 420px);
-        min-width: 240px;
-        min-height: 250px;
-      }
-
-      .FooterTip {
-        position: static;
-        margin-top: 12px;
-      }
-    }
-
-    @media (max-width: 640px) {
-      .ShellFrame { padding: 14px; }
-      .MainViewport { padding: 12px; }
-      .StageHint {
-        right: 12px;
-        top: 12px;
-        font-size: 12px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <main class="AppShell" aria-label="电子宠物乐园主舞台壳层">
-    <div class="ShellFrame">
-      <section class="MainViewport" aria-label="主视口 MainViewport">
-        <section class="MainStage" aria-label="主舞台 MainStage">
-          <div class="AmbientLayer" aria-hidden="true">
-            <div class="AmbientGlow"></div>
-          </div>
-
-          <div class="StageSkeleton" aria-hidden="true">
-            <div class="StageFloor"></div>
-            <div class="StageBaseArc"></div>
-            <div class="StageGroundLine"></div>
-            <div class="GrassLayer"></div>
-            <div class="StageMarker left"></div>
-            <div class="StageMarker right"></div>
-          </div>
-
-          <div class="PetSafeZone" aria-label="宠物安全区">
-            <div class="PetAnchor" aria-hidden="true"></div>
-          </div>
-
-          <div class="StageHint">仅保留底层画布 / 主舞台骨架</div>
-        </section>
-      </section>
-    </div>
-
-    <div class="FooterTip">当前版本：仅保留壳层、MainViewport、MainStage、氛围层、宠物安全区与舞台基础骨架</div>
-  </main>
-</body>
-</html>`;
