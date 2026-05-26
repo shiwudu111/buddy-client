@@ -39,10 +39,6 @@ type InventoryUseResponse = ApiResponse<UseInventoryItemResultPayload> & {
   offlineDecay?: OfflineDecaySummary;
 };
 
-type DiaryResponse = ApiResponse<DiaryPayload> & {
-  data?: DiaryPayload;
-};
-
 class PetService {
   async refreshDashboard(
     canCommit?: () => boolean
@@ -144,34 +140,24 @@ class PetService {
       };
     }
 
-    const logsResult = await apiClient.getPetLogs(petId, { days });
-    let sourcePayload = this.extractDiaryPayload(logsResult);
-    let sourceStatusCode = logsResult.statusCode;
+    const eventsResult = await apiClient.getPetEvents(petId, 100);
+    let sourcePayload = this.extractDiaryPayload(eventsResult);
+    let sourceStatusCode = eventsResult.statusCode;
 
-    if (!sourcePayload && this.shouldFallbackDiaryLogsToEvents(logsResult)) {
-      const eventsResult = await apiClient.getPetEvents(petId, 100);
-      sourcePayload = this.extractDiaryPayload(eventsResult);
-      sourceStatusCode = eventsResult.statusCode;
-      if (!sourcePayload) {
-        return {
-          success: false,
-          message: eventsResult.success
-            ? "日记事件接口返回不完整"
-            : eventsResult.message ?? "日记暂未同步，请稍后再试",
-          code: eventsResult.code,
-          statusCode: eventsResult.statusCode,
-        };
-      }
+    if (!sourcePayload) {
+      const logsResult = await apiClient.getPetLogs(petId, { days });
+      sourcePayload = this.extractDiaryPayload(logsResult);
+      sourceStatusCode = logsResult.statusCode;
     }
 
     if (!sourcePayload) {
       return {
         success: false,
-        message: logsResult.success
+        message: eventsResult.success
           ? "日记接口返回不完整"
-          : logsResult.message ?? "日记暂未同步，请稍后再试",
-        code: logsResult.code,
-        statusCode: logsResult.statusCode,
+          : eventsResult.message ?? "日记暂未同步，请稍后再试",
+        code: eventsResult.code,
+        statusCode: eventsResult.statusCode,
       };
     }
 
@@ -266,8 +252,12 @@ class PetService {
     appState.setPetId(pet.pet_id);
     appState.setCurrentPet(pet);
     appState.setPetFoodInventory(this.normalizeDashboardFoodInventory(payload));
-    if (payload.recent_events?.length) {
-      appState.setMainEvents(payload.recent_events);
+    if (Array.isArray(payload.recent_events)) {
+      const recentEvents = this.normalizeMainEvents(payload.recent_events);
+      appState.setMainEvents(recentEvents);
+      if (recentEvents.length) {
+        appState.setDiaryDays(this.normalizeDiaryDays({ events: recentEvents }, 7));
+      }
     }
     return pet;
   }
@@ -394,15 +384,6 @@ class PetService {
     return Array.isArray(events) ? (events as MainEventEntry[]) : [];
   }
 
-  private shouldFallbackDiaryLogsToEvents(result: DiaryResponse): boolean {
-    return (
-      result.statusCode === 404 ||
-      result.statusCode === 405 ||
-      result.statusCode === 501 ||
-      result.code === "NOT_IMPLEMENTED"
-    );
-  }
-
   private extractDiaryPayload(result: ApiResponse<unknown>): DiaryPayload | null {
     const data = result.data;
     if (this.isDiaryPayload(data)) {
@@ -485,7 +466,21 @@ class PetService {
       return null;
     }
 
-    const knownKinds = new Set(["feed", "play", "sleep", "music", "mood", "offline_decay", "inventory_food_use"]);
+    const knownKinds = new Set([
+      "system",
+      "chat",
+      "feed",
+      "homework",
+      "reward",
+      "sleep",
+      "play",
+      "music",
+      "mood",
+      "offline_decay",
+      "inventory_food_use",
+      "level_up",
+      "stage_up",
+    ]);
     const displayKind = knownKinds.has(kind) ? kind : "unknown";
     const timestamp = new Date(timestampMs).toISOString();
     return {
@@ -501,6 +496,10 @@ class PetService {
   private formatDiaryKindTitle(kind: string): string {
     const titles: Record<string, string> = {
       feed: "喂食记录",
+      system: "系统记录",
+      chat: "聊天记录",
+      homework: "作业记录",
+      reward: "奖励记录",
       play: "玩耍记录",
       sleep: "休息记录",
       music: "音乐记录",
