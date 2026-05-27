@@ -4,6 +4,8 @@
 #///////////////////////////
 library/
 temp/
+library.bak/
+temp.bak/
 local/
 build/
 profiles/
