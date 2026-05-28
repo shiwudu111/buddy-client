@@ -114,6 +114,8 @@ type ScrollTextOptions = SizeLike &
     backgroundColor?: Color;
     padding?: number;
     radius?: number;
+    elastic?: boolean;
+    scrollToTopOnCreate?: boolean;
   };
 
 type CardOptions = SizeLike &
@@ -926,7 +928,7 @@ export const RuntimeUI = {
     scrollView.vertical = true;
     scrollView.inertia = true;
     scrollView.brake = 0.35;
-    scrollView.elastic = true;
+    scrollView.elastic = options.elastic ?? true;
 
     const padding = options.padding ?? 16;
     const innerWidth = options.width - padding * 2;
@@ -959,11 +961,13 @@ export const RuntimeUI = {
     scrollView.content = content;
     // 内容要等到这一帧布局都稳定后，再把视图拉回顶部。
     // 这样进入页面时，用户会先看到最上面的文字，而不是中间一段。
-    scrollView.scheduleOnce(() => {
-      if (scrollView.node.isValid) {
-        scrollView.scrollToTop(0);
-      }
-    }, 0);
+    if (options.scrollToTopOnCreate ?? true) {
+      scrollView.scheduleOnce(() => {
+        if (scrollView.node.isValid) {
+          scrollView.scrollToTop(0);
+        }
+      }, 0);
+    }
 
     return { node, scrollView, content, label };
   },

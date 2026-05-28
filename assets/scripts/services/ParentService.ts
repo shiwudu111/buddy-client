@@ -12,16 +12,16 @@ function normalizeParentMessage(result: ApiResponse<unknown>): string | undefine
   const statusCode = result.statusCode;
 
   if (statusCode === 403) {
-    return "当前账号没有绑定孩子的权限";
+    return "当前账号没有查看该孩子的权限。";
   }
   if (statusCode === 404) {
-    return "未找到对应的孩子账号";
+    return "未找到对应的孩子账号。";
   }
   if (statusCode === 409) {
     if (message?.toLowerCase().includes("another parent")) {
-      return "该孩子已被其他家长绑定";
+      return "该孩子账号已绑定到其他家长。";
     }
-    return "当前家长账号已绑定其他孩子";
+    return "当前家长账号已绑定其他孩子。";
   }
 
   if (!message) {
@@ -30,13 +30,13 @@ function normalizeParentMessage(result: ApiResponse<unknown>): string | undefine
 
   const lowerMessage = message.toLowerCase();
   if (lowerMessage.includes("child account not found")) {
-    return "未找到对应的孩子账号";
+    return "未找到对应的孩子账号。";
   }
   if (lowerMessage.includes("already bound to another parent")) {
-    return "该孩子已被其他家长绑定";
+    return "该孩子账号已绑定到其他家长。";
   }
   if (lowerMessage.includes("already bound")) {
-    return "当前家长账号已绑定其他孩子";
+    return "当前家长账号已绑定其他孩子。";
   }
 
   return message;
@@ -49,7 +49,7 @@ class ParentService {
       ? result
       : {
           ...result,
-          message: normalizeParentMessage(result) ?? "绑定失败",
+          message: normalizeParentMessage(result) ?? "绑定失败。",
         };
   }
 
@@ -58,7 +58,7 @@ class ParentService {
     if (!childId) {
       return {
         success: false,
-        message: "当前家长账号尚未绑定孩子",
+        message: "当前家长账号尚未绑定孩子。",
       };
     }
 
@@ -71,8 +71,8 @@ class ParentService {
       ...result,
       message:
         result.statusCode === 404
-          ? "孩子尚未创建宠物，暂时无法查看宠物状态"
-          : normalizeParentMessage(result) ?? result.message ?? "孩子状态加载失败",
+          ? "孩子尚未创建宠物，暂时无法查看宠物状态。"
+          : normalizeParentMessage(result) ?? result.message ?? "孩子状态加载失败。",
     };
   }
 
@@ -81,7 +81,7 @@ class ParentService {
     if (!childId) {
       return {
         success: false,
-        message: "当前家长账号尚未绑定孩子",
+        message: "当前家长账号尚未绑定孩子。",
       };
     }
     const result = await apiClient.getWeeklyReport(childId);
@@ -93,8 +93,8 @@ class ParentService {
       ...result,
       message:
         result.statusCode === 404
-          ? "当前孩子暂未生成周报"
-          : normalizeParentMessage(result) ?? result.message ?? "周报加载失败",
+          ? "当前孩子暂未生成周报。"
+          : normalizeParentMessage(result) ?? result.message ?? "周报加载失败。",
     };
   }
 }

@@ -374,6 +374,7 @@ export interface ChildPetPayload {
     experience?: number;
     energy?: number;
     health?: number;
+    cleanliness?: number;
     stage?: string;
     next_evolve_days?: number;
   };
@@ -396,6 +397,8 @@ export interface WeeklyReportPayload {
     alive?: boolean;
     hunger?: number;
     mood?: number;
+    energy?: number;
+    cleanliness?: number;
     stage?: string;
     next_evolve_days?: number;
   };

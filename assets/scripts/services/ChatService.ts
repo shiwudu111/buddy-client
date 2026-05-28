@@ -46,7 +46,7 @@ class ChatService {
       return {
         success: false,
         usedFallback: false,
-        message: "请先输入想对宠物说的话",
+        message: "请先输入想对宠物说的话。",
         reply: null,
         moodFactor: 1,
         moodImpact: "stable",
@@ -65,14 +65,7 @@ class ChatService {
     });
 
     if (input.canCommit && !input.canCommit()) {
-      return {
-        success: false,
-        usedFallback: false,
-        message: "会话已切换，已取消本次回复",
-        reply: null,
-        moodFactor: 1,
-        moodImpact: "stable",
-      };
+      return buildCancelledOutcome();
     }
 
     if (result.success && result.data?.reply) {
@@ -86,7 +79,7 @@ class ChatService {
       return {
         success: true,
         usedFallback: false,
-        message: "宠物回复完成",
+        message: "宠物回复完成。",
         reply: result.data.reply,
         moodFactor: result.data.mood_factor,
         moodImpact: result.data.mood_impact,
@@ -95,14 +88,7 @@ class ChatService {
 
     const fallback = composeFallbackReply(message, input.petMood, appState.getChatHistory());
     if (input.canCommit && !input.canCommit()) {
-      return {
-        success: false,
-        usedFallback: false,
-        message: "会话已切换，已取消本次回复",
-        reply: null,
-        moodFactor: 1,
-        moodImpact: "stable",
-      };
+      return buildCancelledOutcome();
     }
     const petEntry: ChatConversationItem = {
       role: "pet",
@@ -115,12 +101,23 @@ class ChatService {
     return {
       success: true,
       usedFallback: true,
-      message: result.message ?? "后端暂时不可用，已使用本地预设回复",
+      message: result.message ?? "后端暂时不可用，已使用本地预设回复。",
       reply: fallback.reply,
       moodFactor: fallback.moodFactor,
       moodImpact: fallback.moodImpact,
     };
   }
+}
+
+function buildCancelledOutcome(): ChatSendOutcome {
+  return {
+    success: false,
+    usedFallback: false,
+    message: "会话已切换，已取消本次回复。",
+    reply: null,
+    moodFactor: 1,
+    moodImpact: "stable",
+  };
 }
 
 function normalizeHistory(history: ChatConversationItem[]): ChatConversationItem[] {
@@ -180,8 +177,8 @@ function resolveReplyCandidates(message: string, petMood: number | null | undefi
   if (containsAny(message, ["谢谢", "开心", "棒", "厉害"])) {
     return [
       "嘿嘿，我也很开心。",
-      "你这样说我会更有劲。",
-      "今天状态不错，继续保持！",
+      "你这样说我会更有动力。",
+      "今天状态不错，继续保持。",
     ];
   }
 

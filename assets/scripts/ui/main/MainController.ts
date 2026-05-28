@@ -2,6 +2,7 @@ import {
   _decorator,
   Button,
   Color,
+  EditBox,
   Graphics,
   HorizontalTextAlignment,
   Label,
@@ -21,18 +22,25 @@ import { appState } from "../../app/AppState";
 import { storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
+import { chatService } from "../../services/ChatService";
 import { homeworkService } from "../../services/HomeworkService";
+import { parentService } from "../../services/ParentService";
 import { petService } from "../../services/PetService";
 import type {
+  ChildPetPayload,
   DailyBasicFoodPayload,
   HomeworkSubject,
   OfflineDecaySummary,
   PetFoodInventoryItem,
   TimeContextPayload,
+  WeeklyReportPayload,
 } from "../../types/api";
 import { formatHomeworkHistory } from "../../utils/format";
+import { ChatConversationCoordinator } from "../chat/ChatConversationCoordinator";
+import { renderPetChatPanel } from "../chat/ChatConversationView";
 import { ScreenController } from "../common/base/ScreenController";
 import { RuntimeUI } from "../common/runtime/RuntimeUI";
+import { UiTokens } from "../theme/UiTokens";
 import { HomeworkCenterCoordinator } from "../homework/HomeworkCenterCoordinator";
 import {
   renderHomeworkCenter,
@@ -204,7 +212,7 @@ type MainLayout = {
 };
 
 
-type TopBarNavTab = "petHome" | "bag" | "journal";
+type TopBarNavTab = "petHome" | "bag" | "journal" | "chat";
 
 type BottomDockAction = "feed" | "play" | "bath" | "sleep" | "music" | "care";
 
@@ -259,6 +267,25 @@ export class MainController extends ScreenController {
   private journalEventsLoading = false;
   private journalEventsLoaded = false;
   private journalSyncMessage: string | null = null;
+  private chatCoordinator = new ChatConversationCoordinator();
+  private chatInput: EditBox | null = null;
+  private chatSending = false;
+  private chatRefreshSeq = 0;
+  private parentBindInput: EditBox | null = null;
+  private parentNotice = "";
+  private parentBinding = false;
+  private parentOverviewLoading = false;
+  private parentReportLoading = false;
+  private parentOverviewText = "";
+  private parentReportText = "";
+  private parentOverviewData: ChildPetPayload | null = null;
+  private parentReportData: WeeklyReportPayload | null = null;
+  private parentExpandedColumn: "pet" | "insight" | "homework" | null = null;
+  private parentColumnAnimationFrom: "pet" | "insight" | "homework" | null = null;
+  private parentColumnAnimationTo: "pet" | "insight" | "homework" | null = null;
+  private parentColumnAnimationStart = 0;
+  private parentColumnAnimationFrame: number | null = null;
+  private parentColumnLastToggleAt = 0;
   private isFoodSelectionPanelOpen = false;
   private isHomeworkCenterOpen = false;
   private homeworkCenterRefs: HomeworkCenterViewRefs | null = null;
@@ -308,6 +335,7 @@ export class MainController extends ScreenController {
   onDestroy(): void {
     this.persistCurrentMainSeenAt();
     this.clearLifeRuntimeState();
+    this.cancelParentColumnAnimation();
     this.cancelScheduledRender();
     this.assetStore.dispose();
     this.petCreationGate.dispose();
@@ -326,6 +354,14 @@ export class MainController extends ScreenController {
   async start(): Promise<void> {
     const hasSession = await this.redirectToLoginWhenSessionMissing();
     if (!hasSession) {
+      return;
+    }
+
+    if (this.isParentUser()) {
+      this.render();
+      if (appState.getLinkedChildId()) {
+        void this.handleParentLoadOverview();
+      }
       return;
     }
 
@@ -387,10 +423,17 @@ export class MainController extends ScreenController {
 
     RuntimeUI.clear(root);
     this.petAnimator.clearSprite();
+    this.chatInput = null;
+    this.parentBindInput = null;
     this.petCreationGate.clearRefs();
     this.installArtDebugBridge();
     this.ensureButtonGradientEffectLoaded();
     this.renderBackdrop(root, layout);
+    if (this.isParentUser()) {
+      this.renderParentHomeV2(root, layout);
+      this.renderBackgroundDebugEntry(root, layout);
+      return;
+    }
     if (this.petCreationGate.isActive()) {
       this.petCreationGate.render(root, layout);
       this.renderBackgroundDebugEntry(root, layout);
@@ -643,6 +686,10 @@ export class MainController extends ScreenController {
       localPetMode: this.localPetMode,
       activeVisualState: this.activeVisualState,
     });
+  }
+
+  private isParentUser(): boolean {
+    return appState.getCurrentUser()?.role === "PARENT";
   }
 
   private openFirstPetCreationIfNeeded(): boolean {
@@ -1558,6 +1605,1439 @@ export class MainController extends ScreenController {
     return shellContentHost;
   }
 
+  private renderParentHome(root: Node, layout: MainLayout): void {
+    const panelWidth = Math.max(620, Math.min(900, Math.round(layout.viewportWidth * 0.72)));
+    const panelHeight = Math.max(470, Math.min(620, Math.round(layout.viewportHeight * 0.78)));
+    const user = appState.getCurrentUser();
+    const childLabel = user?.childNickname || user?.childId || "未绑定";
+    const panel = RuntimeUI.createCard(root, {
+      name: "ParentHomePanel",
+      x: 0,
+      y: 0,
+      width: panelWidth,
+      height: panelHeight,
+      color: new Color(235, 207, 180, 238),
+      innerColor: new Color(255, 252, 247, 246),
+      radius: 28,
+      borderThickness: 2,
+      innerRadius: 24,
+    });
+
+    RuntimeUI.createLabel(panel, {
+      name: "ParentHomeTitle",
+      text: "家长中心",
+      x: -panelWidth / 2 + 96,
+      y: panelHeight / 2 - 58,
+      width: 180,
+      height: 36,
+      fontSize: 28,
+      color: new Color(98, 66, 46, 255),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    RuntimeUI.createLabel(panel, {
+      name: "ParentHomeSubtitle",
+      text: `账号：${user?.username ?? "家长"}    已绑定：${childLabel}`,
+      x: 0,
+      y: panelHeight / 2 - 94,
+      width: panelWidth - 86,
+      height: 24,
+      fontSize: 16,
+      color: new Color(126, 93, 69, 232),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+
+    const bindRowY = panelHeight / 2 - 148;
+    const input = RuntimeUI.createEditBox(panel, {
+      name: "ParentBindChildInput",
+      placeholder: "输入孩子用户名或 childId",
+      defaultValue: user?.childNickname ?? "",
+      x: -panelWidth / 2 + 235,
+      y: bindRowY,
+      width: Math.max(280, Math.round(panelWidth * 0.45)),
+      height: 46,
+      maxLength: 64,
+      multiline: false,
+      radius: 18,
+      backgroundColor: new Color(255, 246, 237, 255),
+      textColor: new Color(98, 66, 46, 255),
+      placeholderColor: new Color(156, 123, 99, 210),
+    });
+    this.parentBindInput = input.editBox;
+
+    const bindButton = RuntimeUI.createButton(panel, {
+      name: "ParentBindChildButton",
+      text: this.parentBinding ? "绑定中" : "绑定孩子",
+      x: panelWidth / 2 - 135,
+      y: bindRowY,
+      width: 150,
+      height: 44,
+      color: this.parentBinding ? new Color(140, 119, 101, 255) : new Color(49, 180, 113, 255),
+      fontSize: 17,
+      radius: 20,
+    });
+    bindButton.node.on(Button.EventType.CLICK, () => void this.handleParentBindChild(), this);
+
+    RuntimeUI.createLabel(panel, {
+      name: "ParentNotice",
+      text: this.parentNotice || "绑定后可查看孩子宠物状态和本周学习概览。",
+      x: 0,
+      y: bindRowY - 48,
+      width: panelWidth - 86,
+      height: 28,
+      fontSize: 15,
+      color: this.parentNotice ? new Color(247, 155, 52, 255) : new Color(156, 123, 99, 220),
+    });
+
+    const actionY = bindRowY - 88;
+    const overviewButton = RuntimeUI.createButton(panel, {
+      name: "ParentOverviewButton",
+      text: this.parentOverviewLoading ? "加载中" : "查看孩子宠物",
+      x: -165,
+      y: actionY,
+      width: 170,
+      height: 44,
+      color: new Color(126, 148, 240, 235),
+      fontSize: 16,
+      radius: 20,
+    });
+    overviewButton.node.on(Button.EventType.CLICK, () => void this.handleParentLoadOverview(), this);
+
+    const reportButton = RuntimeUI.createButton(panel, {
+      name: "ParentReportButton",
+      text: this.parentReportLoading ? "加载中" : "查看周报",
+      x: 30,
+      y: actionY,
+      width: 150,
+      height: 44,
+      color: new Color(247, 155, 52, 235),
+      fontSize: 16,
+      radius: 20,
+    });
+    reportButton.node.on(Button.EventType.CLICK, () => void this.handleParentLoadReport(), this);
+
+    const refreshButton = RuntimeUI.createButton(panel, {
+      name: "ParentRefreshButton",
+      text: "刷新",
+      x: 195,
+      y: actionY,
+      width: 100,
+      height: 44,
+      color: new Color(49, 180, 113, 220),
+      fontSize: 16,
+      radius: 20,
+    });
+    refreshButton.node.on(Button.EventType.CLICK, () => void this.handleParentRefreshAll(), this);
+
+    const logoutButton = RuntimeUI.createButton(panel, {
+      name: "ParentLogoutButton",
+      text: "退出登录",
+      x: panelWidth / 2 - 100,
+      y: -panelHeight / 2 + 42,
+      width: 130,
+      height: 38,
+      color: new Color(140, 119, 101, 230),
+      fontSize: 15,
+      radius: 18,
+    });
+    logoutButton.node.on(Button.EventType.CLICK, () => this.handleParentLogout(), this);
+
+    const contentText = [this.parentOverviewText, this.parentReportText].filter(Boolean).join("\n\n");
+    RuntimeUI.createScrollText(panel, {
+      name: "ParentResultText",
+      text: contentText || "暂无数据。请先绑定孩子账号，然后选择要查看的内容。",
+      x: 0,
+      y: -panelHeight / 2 + 142,
+      width: panelWidth - 86,
+      height: Math.max(150, panelHeight - 318),
+      backgroundColor: new Color(255, 246, 237, 255),
+      color: new Color(98, 66, 46, 255),
+      fontSize: 16,
+      radius: 20,
+    });
+  }
+
+  private async handleParentBindChild(): Promise<void> {
+    if (this.parentBinding) {
+      return;
+    }
+    const childIdentifier = this.parentBindInput?.string.trim() ?? "";
+    if (!childIdentifier) {
+      this.parentNotice = "请先输入孩子用户名或 childId。";
+      this.render();
+      return;
+    }
+
+    this.parentBinding = true;
+    this.parentNotice = "正在绑定孩子账号...";
+    this.render();
+    try {
+      const result = await parentService.bindChild(childIdentifier);
+      if (result.success) {
+        appState.patchCurrentUser({
+          childId: result.data?.childId ?? childIdentifier,
+          childNickname: result.data?.childNickname ?? childIdentifier,
+        });
+        this.parentNotice = "绑定成功，正在刷新孩子信息。";
+        this.parentOverviewText = "";
+        this.parentReportText = "";
+        void this.handleParentLoadOverview();
+      } else {
+        this.parentNotice = result.message ?? "绑定失败，请检查孩子账号。";
+      }
+    } catch {
+      this.parentNotice = "绑定请求失败，请确认后端服务可访问。";
+    } finally {
+      this.parentBinding = false;
+      this.render();
+    }
+  }
+
+  private async handleParentLoadOverview(): Promise<void> {
+    if (this.parentOverviewLoading) {
+      return;
+    }
+    this.parentOverviewLoading = true;
+    this.parentNotice = "正在读取孩子宠物状态...";
+    this.render();
+    try {
+      const result = await parentService.getChildOverview();
+      if (result.success && result.data) {
+        this.parentOverviewData = result.data;
+        this.parentOverviewText = this.formatParentOverviewText(result.data);
+        this.parentNotice = "孩子宠物状态已更新。";
+      } else {
+        this.parentNotice = result.message ?? "孩子宠物状态加载失败。";
+      }
+    } catch {
+      this.parentNotice = "孩子宠物状态请求失败。";
+    } finally {
+      this.parentOverviewLoading = false;
+      this.render();
+    }
+  }
+
+  private async handleParentLoadReport(): Promise<void> {
+    if (this.parentReportLoading) {
+      return;
+    }
+    this.parentReportLoading = true;
+    this.parentNotice = "正在读取本周报告...";
+    this.render();
+    try {
+      const result = await parentService.getWeeklyReport();
+      if (result.success && result.data) {
+        this.parentReportData = result.data;
+        this.parentReportText = this.formatParentReportText(result.data);
+        this.parentNotice = "本周报告已更新。";
+      } else {
+        this.parentNotice = result.message ?? "本周报告加载失败。";
+      }
+    } catch {
+      this.parentNotice = "本周报告请求失败。";
+    } finally {
+      this.parentReportLoading = false;
+      this.render();
+    }
+  }
+
+  private async handleParentRefreshAll(): Promise<void> {
+    await this.handleParentLoadOverview();
+    await this.handleParentLoadReport();
+  }
+
+  private handleParentLogout(): void {
+    authService.logout();
+    sceneRouter.goToLogin();
+  }
+
+  private formatParentOverviewText(data: ChildPetPayload): string {
+    const pet = data.pet;
+    const homework = Object.entries(data.today_homework ?? {})
+      .map(([subject, item]) => `${subject}: ${item?.score ?? "未提交"}`)
+      .join(" / ");
+    return [
+      "孩子宠物",
+      `昵称：${data.childNickname ?? data.childId ?? "孩子"}`,
+      `宠物：${pet.name}  Lv.${pet.level}`,
+      `饥饿：${pet.hunger}  心情：${pet.mood}  经验：${pet.experience ?? 0}`,
+      `阶段：${pet.stage ?? "未知"}  状态：${pet.status ? "在线" : "离线"}`,
+      `今日作业：${homework || "暂无记录"}`,
+    ].join("\n");
+  }
+
+  private formatParentReportText(data: WeeklyReportPayload): string {
+    const breakdown = Object.entries(data.subject_breakdown ?? {})
+      .map(([subject, item]) => `${subject}: ${item.count} 次 / 平均 ${Math.round(item.avg)}`)
+      .join("；");
+    const pet = data.pet_status_summary;
+    return [
+      "本周报告",
+      `周次：${data.week}`,
+      `作业总数：${data.total_homework}`,
+      `平均分：${Math.round(data.average_score)}`,
+      `科目：${breakdown || "暂无科目数据"}`,
+      pet ? `宠物概览：饥饿 ${pet.hunger ?? "-"} / 心情 ${pet.mood ?? "-"} / 阶段 ${pet.stage ?? "-"}` : "宠物概览：暂无",
+    ].join("\n");
+  }
+
+  private renderParentHomeV2(root: Node, layout: MainLayout): void {
+    const panelWidth = Math.max(760, Math.min(1040, Math.round(layout.viewportWidth * 0.84)));
+    const panelHeight = Math.max(560, Math.min(700, Math.round(layout.viewportHeight * 0.9)));
+    const user = appState.getCurrentUser();
+    const childLabel = user?.childNickname || user?.childId || "未绑定";
+    const childDisplayName = this.resolveParentChildDisplayName(childLabel);
+    const childMetaText = this.resolveParentChildMetaText(childLabel);
+    const hasLinkedChild = Boolean(user?.childId || appState.getLinkedChildId());
+    const contentWidth = panelWidth - 64;
+    this.parentBindInput = null;
+    const panel = RuntimeUI.createCard(root, {
+      name: "ParentHomePanelV2",
+      x: 0,
+      y: 0,
+      width: panelWidth,
+      height: panelHeight,
+      color: UiTokens.colors.borderSoft,
+      innerColor: UiTokens.colors.panel,
+      radius: UiTokens.radii.cardLG,
+      borderThickness: 3,
+      innerRadius: UiTokens.radii.cardMD,
+    });
+
+    const headerHeight = 72;
+    const headerY = panelHeight / 2 - 24 - headerHeight / 2;
+    const header = RuntimeUI.createCard(panel, {
+      name: "ParentDashboardHeaderV2",
+      x: 0,
+      y: headerY,
+      width: contentWidth,
+      height: headerHeight,
+      color: new Color(247, 155, 52, 168),
+      innerColor: new Color(255, 252, 247, 238),
+      radius: UiTokens.radii.cardMD,
+      borderThickness: 2,
+      innerRadius: 19,
+    });
+    renderPawTitleDecor(header, {
+      name: "ParentHeaderPawV2",
+      x: -contentWidth / 2 + 118,
+      y: 18,
+      mirrored: false,
+      scale: 0.58,
+    });
+    renderDottedDivider(header, {
+      name: "ParentHeaderDividerV2",
+      y: -24,
+      width: contentWidth - 56,
+      dotCount: 34,
+    });
+    RuntimeUI.createBox(header, {
+      name: "ParentChildAvatarV2",
+      x: -contentWidth / 2 + 54,
+      y: 2,
+      width: 48,
+      height: 48,
+      color: UiTokens.colors.brand,
+      radius: 24,
+    });
+    RuntimeUI.createLabel(header, {
+      name: "ParentChildAvatarTextV2",
+      text: childDisplayName.slice(0, 1),
+      x: -contentWidth / 2 + 54,
+      y: 2,
+      width: 46,
+      height: 34,
+      fontSize: 22,
+      color: UiTokens.colors.textLight,
+    });
+    RuntimeUI.createLabel(panel, {
+      name: "ParentHomeTitleV2",
+      text: hasLinkedChild ? `${childDisplayName} 的成长面板` : "家长成长面板",
+      x: -contentWidth / 2 + 226,
+      y: headerY + 12,
+      width: Math.round(contentWidth * 0.36),
+      height: 28,
+      fontSize: 21,
+      color: UiTokens.colors.textPrimary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    RuntimeUI.createLabel(panel, {
+      name: "ParentHomeSubtitleV2",
+      text: `${user?.username ?? "家长"} · ${hasLinkedChild ? childMetaText : "请先绑定孩子账号"}`,
+      x: -contentWidth / 2 + 226,
+      y: headerY - 14,
+      width: Math.round(contentWidth * 0.36),
+      height: 24,
+      fontSize: 13,
+      color: UiTokens.colors.textSecondary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+
+    const completion = this.resolveParentHomeworkCompletion();
+    this.renderParentRingProgress(panel, {
+      name: "ParentTodayProgressRingV2",
+      x: contentWidth / 2 - 250,
+      y: headerY,
+      radius: 27,
+      percent: completion.percent,
+      title: "今日完成",
+      value: `${completion.completed}/${completion.total}`,
+    });
+    RuntimeUI.createLabel(panel, {
+      name: "ParentTodayHintV2",
+      text: completion.total ? completion.summary : "等待今日作业数据",
+      x: contentWidth / 2 - 162,
+      y: headerY,
+      width: 136,
+      height: 34,
+      fontSize: 13,
+      color: UiTokens.colors.textSecondary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+
+    const refreshButton = RuntimeUI.createButton(panel, {
+      name: "ParentRefreshButtonV2",
+      text: this.parentOverviewLoading || this.parentReportLoading ? "同步中" : "刷新",
+      x: contentWidth / 2 - 56,
+      y: headerY + 14,
+      width: 86,
+      height: 28,
+      color: UiTokens.colors.mint,
+      fontSize: 14,
+      radius: 16,
+    });
+    refreshButton.node.on(Button.EventType.CLICK, () => void this.handleParentRefreshAll(), this);
+    const logoutButton = RuntimeUI.createButton(panel, {
+      name: "ParentLogoutButtonV2",
+      text: "退出",
+      x: contentWidth / 2 - 56,
+      y: headerY - 18,
+      width: 86,
+      height: 28,
+      color: new Color(156, 123, 99, 230),
+      fontSize: 14,
+      radius: 16,
+    });
+    logoutButton.node.on(Button.EventType.CLICK, () => this.handleParentLogout(), this);
+
+    const noticeText = this.parentNotice || (hasLinkedChild ? "数据会在刷新后同步到最新状态。" : "绑定孩子后展示宠物成长和学习趋势。");
+    RuntimeUI.createLabel(panel, {
+      name: "ParentNoticeV2",
+      text: noticeText,
+      x: 0,
+      y: headerY - headerHeight / 2 - 14,
+      width: contentWidth - 36,
+      height: 22,
+      fontSize: 13,
+      color: this.parentNotice ? UiTokens.colors.brand : UiTokens.colors.textSecondary,
+    });
+
+    if (!hasLinkedChild) {
+      this.renderParentBindEmptyState(panel, contentWidth, panelHeight, headerY - 112);
+      return;
+    }
+
+    const mainTop = headerY - headerHeight / 2 - 34;
+    const mainBottom = -panelHeight / 2 + 32;
+    const mainGap = 16;
+    const mainPanelHeight = Math.max(330, mainTop - mainBottom);
+    const mainY = mainBottom + mainPanelHeight / 2;
+    const columns = this.resolveParentColumnLayout(contentWidth, mainGap);
+    this.renderParentPetGrowthPanel(panel, {
+      x: columns.pet.x,
+      y: mainY,
+      width: columns.pet.width,
+      height: mainPanelHeight,
+      column: "pet",
+    });
+    this.renderParentInsightScroll(panel, {
+      x: columns.insight.x,
+      width: columns.insight.width,
+      y: mainY,
+      height: mainPanelHeight,
+      column: "insight",
+    });
+    this.renderParentHomeworkPanel(panel, {
+      x: columns.homework.x,
+      y: mainY,
+      width: columns.homework.width,
+      height: mainPanelHeight,
+      column: "homework",
+    });
+  }
+
+  private resolveParentColumnLayout(
+    contentWidth: number,
+    gap: number
+  ): Record<"pet" | "insight" | "homework", { x: number; width: number }> {
+    const totalColumnWidth = contentWidth - gap * 2;
+    const keys = ["pet", "insight", "homework"] as const;
+    const fromWidths = this.resolveParentColumnWidths(totalColumnWidth, this.parentColumnAnimationFrom);
+    const toWidths = this.resolveParentColumnWidths(totalColumnWidth, this.parentColumnAnimationTo ?? this.parentExpandedColumn);
+    const rawProgress = this.resolveParentColumnAnimationProgress();
+    const easedProgress = this.easeInOutQuad(rawProgress);
+    const widths = keys.map((_, index) => Math.round(fromWidths[index] + (toWidths[index] - fromWidths[index]) * easedProgress));
+    const correctedWidths = [widths[0], widths[1], totalColumnWidth - widths[0] - widths[1]];
+    const left = -contentWidth / 2;
+    const petX = left + correctedWidths[0] / 2;
+    const insightX = left + correctedWidths[0] + gap + correctedWidths[1] / 2;
+    const homeworkX = left + correctedWidths[0] + gap + correctedWidths[1] + gap + correctedWidths[2] / 2;
+    return {
+      pet: { x: petX, width: correctedWidths[0] },
+      insight: { x: insightX, width: correctedWidths[1] },
+      homework: { x: homeworkX, width: correctedWidths[2] },
+    };
+  }
+
+  private resolveParentColumnWidths(totalColumnWidth: number, expandedColumn: "pet" | "insight" | "homework" | null): number[] {
+    const normalWidth = Math.round(totalColumnWidth / 3);
+    if (expandedColumn == null) {
+      return [normalWidth, totalColumnWidth - normalWidth * 2, normalWidth];
+    }
+    const expandedWidth = Math.round(totalColumnWidth * 0.48);
+    const collapsedWidth = Math.round((totalColumnWidth - expandedWidth) / 2);
+    const keys = ["pet", "insight", "homework"] as const;
+    return keys.map((key) => (key === expandedColumn ? expandedWidth : collapsedWidth));
+  }
+
+  private resolveParentColumnAnimationProgress(): number {
+    if (this.parentColumnAnimationStart <= 0) {
+      return 1;
+    }
+    const elapsed = Date.now() - this.parentColumnAnimationStart;
+    return Math.max(0, Math.min(1, elapsed / 260));
+  }
+
+  private easeInOutQuad(value: number): number {
+    return value < 0.5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
+  }
+
+  private installParentColumnClick(card: Node, column: "pet" | "insight" | "homework"): void {
+    const button = card.getComponent(Button) ?? card.addComponent(Button);
+    button.transition = Button.Transition.NONE;
+    card.on(Button.EventType.CLICK, () => this.toggleParentColumn(column), this);
+  }
+
+  private toggleParentColumn(column: "pet" | "insight" | "homework"): void {
+    const now = Date.now();
+    if (now - this.parentColumnLastToggleAt < 80) {
+      return;
+    }
+    this.parentColumnLastToggleAt = now;
+    const nextColumn = this.parentExpandedColumn === column ? null : column;
+    this.startParentColumnAnimation(nextColumn);
+  }
+
+  private startParentColumnAnimation(nextColumn: "pet" | "insight" | "homework" | null): void {
+    this.cancelParentColumnAnimation();
+    this.parentColumnAnimationFrom = this.parentExpandedColumn;
+    this.parentColumnAnimationTo = nextColumn;
+    this.parentExpandedColumn = nextColumn;
+    this.parentColumnAnimationStart = Date.now();
+    const step = (): void => {
+      const progress = this.resolveParentColumnAnimationProgress();
+      this.render();
+      if (progress < 1 && typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        this.parentColumnAnimationFrame = window.requestAnimationFrame(step);
+        return;
+      }
+      this.parentColumnAnimationFrame = null;
+      this.parentColumnAnimationFrom = nextColumn;
+      this.parentColumnAnimationTo = nextColumn;
+      this.parentColumnAnimationStart = 0;
+      this.render();
+    };
+    step();
+  }
+
+  private cancelParentColumnAnimation(): void {
+    if (this.parentColumnAnimationFrame !== null && typeof window !== "undefined") {
+      window.cancelAnimationFrame(this.parentColumnAnimationFrame);
+    }
+    this.parentColumnAnimationFrame = null;
+  }
+
+  private renderParentBindEmptyState(parent: Node, contentWidth: number, panelHeight: number, y: number): void {
+    const cardHeight = Math.max(260, Math.round(panelHeight * 0.38));
+    const card = RuntimeUI.createCard(parent, {
+      name: "ParentBindEmptyStateV2",
+      x: 0,
+      y: y - cardHeight / 2,
+      width: contentWidth,
+      height: cardHeight,
+      color: UiTokens.colors.borderSoft,
+      innerColor: UiTokens.colors.bgSecondary,
+      radius: UiTokens.radii.cardLG,
+      borderThickness: 2,
+      innerRadius: UiTokens.radii.cardMD,
+    });
+    renderPawTitleDecor(card, {
+      name: "ParentBindPawV2",
+      x: -130,
+      y: 84,
+      mirrored: false,
+      scale: 0.82,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentBindEmptyTitleV2",
+      text: "先连接孩子账号",
+      x: 0,
+      y: 72,
+      width: contentWidth - 80,
+      height: 34,
+      fontSize: 26,
+      color: UiTokens.colors.textPrimary,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentBindEmptyTextV2",
+      text: "绑定后，这里会变成孩子的宠物成长面板和本周学习分析。",
+      x: 0,
+      y: 34,
+      width: contentWidth - 100,
+      height: 24,
+      fontSize: 15,
+      color: UiTokens.colors.textSecondary,
+    });
+    const input = RuntimeUI.createEditBox(card, {
+      name: "ParentBindChildInputV2",
+      placeholder: "输入孩子用户名或 childId",
+      defaultValue: "",
+      x: -86,
+      y: -28,
+      width: Math.min(440, contentWidth - 280),
+      height: 48,
+      maxLength: 64,
+      multiline: false,
+      radius: 18,
+      backgroundColor: new Color(255, 255, 255, 255),
+      textColor: new Color(45, 74, 62, 255),
+      placeholderColor: new Color(112, 137, 123, 220),
+    });
+    this.parentBindInput = input.editBox;
+    const bindButton = RuntimeUI.createButton(card, {
+      name: "ParentBindChildButtonV2",
+      text: this.parentBinding ? "绑定中" : "绑定孩子",
+      x: Math.min(250, contentWidth / 2 - 124),
+      y: -28,
+      width: 148,
+      height: 48,
+      color: this.parentBinding ? UiTokens.colors.textSecondary : UiTokens.colors.brand,
+      fontSize: 17,
+      radius: 20,
+    });
+    bindButton.node.on(Button.EventType.CLICK, () => void this.handleParentBindChild(), this);
+  }
+
+  private renderParentPetGrowthPanel(
+    parent: Node,
+    options: { x: number; y: number; width: number; height: number; column: "pet" | "insight" | "homework" }
+  ): void {
+    const data = this.parentOverviewData;
+    const pet = data?.pet;
+    const isCompact = options.width < 260;
+    const titleFontSize = isCompact ? 17 : 20;
+    const subtitleFontSize = isCompact ? 11 : 13;
+    const titleLeft = isCompact ? 54 : 66;
+    const titleWidth = options.width - titleLeft - 20;
+    const titleX = -options.width / 2 + titleLeft + titleWidth / 2;
+    const pawX = -options.width / 2 + (isCompact ? 34 : 42);
+    const card = RuntimeUI.createCard(parent, {
+      name: "ParentPetGrowthPanelV2",
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+      color: UiTokens.colors.borderSoft,
+      innerColor: UiTokens.colors.bgSecondary,
+      radius: UiTokens.radii.cardMD,
+      borderThickness: 2,
+      innerRadius: 18,
+    });
+    this.installParentColumnClick(card, options.column);
+    renderPawTitleDecor(card, {
+      name: "ParentPetPanelPawV2",
+      x: pawX,
+      y: options.height / 2 - 34,
+      mirrored: false,
+      scale: isCompact ? 0.48 : 0.62,
+    });
+    renderDottedDivider(card, {
+      name: "ParentPetPanelDividerV2",
+      y: options.height / 2 - 78,
+      width: options.width - 56,
+      dotCount: 24,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentPetPanelTitleV2",
+      text: "宠物成长",
+      x: titleX,
+      y: options.height / 2 - 34,
+      width: titleWidth,
+      height: 28,
+      fontSize: titleFontSize,
+      color: UiTokens.colors.textPrimary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentPetPanelSubTitleV2",
+      text: pet ? `${pet.name} · Lv.${pet.level} · ${this.formatPetStage(pet.stage)}` : "等待宠物数据同步",
+      x: 0,
+      y: options.height / 2 - 64,
+      width: options.width - 44,
+      height: 22,
+      fontSize: subtitleFontSize,
+      color: UiTokens.colors.textSecondary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+
+    this.renderParentPetVisual(card, {
+      x: 0,
+      y: options.height / 2 - 154,
+      size: Math.min(isCompact ? 82 : 110, Math.round(options.width * (isCompact ? 0.32 : 0.36))),
+      name: pet?.name ?? "宠物",
+      level: pet?.level ?? 1,
+    });
+
+    const barX = isCompact ? 14 : 8;
+    const barWidth = Math.max(isCompact ? 82 : 112, options.width - (isCompact ? 96 : 120));
+    const barStartY = Math.min(48, options.height / 2 - (isCompact ? 210 : 228));
+    this.renderParentMetricBar(card, {
+      name: "ParentPetHungerBarV2",
+      label: "饥饿",
+      value: pet?.hunger,
+      x: barX,
+      y: barStartY,
+      width: barWidth,
+      fillColor: UiTokens.colors.hunger,
+    });
+    this.renderParentMetricBar(card, {
+      name: "ParentPetMoodBarV2",
+      label: "心情",
+      value: pet?.mood,
+      x: barX,
+      y: barStartY - 38,
+      width: barWidth,
+      fillColor: UiTokens.colors.mood,
+    });
+    this.renderParentMetricBar(card, {
+      name: "ParentPetEnergyBarV2",
+      label: "体力",
+      value: pet?.energy ?? pet?.health,
+      x: barX,
+      y: barStartY - 76,
+      width: barWidth,
+      fillColor: UiTokens.colors.energy,
+    });
+    this.renderParentMetricBar(card, {
+      name: "ParentPetCleanBarV2",
+      label: "清洁",
+      value: pet?.cleanliness,
+      x: barX,
+      y: barStartY - 114,
+      width: barWidth,
+      fillColor: UiTokens.colors.blue,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentEvolutionHintV2",
+      text: this.resolveParentEvolutionHint(),
+      x: 0,
+      y: -options.height / 2 + 24,
+      width: options.width - 38,
+      height: 34,
+      fontSize: isCompact ? 11 : 13,
+      color: UiTokens.colors.brand,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+  }
+
+  private renderParentHomeworkPanel(
+    parent: Node,
+    options: { x: number; y: number; width: number; height: number; column: "pet" | "insight" | "homework" }
+  ): void {
+    const report = this.parentReportData;
+    const isCompact = options.width < 260;
+    const titleFontSize = isCompact ? 17 : 20;
+    const subtitleFontSize = isCompact ? 11 : 13;
+    const titleLeft = isCompact ? 54 : 66;
+    const titleWidth = options.width - titleLeft - 20;
+    const titleX = -options.width / 2 + titleLeft + titleWidth / 2;
+    const pawX = -options.width / 2 + (isCompact ? 34 : 42);
+    const card = RuntimeUI.createCard(parent, {
+      name: "ParentHomeworkAnalysisPanelV2",
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+      color: UiTokens.colors.borderSoft,
+      innerColor: UiTokens.colors.panel,
+      radius: UiTokens.radii.cardMD,
+      borderThickness: 2,
+      innerRadius: 18,
+    });
+    this.installParentColumnClick(card, options.column);
+    renderPawTitleDecor(card, {
+      name: "ParentHomeworkPanelPawV2",
+      x: pawX,
+      y: options.height / 2 - 34,
+      mirrored: false,
+      scale: isCompact ? 0.48 : 0.62,
+    });
+    renderDottedDivider(card, {
+      name: "ParentHomeworkPanelDividerV2",
+      y: options.height / 2 - 78,
+      width: options.width - 56,
+      dotCount: 20,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentHomeworkPanelTitleV2",
+      text: "学习分析",
+      x: titleX,
+      y: options.height / 2 - 34,
+      width: titleWidth,
+      height: 28,
+      fontSize: titleFontSize,
+      color: UiTokens.colors.textPrimary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    RuntimeUI.createLabel(card, {
+      name: "ParentHomeworkPanelSubV2",
+      text: report ? `${report.week} · 平均分 ${Math.round(report.average_score)}` : "点击刷新同步本周报告",
+      x: 0,
+      y: options.height / 2 - 64,
+      width: options.width - 44,
+      height: 22,
+      fontSize: subtitleFontSize,
+      color: UiTokens.colors.textSecondary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    const chartY = options.height / 2 - 146;
+    this.renderParentScoreTrend(card, {
+      x: 0,
+      y: chartY,
+      width: options.width - (isCompact ? 42 : 64),
+      height: isCompact ? 86 : 96,
+    });
+    this.renderParentSubjectBreakdown(card, {
+      x: 0,
+      y: -66,
+      width: options.width - (isCompact ? 42 : 64),
+      height: 142,
+    });
+  }
+
+  private renderParentPetVisual(
+    parent: Node,
+    options: { x: number; y: number; size: number; name: string; level: number }
+  ): void {
+    RuntimeUI.createBox(parent, {
+      name: "ParentPetVisualGlowV2",
+      x: options.x,
+      y: options.y - 6,
+      width: options.size + 34,
+      height: options.size + 34,
+      color: new Color(255, 224, 164, 124),
+      radius: Math.round((options.size + 34) / 2),
+    });
+    RuntimeUI.createBox(parent, {
+      name: "ParentPetVisualBodyV2",
+      x: options.x,
+      y: options.y,
+      width: options.size,
+      height: options.size,
+      color: UiTokens.colors.brand,
+      radius: Math.round(options.size / 2),
+    });
+    RuntimeUI.createBox(parent, {
+      name: "ParentPetVisualFaceV2",
+      x: options.x,
+      y: options.y - 8,
+      width: Math.round(options.size * 0.62),
+      height: Math.round(options.size * 0.46),
+      color: new Color(255, 250, 231, 252),
+      radius: Math.round(options.size * 0.23),
+    });
+    RuntimeUI.createBox(parent, {
+      name: "ParentPetVisualEarLeftV2",
+      x: options.x - Math.round(options.size * 0.28),
+      y: options.y + Math.round(options.size * 0.32),
+      width: Math.round(options.size * 0.25),
+      height: Math.round(options.size * 0.25),
+      color: new Color(238, 132, 72, 238),
+      radius: Math.round(options.size * 0.08),
+    });
+    RuntimeUI.createBox(parent, {
+      name: "ParentPetVisualEarRightV2",
+      x: options.x + Math.round(options.size * 0.28),
+      y: options.y + Math.round(options.size * 0.32),
+      width: Math.round(options.size * 0.25),
+      height: Math.round(options.size * 0.25),
+      color: new Color(238, 132, 72, 238),
+      radius: Math.round(options.size * 0.08),
+    });
+    RuntimeUI.createLabel(parent, {
+      name: "ParentPetVisualNameV2",
+      text: `${options.name} Lv.${options.level}`,
+      x: options.x,
+      y: options.y - options.size / 2 - 24,
+      width: options.size + 92,
+      height: 22,
+      fontSize: 14,
+      color: UiTokens.colors.textPrimary,
+    });
+  }
+
+  private renderParentMetricBar(
+    parent: Node,
+    options: { name: string; label: string; value?: number; x: number; y: number; width: number; fillColor: Color }
+  ): void {
+    const percent = Math.max(0, Math.min(100, options.value ?? 0));
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Label`,
+      text: options.label,
+      x: options.x - options.width / 2 - 30,
+      y: options.y,
+      width: 48,
+      height: 20,
+      fontSize: 13,
+      color: UiTokens.colors.textSecondary,
+      horizontalAlign: HorizontalTextAlignment.RIGHT,
+    });
+    RuntimeUI.createProgressBar(parent, {
+      name: options.name,
+      x: options.x + 18,
+      y: options.y,
+      width: options.width,
+      height: 14,
+      percent,
+      trackColor: new Color(242, 226, 211, 255),
+      fillColor: options.fillColor,
+      radius: 8,
+    });
+    RuntimeUI.createLabel(parent, {
+      name: `${options.name}Value`,
+      text: options.value == null ? "-" : `${Math.round(options.value)}`,
+      x: options.x + options.width / 2 + 48,
+      y: options.y,
+      width: 46,
+      height: 20,
+      fontSize: 13,
+      color: UiTokens.colors.textSecondary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+  }
+
+  private renderParentRingProgress(
+    parent: Node,
+    options: { name: string; x: number; y: number; radius: number; percent: number; title: string; value: string }
+  ): void {
+    const node = new Node(options.name);
+    node.setParent(parent);
+    node.setPosition(new Vec3(options.x, options.y, 0));
+    const transform = node.addComponent(UITransform);
+    transform.setContentSize(options.radius * 2 + 14, options.radius * 2 + 14);
+    const graphics = node.addComponent(Graphics);
+    graphics.lineWidth = 8;
+    graphics.strokeColor = new Color(242, 226, 211, 255);
+    graphics.arc(0, 0, options.radius, 0, Math.PI * 2, false);
+    graphics.stroke();
+    graphics.lineWidth = 8;
+    graphics.strokeColor = UiTokens.colors.brand;
+    const endAngle = -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(100, options.percent)) / 100;
+    graphics.arc(0, 0, options.radius, -Math.PI / 2, endAngle, false);
+    graphics.stroke();
+    RuntimeUI.createLabel(node, {
+      name: `${options.name}Value`,
+      text: options.value,
+      x: 0,
+      y: 4,
+      width: options.radius * 2,
+      height: 24,
+      fontSize: 18,
+      color: UiTokens.colors.textPrimary,
+    });
+    RuntimeUI.createLabel(node, {
+      name: `${options.name}Title`,
+      text: options.title,
+      x: 0,
+      y: -18,
+      width: options.radius * 2 + 20,
+      height: 18,
+      fontSize: 11,
+      color: UiTokens.colors.textSecondary,
+    });
+  }
+
+  private renderParentScoreTrend(
+    parent: Node,
+    options: { x: number; y: number; width: number; height: number }
+  ): void {
+    RuntimeUI.createBox(parent, {
+      name: "ParentScoreTrendBgV2",
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+      color: new Color(255, 244, 226, 110),
+      radius: 16,
+    });
+    const scores = this.resolveParentReportScores();
+    if (!scores.length) {
+      RuntimeUI.createLabel(parent, {
+        name: "ParentScoreTrendEmptyV2",
+        text: "暂无本周趋势\n刷新周报后展示分数变化",
+        x: options.x,
+        y: options.y,
+        width: options.width - 24,
+        height: 44,
+        fontSize: 14,
+        color: UiTokens.colors.textSecondary,
+      });
+      return;
+    }
+    const barGap = 14;
+    const barWidth = Math.max(26, Math.round((options.width - 50 - barGap * (scores.length - 1)) / scores.length));
+    scores.forEach((item, index) => {
+      const height = Math.max(10, Math.round((options.height - 34) * Math.max(0, Math.min(100, item.score)) / 100));
+      const x = options.x - options.width / 2 + 28 + barWidth / 2 + index * (barWidth + barGap);
+      RuntimeUI.createBox(parent, {
+        name: `ParentScoreTrendBar${index}`,
+        x,
+        y: options.y - options.height / 2 + 20 + height / 2,
+        width: barWidth,
+        height,
+        color: item.score >= 80 ? UiTokens.colors.mint : UiTokens.colors.brand,
+        radius: 8,
+      });
+      RuntimeUI.createLabel(parent, {
+        name: `ParentScoreTrendLabel${index}`,
+        text: item.label,
+        x,
+        y: options.y - options.height / 2 + 8,
+        width: barWidth + 20,
+        height: 16,
+        fontSize: 11,
+        color: UiTokens.colors.textSecondary,
+      });
+    });
+  }
+
+  private renderParentSubjectBreakdown(
+    parent: Node,
+    options: { x: number; y: number; width: number; height: number }
+  ): void {
+    const subjects = this.resolveParentSubjectBreakdown();
+    if (!subjects.length) {
+      RuntimeUI.createLabel(parent, {
+        name: "ParentSubjectBreakdownEmptyV2",
+        text: "暂无科目拆解",
+        x: options.x,
+        y: options.y,
+        width: options.width,
+        height: 24,
+        fontSize: 14,
+        color: UiTokens.colors.textSecondary,
+      });
+      return;
+    }
+    subjects.slice(0, 3).forEach((item, index) => {
+      const rowY = options.y + options.height / 2 - 18 - index * 31;
+      RuntimeUI.createLabel(parent, {
+        name: `ParentSubjectName${index}`,
+        text: item.label,
+        x: options.x - options.width / 2 + 38,
+        y: rowY,
+        width: 60,
+        height: 20,
+        fontSize: 13,
+        color: UiTokens.colors.textPrimary,
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      RuntimeUI.createProgressBar(parent, {
+        name: `ParentSubjectAvg${index}`,
+        x: options.x + 42,
+        y: rowY,
+        width: options.width - 134,
+        height: 12,
+        percent: item.avg,
+        trackColor: new Color(242, 226, 211, 255),
+        fillColor: item.avg >= 80 ? UiTokens.colors.mint : UiTokens.colors.brand,
+        radius: 7,
+      });
+      RuntimeUI.createLabel(parent, {
+        name: `ParentSubjectValue${index}`,
+        text: `${Math.round(item.avg)}`,
+        x: options.x + options.width / 2 - 26,
+        y: rowY,
+        width: 44,
+        height: 20,
+        fontSize: 13,
+        color: UiTokens.colors.textPrimary,
+      });
+    });
+  }
+
+  private renderParentInsightScroll(
+    parent: Node,
+    options: { x: number; y: number; width: number; height: number; column: "pet" | "insight" | "homework" }
+  ): void {
+    const isCompact = options.width < 260;
+    const titleFontSize = isCompact ? 17 : 20;
+    const titleLeft = isCompact ? 54 : 66;
+    const titleWidth = options.width - titleLeft - 20;
+    const titleX = -options.width / 2 + titleLeft + titleWidth / 2;
+    const pawX = -options.width / 2 + (isCompact ? 34 : 42);
+    const shell = RuntimeUI.createCard(parent, {
+      name: "ParentInsightShellV2",
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+      color: UiTokens.colors.borderSoft,
+      innerColor: new Color(255, 252, 247, 230),
+      radius: UiTokens.radii.cardMD,
+      borderThickness: 2,
+      innerRadius: 18,
+    });
+    this.installParentColumnClick(shell, options.column);
+    renderPawTitleDecor(shell, {
+      name: "ParentInsightPawV2",
+      x: pawX,
+      y: options.height / 2 - 28,
+      mirrored: false,
+      scale: isCompact ? 0.48 : 0.62,
+    });
+    RuntimeUI.createLabel(shell, {
+      name: "ParentInsightTitleV2",
+      text: "成长洞察",
+      x: titleX,
+      y: options.height / 2 - 29,
+      width: titleWidth,
+      height: 24,
+      fontSize: titleFontSize,
+      color: UiTokens.colors.textPrimary,
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    renderDottedDivider(shell, {
+      name: "ParentInsightDividerV2",
+      y: options.height / 2 - 54,
+      width: options.width - 52,
+      dotCount: isCompact ? 12 : 18,
+    });
+
+    const scrollHeight = Math.max(72, options.height - 72);
+    const scrollArea = RuntimeUI.createBox(shell, {
+      name: "ParentInsightScrollAreaV2",
+      x: 0,
+      y: -options.height / 2 + 16 + scrollHeight / 2,
+      width: options.width - (isCompact ? 20 : 28),
+      height: scrollHeight,
+      color: new Color(255, 244, 226, 96),
+      radius: 16,
+    });
+    this.installParentColumnClick(scrollArea, options.column);
+    const mask = scrollArea.addComponent(Mask);
+    mask.enabled = true;
+    const scrollView = scrollArea.addComponent(ScrollView);
+    scrollView.horizontal = false;
+    scrollView.vertical = true;
+    scrollView.inertia = true;
+    scrollView.brake = 0.35;
+    scrollView.elastic = true;
+
+    const content = new Node("ParentInsightScrollContentV2");
+    content.setParent(scrollArea);
+    const contentTransform = content.addComponent(UITransform);
+    const rows = this.buildParentInsightRows();
+    const rowHeight = 28;
+    const contentPadding = 16;
+    const contentHeight = Math.max(scrollHeight + 40, contentPadding * 2 + rows.length * rowHeight);
+    const contentWidth = options.width - (isCompact ? 44 : 58);
+    contentTransform.setContentSize(contentWidth, contentHeight);
+    let cursorY = contentHeight / 2 - contentPadding;
+    rows.forEach((row, index) => {
+      const isTitle = row.kind === "title";
+      RuntimeUI.createLabel(content, {
+        name: `ParentInsightRow${index}`,
+        text: row.text,
+        x: 0,
+        y: cursorY - rowHeight / 2,
+        width: contentWidth,
+        height: rowHeight,
+        fontSize: isTitle ? (isCompact ? 13 : 15) : (isCompact ? 11 : 13),
+        color: isTitle ? UiTokens.colors.textPrimary : UiTokens.colors.textSecondary,
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      cursorY -= rowHeight;
+    });
+    content.setPosition(Vec3.ZERO);
+    scrollView.content = content;
+  }
+
+  private resolveParentHomeworkCompletion(): { completed: number; total: number; percent: number; summary: string } {
+    const entries = Object.entries(this.parentOverviewData?.today_homework ?? {});
+    const total = Math.max(3, entries.length || 0);
+    const completed = entries.filter(([, item]) => item && item.score != null).length;
+    const percent = total ? Math.round((completed / total) * 100) : 0;
+    return {
+      completed,
+      total,
+      percent,
+      summary: completed >= total ? "今日作业已完成" : `还有 ${Math.max(0, total - completed)} 项待完成`,
+    };
+  }
+
+  private resolveParentChildDisplayName(childLabel: string): string {
+    if (!childLabel || childLabel === "未绑定") {
+      return "孩子";
+    }
+    if (childLabel.length <= 8) {
+      return childLabel;
+    }
+    return `孩子 ${childLabel.slice(0, 4)}`;
+  }
+
+  private resolveParentChildMetaText(childLabel: string): string {
+    if (!childLabel || childLabel === "未绑定") {
+      return "未绑定";
+    }
+    if (childLabel.length <= 14) {
+      return `已绑定：${childLabel}`;
+    }
+    return `已绑定：...${childLabel.slice(-8)}`;
+  }
+
+  private resolveParentReportScores(): Array<{ label: string; score: number }> {
+    return Object.entries(this.parentReportData?.subject_breakdown ?? {}).map(([subject, item]) => ({
+      label: this.formatHomeworkSubjectLabel(subject).slice(0, 1),
+      score: item.avg,
+    }));
+  }
+
+  private resolveParentSubjectBreakdown(): Array<{ label: string; avg: number; count: number }> {
+    return Object.entries(this.parentReportData?.subject_breakdown ?? {}).map(([subject, item]) => ({
+      label: this.formatHomeworkSubjectLabel(subject),
+      avg: item.avg,
+      count: item.count,
+    }));
+  }
+
+  private resolveParentEvolutionHint(): string {
+    const pet = this.parentOverviewData?.pet;
+    if (!pet) {
+      return "同步后会显示宠物成长目标。";
+    }
+    const exp = pet.experience ?? 0;
+    const nextTarget = Math.max(20, Math.ceil((exp + 1) / 20) * 20);
+    const remaining = Math.max(1, nextTarget - exp);
+    return `距离下一次成长约还差 ${remaining} 点作业积分。`;
+  }
+
+  private buildParentInsightRows(): Array<{ kind: "title" | "body"; text: string }> {
+    const rows: Array<{ kind: "title" | "body"; text: string }> = [];
+    const overview = this.parentOverviewData;
+    const report = this.parentReportData;
+    if (overview) {
+      const pet = overview.pet;
+      rows.push({ kind: "title", text: "宠物状态洞察" });
+      rows.push({ kind: "body", text: `${pet.name} 当前 Lv.${pet.level}，${this.formatPetStage(pet.stage)}。` });
+      rows.push({
+        kind: "body",
+        text: `饥饿 ${pet.hunger} / 体力 ${pet.energy ?? pet.health ?? "-"} / 心情 ${pet.mood} / 清洁 ${pet.cleanliness ?? "-"}`,
+      });
+      rows.push({ kind: "body", text: this.resolveParentEvolutionHint() });
+      const homework = Object.entries(overview.today_homework ?? {})
+        .map(([subject, item]) => `${this.formatHomeworkSubjectLabel(subject)} ${item?.score ?? "未提交"}`)
+        .join(" · ");
+      rows.push({ kind: "title", text: "今日作业" });
+      rows.push({ kind: "body", text: homework || "暂无今日作业记录。" });
+    }
+    if (report) {
+      rows.push({ kind: "title", text: "本周学习趋势" });
+      rows.push({ kind: "body", text: `${report.week}，共 ${report.total_homework} 次作业，平均分 ${Math.round(report.average_score)}。` });
+      const breakdown = Object.entries(report.subject_breakdown ?? {})
+        .map(([subject, item]) => `${this.formatHomeworkSubjectLabel(subject)} ${item.count} 次 / 平均 ${Math.round(item.avg)}`)
+        .join(" · ");
+      rows.push({ kind: "body", text: breakdown || "暂无科目拆解数据。" });
+      const pet = report.pet_status_summary;
+      if (pet) {
+        rows.push({
+          kind: "body",
+          text: `本周宠物概览：饥饿 ${pet.hunger ?? "-"} / 体力 ${pet.energy ?? "-"} / 心情 ${pet.mood ?? "-"} / 清洁 ${pet.cleanliness ?? "-"}`,
+        });
+      }
+    }
+    if (!rows.length) {
+      rows.push({ kind: "title", text: "暂无数据" });
+      rows.push({ kind: "body", text: "点击刷新后查看孩子宠物成长、今日作业和本周学习趋势。" });
+    }
+    return rows;
+  }
+
+  private renderParentActionButton(
+    parent: Node,
+    name: string,
+    text: string,
+    x: number,
+    y: number,
+    color: Color,
+    onClick: () => void
+  ): void {
+    const button = RuntimeUI.createButton(parent, {
+      name,
+      text,
+      x,
+      y,
+      width: name.includes("Refresh") ? 128 : name.includes("Report") ? 150 : 170,
+      height: 42,
+      color,
+      fontSize: 16,
+      radius: 20,
+    });
+    button.node.on(Button.EventType.CLICK, onClick, this);
+  }
+
+  private renderParentInfoCard(
+    parent: Node,
+    options: {
+      name: string;
+      title: string;
+      text: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      accentColor: Color;
+    }
+  ): void {
+    const card = RuntimeUI.createCard(parent, {
+      name: options.name,
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+      color: new Color(219, 174, 135, 245),
+      innerColor: new Color(255, 250, 244, 255),
+      radius: 18,
+      borderThickness: 3,
+      innerRadius: 16,
+    });
+    RuntimeUI.createBox(card, {
+      name: `${options.name}Accent`,
+      x: -options.width / 2 + 16,
+      y: 0,
+      width: 6,
+      height: options.height - 34,
+      color: options.accentColor,
+      radius: 3,
+    });
+    const textWidth = options.width - 64;
+    const textX = -options.width / 2 + 38 + textWidth / 2;
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}Title`,
+      text: options.title,
+      x: textX,
+      y: options.height / 2 - 30,
+      width: textWidth,
+      height: 24,
+      fontSize: 18,
+      color: new Color(98, 66, 46, 255),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}Text`,
+      text: options.text,
+      x: textX,
+      y: -14,
+      width: textWidth,
+      height: options.height - 62,
+      fontSize: 14,
+      color: new Color(98, 66, 46, 235),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+  }
+
+  private buildParentPetSummaryText(): string {
+    const data = this.parentOverviewData;
+    if (!data) {
+      return "暂无宠物数据\n点击查看或刷新。";
+    }
+    const pet = data.pet;
+    return [
+      `${pet.name}  Lv.${pet.level}`,
+      `饥饿 ${pet.hunger} / 体力 ${pet.energy ?? pet.health ?? "-"}`,
+      `心情 ${pet.mood} / 清洁 ${pet.cleanliness ?? "-"}`,
+      `经验 ${pet.experience ?? 0} / 阶段 ${this.formatPetStage(pet.stage)}`,
+    ].join("\n");
+  }
+
+  private buildParentReportSummaryText(): string {
+    const data = this.parentReportData;
+    if (!data) {
+      return "暂无周报数据\n点击查看周报或刷新。";
+    }
+    return [
+      `周次：${data.week}`,
+      `作业总数：${data.total_homework}`,
+      `平均分：${Math.round(data.average_score)}`,
+      `宠物状态：${data.pet_status_summary?.alive ? "正常" : "暂无"}`,
+    ].join("\n");
+  }
+
+  private buildParentDetailText(): string {
+    const parts: string[] = [];
+    if (this.parentOverviewData) {
+      const pet = this.parentOverviewData.pet;
+      const homework = Object.entries(this.parentOverviewData.today_homework ?? {})
+        .map(([subject, item]) => `${this.formatHomeworkSubjectLabel(subject)}：${item?.score ?? "未提交"}`)
+        .join(" / ");
+      parts.push([
+        "孩子宠物详情",
+        `孩子：${this.parentOverviewData.childNickname ?? this.parentOverviewData.childId ?? "-"}`,
+        `宠物：${pet.name}  Lv.${pet.level}`,
+        `饥饿：${pet.hunger}  体力：${pet.energy ?? pet.health ?? "-"}`,
+        `心情：${pet.mood}  清洁：${pet.cleanliness ?? "-"}`,
+        `经验：${pet.experience ?? 0}  阶段：${this.formatPetStage(pet.stage)}  状态：${pet.status ? "在线" : "离线"}`,
+        `今日作业：${homework || "暂无记录"}`,
+      ].join("\n"));
+    }
+    if (this.parentReportData) {
+      const breakdown = Object.entries(this.parentReportData.subject_breakdown ?? {})
+        .map(([subject, item]) => `${this.formatHomeworkSubjectLabel(subject)}：${item.count} 次 / 平均 ${Math.round(item.avg)}`)
+        .join("；");
+      const pet = this.parentReportData.pet_status_summary;
+      parts.push([
+        "本周报告",
+        `周次：${this.parentReportData.week}`,
+        `作业总数：${this.parentReportData.total_homework}`,
+        `平均分：${Math.round(this.parentReportData.average_score)}`,
+        `科目：${breakdown || "暂无科目数据"}`,
+        pet
+          ? `宠物概览：饥饿 ${pet.hunger ?? "-"} / 体力 ${pet.energy ?? "-"} / 心情 ${pet.mood ?? "-"} / 清洁 ${pet.cleanliness ?? "-"} / 阶段 ${this.formatPetStage(pet.stage)}`
+          : "宠物概览：暂无",
+      ].join("\n"));
+    }
+    return parts.join("\n\n") || "暂无数据。绑定孩子后可查看宠物状态、今日作业和本周学习概览。";
+  }
+
+  private formatHomeworkSubjectLabel(subject: string): string {
+    const labels: Record<string, string> = {
+      chinese: "语文",
+      math: "数学",
+      english: "英语",
+      general: "综合",
+    };
+    return labels[subject] ?? subject;
+  }
+
+  private formatPetStage(stage: string | undefined): string {
+    const labels: Record<string, string> = {
+      STAGE_1: "阶段 1",
+      STAGE_2: "阶段 2",
+      STAGE_3: "阶段 3",
+      STAGE_4: "阶段 4",
+    };
+    return stage ? labels[stage] ?? stage : "-";
+  }
+
   private createMainStageRendererContext(): MainStageRendererContext {
     return {
       assets: {
@@ -1994,6 +3474,9 @@ export class MainController extends ScreenController {
     } else if (tab === "journal") {
       this.appendMainInteraction("日记已打开", "正在读取后端历史事件。");
       void this.tryRefreshJournalEvents();
+    } else if (tab === "chat") {
+      this.appendMainInteraction("聊天已打开", "可以给宠物发送一条消息。");
+      void this.tryRefreshChatHistory();
     } else {
       this.appendMainInteraction("回到宠物主页", "继续查看当前宠物舞台与互动状态。");
     }
@@ -2014,10 +3497,14 @@ export class MainController extends ScreenController {
 
     const viewModel = this.createMainViewModel();
     const isBag = this.activeTopBarNavTab === "bag";
+    const isChat = this.activeTopBarNavTab === "chat";
     const panelWidth = Math.max(300, Math.min(460, Math.round(options.stageWidth * 0.38)));
-    const panelHeight = Math.max(180, Math.min(270, Math.round(options.stageHeight * 0.42)));
+    const panelHeight = Math.max(
+      180,
+      Math.min(isChat ? 320 : 270, Math.round(options.stageHeight * (isChat ? 0.58 : 0.42)))
+    );
     const panel = RuntimeUI.createCard(parent, {
-      name: isBag ? "BagPlaceholderPanel" : "JournalPlaceholderPanel",
+      name: isBag ? "BagPlaceholderPanel" : isChat ? "ChatPlaceholderPanel" : "JournalPlaceholderPanel",
       x: 0,
       y: Math.round(options.stageY),
       width: panelWidth,
@@ -2031,7 +3518,7 @@ export class MainController extends ScreenController {
 
     RuntimeUI.createLabel(panel, {
       name: "PlaceholderTitle",
-      text: isBag ? "背包" : "日记",
+      text: isBag ? "背包" : isChat ? "聊天" : "日记",
       x: 0,
       y: Math.round(panelHeight * 0.32),
       width: panelWidth - 42,
@@ -2053,6 +3540,34 @@ export class MainController extends ScreenController {
       onOpenHomework: () => this.openHomeworkCenterFromFoodShortage(),
       eventTarget: this,
     });
+      return;
+    }
+    if (isChat) {
+      const pet = appState.getCurrentPet();
+      const messages = appState.getChatHistory();
+      const refs = renderPetChatPanel(
+        panel,
+        {
+          messages,
+          draft: this.chatCoordinator.getDraft(),
+          notice: this.chatCoordinator.buildHint(pet?.name, messages.length, pet?.mood, this.chatSending),
+          sending: this.chatSending,
+        },
+        {
+          onSend: () => this.handleChatSend(),
+        },
+        this,
+        {
+          x: 0,
+          y: -18,
+          width: Math.max(280, panelWidth - 30),
+          height: Math.max(210, panelHeight - 56),
+          historyHeight: Math.max(82, panelHeight - 168),
+          inputWidth: Math.max(170, panelWidth - 148),
+          sendButtonWidth: 82,
+        }
+      );
+      this.chatInput = refs.input;
       return;
     }
     renderJournalPanelContent({
@@ -2090,6 +3605,69 @@ export class MainController extends ScreenController {
     } finally {
       this.journalEventsLoading = false;
       if (this.activeTopBarNavTab === "journal") {
+        this.render();
+      }
+    }
+  }
+
+  private async tryRefreshChatHistory(): Promise<void> {
+    const petId = appState.getPetId();
+    if (!petId) {
+      return;
+    }
+    const requestSeq = this.chatRefreshSeq + 1;
+    this.chatRefreshSeq = requestSeq;
+    try {
+      await chatService.refreshHistory(petId, 20, () => requestSeq === this.chatRefreshSeq);
+    } finally {
+      if (this.activeTopBarNavTab === "chat" && requestSeq === this.chatRefreshSeq) {
+        this.render();
+      }
+    }
+  }
+
+  private async handleChatSend(): Promise<void> {
+    if (this.chatSending) {
+      return;
+    }
+    const petId = appState.getPetId();
+    const pet = appState.getCurrentPet();
+    const message = (this.chatInput?.string ?? this.chatCoordinator.getDraft()).trim();
+    this.chatCoordinator.setDraft(message);
+
+    if (!petId) {
+      this.appendMainInteraction("聊天暂不可用", "请先创建宠物再开始聊天。");
+      this.render();
+      return;
+    }
+    if (!message) {
+      this.appendMainInteraction("聊天未发送", "请先输入想对宠物说的话。");
+      this.render();
+      return;
+    }
+
+    const requestSeq = this.chatRefreshSeq + 1;
+    this.chatRefreshSeq = requestSeq;
+    this.chatSending = true;
+    this.render();
+    try {
+      const result = await chatService.sendMessage({
+        petId,
+        message,
+        petMood: pet?.mood,
+        canCommit: () => requestSeq === this.chatRefreshSeq,
+      });
+      if (result.success) {
+        this.chatCoordinator.clearDraftIfMatch(message);
+        this.appendMainInteraction("聊天已发送", result.usedFallback ? "已使用本地回复兜底。" : "宠物已回复。");
+      } else {
+        this.appendMainInteraction("聊天发送失败", result.message);
+      }
+    } catch {
+      this.appendMainInteraction("聊天发送失败", "请求异常，请稍后再试。");
+    } finally {
+      if (requestSeq === this.chatRefreshSeq) {
+        this.chatSending = false;
         this.render();
       }
     }
@@ -2614,9 +4192,10 @@ export class MainController extends ScreenController {
       { key: "petHome", name: "PetHome", text: "宠物主页", icon: "" },
       { key: "bag", name: "Bag", text: "背包", icon: "" },
       { key: "journal", name: "Journal", text: "日记", icon: "" },
+      { key: "chat", name: "Chat", text: "聊天", icon: "" },
     ];
     const navGap = 10;
-    const navItemWidth = Math.round((navWidth - 20 - navGap * 2) / 3);
+    const navItemWidth = Math.round((navWidth - 20 - navGap * (navItems.length - 1)) / navItems.length);
     const navItemHeight = navHeight - 14;
     navItems.forEach((item, index) => {
       const itemX = -navWidth / 2 + 10 + navItemWidth / 2 + index * (navItemWidth + navGap);
