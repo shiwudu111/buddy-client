@@ -65,6 +65,11 @@ import {
   renderFlowerCluster,
   renderPawTitleDecor,
 } from "./MainDecorations";
+import {
+  resolveParentColumnAnimationProgress,
+  resolveParentColumnLayout as resolveParentDashboardColumnLayout,
+} from "./parent/ParentColumnLayout";
+import { renderParentDashboardPanel } from "./parent/ParentDashboardPanel";
 import { ART_DEBUG_PAGE_HTML, REFERENCE_PAGE_HTML } from "./MainDebugPages";
 import { renderMainStageBase, type MainStageRendererContext } from "./MainStageRenderer";
 import {
@@ -1881,234 +1886,43 @@ export class MainController extends ScreenController {
   }
 
   private renderParentHomeV2(root: Node, layout: MainLayout): void {
-    const panelWidth = Math.max(760, Math.min(1040, Math.round(layout.viewportWidth * 0.84)));
-    const panelHeight = Math.max(560, Math.min(700, Math.round(layout.viewportHeight * 0.9)));
-    const user = appState.getCurrentUser();
-    const childLabel = user?.childNickname || user?.childId || "未绑定";
-    const childDisplayName = this.resolveParentChildDisplayName(childLabel);
-    const childMetaText = this.resolveParentChildMetaText(childLabel);
-    const hasLinkedChild = Boolean(user?.childId || appState.getLinkedChildId());
-    const contentWidth = panelWidth - 64;
     this.parentBindInput = null;
-    const panel = RuntimeUI.createCard(root, {
-      name: "ParentHomePanelV2",
-      x: 0,
-      y: 0,
-      width: panelWidth,
-      height: panelHeight,
-      color: UiTokens.colors.borderSoft,
-      innerColor: UiTokens.colors.panel,
-      radius: UiTokens.radii.cardLG,
-      borderThickness: 3,
-      innerRadius: UiTokens.radii.cardMD,
+    renderParentDashboardPanel({
+      root,
+      layout,
+      state: {
+        user: appState.getCurrentUser(),
+        linkedChildId: appState.getLinkedChildId(),
+        notice: this.parentNotice,
+        overviewLoading: this.parentOverviewLoading,
+        reportLoading: this.parentReportLoading,
+        completion: this.resolveParentHomeworkCompletion(),
+        overviewData: this.parentOverviewData,
+        reportData: this.parentReportData,
+      },
+      callbacks: {
+        resolveChildDisplayName: (childLabel) => this.resolveParentChildDisplayName(childLabel),
+        resolveChildMetaText: (childLabel) => this.resolveParentChildMetaText(childLabel),
+        resolveColumnLayout: (contentWidth, gap) =>
+          resolveParentDashboardColumnLayout({
+            contentWidth,
+            gap,
+            expandedColumn: this.parentExpandedColumn,
+            animationFrom: this.parentColumnAnimationFrom,
+            animationTo: this.parentColumnAnimationTo,
+            animationStart: this.parentColumnAnimationStart,
+            now: Date.now(),
+          }),
+        onRefresh: () => void this.handleParentRefreshAll(),
+        onLogout: () => this.handleParentLogout(),
+        renderRingProgress: (parent, options) => this.renderParentRingProgress(parent, options),
+        renderBindEmptyState: (parent, contentWidth, panelHeight, y) =>
+          this.renderParentBindEmptyState(parent, contentWidth, panelHeight, y),
+        renderPetGrowthPanel: (parent, options) => this.renderParentPetGrowthPanel(parent, options),
+        renderInsightScroll: (parent, options) => this.renderParentInsightScroll(parent, options),
+        renderHomeworkPanel: (parent, options) => this.renderParentHomeworkPanel(parent, options),
+      },
     });
-
-    const headerHeight = 72;
-    const headerY = panelHeight / 2 - 24 - headerHeight / 2;
-    const header = RuntimeUI.createCard(panel, {
-      name: "ParentDashboardHeaderV2",
-      x: 0,
-      y: headerY,
-      width: contentWidth,
-      height: headerHeight,
-      color: new Color(247, 155, 52, 168),
-      innerColor: new Color(255, 252, 247, 238),
-      radius: UiTokens.radii.cardMD,
-      borderThickness: 2,
-      innerRadius: 19,
-    });
-    renderPawTitleDecor(header, {
-      name: "ParentHeaderPawV2",
-      x: -contentWidth / 2 + 118,
-      y: 18,
-      mirrored: false,
-      scale: 0.58,
-    });
-    renderDottedDivider(header, {
-      name: "ParentHeaderDividerV2",
-      y: -24,
-      width: contentWidth - 56,
-      dotCount: 34,
-    });
-    RuntimeUI.createBox(header, {
-      name: "ParentChildAvatarV2",
-      x: -contentWidth / 2 + 54,
-      y: 2,
-      width: 48,
-      height: 48,
-      color: UiTokens.colors.brand,
-      radius: 24,
-    });
-    RuntimeUI.createLabel(header, {
-      name: "ParentChildAvatarTextV2",
-      text: childDisplayName.slice(0, 1),
-      x: -contentWidth / 2 + 54,
-      y: 2,
-      width: 46,
-      height: 34,
-      fontSize: 22,
-      color: UiTokens.colors.textLight,
-    });
-    RuntimeUI.createLabel(panel, {
-      name: "ParentHomeTitleV2",
-      text: hasLinkedChild ? `${childDisplayName} 的成长面板` : "家长成长面板",
-      x: -contentWidth / 2 + 226,
-      y: headerY + 12,
-      width: Math.round(contentWidth * 0.36),
-      height: 28,
-      fontSize: 21,
-      color: UiTokens.colors.textPrimary,
-      horizontalAlign: HorizontalTextAlignment.LEFT,
-    });
-    RuntimeUI.createLabel(panel, {
-      name: "ParentHomeSubtitleV2",
-      text: `${user?.username ?? "家长"} · ${hasLinkedChild ? childMetaText : "请先绑定孩子账号"}`,
-      x: -contentWidth / 2 + 226,
-      y: headerY - 14,
-      width: Math.round(contentWidth * 0.36),
-      height: 24,
-      fontSize: 13,
-      color: UiTokens.colors.textSecondary,
-      horizontalAlign: HorizontalTextAlignment.LEFT,
-    });
-
-    const completion = this.resolveParentHomeworkCompletion();
-    this.renderParentRingProgress(panel, {
-      name: "ParentTodayProgressRingV2",
-      x: contentWidth / 2 - 250,
-      y: headerY,
-      radius: 27,
-      percent: completion.percent,
-      title: "今日完成",
-      value: `${completion.completed}/${completion.total}`,
-    });
-    RuntimeUI.createLabel(panel, {
-      name: "ParentTodayHintV2",
-      text: completion.total ? completion.summary : "等待今日作业数据",
-      x: contentWidth / 2 - 162,
-      y: headerY,
-      width: 136,
-      height: 34,
-      fontSize: 13,
-      color: UiTokens.colors.textSecondary,
-      horizontalAlign: HorizontalTextAlignment.LEFT,
-    });
-
-    const refreshButton = RuntimeUI.createButton(panel, {
-      name: "ParentRefreshButtonV2",
-      text: this.parentOverviewLoading || this.parentReportLoading ? "同步中" : "刷新",
-      x: contentWidth / 2 - 56,
-      y: headerY + 14,
-      width: 86,
-      height: 28,
-      color: UiTokens.colors.mint,
-      fontSize: 14,
-      radius: 16,
-    });
-    refreshButton.node.on(Button.EventType.CLICK, () => void this.handleParentRefreshAll(), this);
-    const logoutButton = RuntimeUI.createButton(panel, {
-      name: "ParentLogoutButtonV2",
-      text: "退出",
-      x: contentWidth / 2 - 56,
-      y: headerY - 18,
-      width: 86,
-      height: 28,
-      color: new Color(156, 123, 99, 230),
-      fontSize: 14,
-      radius: 16,
-    });
-    logoutButton.node.on(Button.EventType.CLICK, () => this.handleParentLogout(), this);
-
-    const noticeText = this.parentNotice || (hasLinkedChild ? "数据会在刷新后同步到最新状态。" : "绑定孩子后展示宠物成长和学习趋势。");
-    RuntimeUI.createLabel(panel, {
-      name: "ParentNoticeV2",
-      text: noticeText,
-      x: 0,
-      y: headerY - headerHeight / 2 - 14,
-      width: contentWidth - 36,
-      height: 22,
-      fontSize: 13,
-      color: this.parentNotice ? UiTokens.colors.brand : UiTokens.colors.textSecondary,
-    });
-
-    if (!hasLinkedChild) {
-      this.renderParentBindEmptyState(panel, contentWidth, panelHeight, headerY - 112);
-      return;
-    }
-
-    const mainTop = headerY - headerHeight / 2 - 34;
-    const mainBottom = -panelHeight / 2 + 32;
-    const mainGap = 16;
-    const mainPanelHeight = Math.max(330, mainTop - mainBottom);
-    const mainY = mainBottom + mainPanelHeight / 2;
-    const columns = this.resolveParentColumnLayout(contentWidth, mainGap);
-    this.renderParentPetGrowthPanel(panel, {
-      x: columns.pet.x,
-      y: mainY,
-      width: columns.pet.width,
-      height: mainPanelHeight,
-      column: "pet",
-    });
-    this.renderParentInsightScroll(panel, {
-      x: columns.insight.x,
-      width: columns.insight.width,
-      y: mainY,
-      height: mainPanelHeight,
-      column: "insight",
-    });
-    this.renderParentHomeworkPanel(panel, {
-      x: columns.homework.x,
-      y: mainY,
-      width: columns.homework.width,
-      height: mainPanelHeight,
-      column: "homework",
-    });
-  }
-
-  private resolveParentColumnLayout(
-    contentWidth: number,
-    gap: number
-  ): Record<"pet" | "insight" | "homework", { x: number; width: number }> {
-    const totalColumnWidth = contentWidth - gap * 2;
-    const keys = ["pet", "insight", "homework"] as const;
-    const fromWidths = this.resolveParentColumnWidths(totalColumnWidth, this.parentColumnAnimationFrom);
-    const toWidths = this.resolveParentColumnWidths(totalColumnWidth, this.parentColumnAnimationTo ?? this.parentExpandedColumn);
-    const rawProgress = this.resolveParentColumnAnimationProgress();
-    const easedProgress = this.easeInOutQuad(rawProgress);
-    const widths = keys.map((_, index) => Math.round(fromWidths[index] + (toWidths[index] - fromWidths[index]) * easedProgress));
-    const correctedWidths = [widths[0], widths[1], totalColumnWidth - widths[0] - widths[1]];
-    const left = -contentWidth / 2;
-    const petX = left + correctedWidths[0] / 2;
-    const insightX = left + correctedWidths[0] + gap + correctedWidths[1] / 2;
-    const homeworkX = left + correctedWidths[0] + gap + correctedWidths[1] + gap + correctedWidths[2] / 2;
-    return {
-      pet: { x: petX, width: correctedWidths[0] },
-      insight: { x: insightX, width: correctedWidths[1] },
-      homework: { x: homeworkX, width: correctedWidths[2] },
-    };
-  }
-
-  private resolveParentColumnWidths(totalColumnWidth: number, expandedColumn: "pet" | "insight" | "homework" | null): number[] {
-    const normalWidth = Math.round(totalColumnWidth / 3);
-    if (expandedColumn == null) {
-      return [normalWidth, totalColumnWidth - normalWidth * 2, normalWidth];
-    }
-    const expandedWidth = Math.round(totalColumnWidth * 0.48);
-    const collapsedWidth = Math.round((totalColumnWidth - expandedWidth) / 2);
-    const keys = ["pet", "insight", "homework"] as const;
-    return keys.map((key) => (key === expandedColumn ? expandedWidth : collapsedWidth));
-  }
-
-  private resolveParentColumnAnimationProgress(): number {
-    if (this.parentColumnAnimationStart <= 0) {
-      return 1;
-    }
-    const elapsed = Date.now() - this.parentColumnAnimationStart;
-    return Math.max(0, Math.min(1, elapsed / 260));
-  }
-
-  private easeInOutQuad(value: number): number {
-    return value < 0.5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
   }
 
   private installParentColumnClick(card: Node, column: "pet" | "insight" | "homework"): void {
@@ -2134,7 +1948,7 @@ export class MainController extends ScreenController {
     this.parentExpandedColumn = nextColumn;
     this.parentColumnAnimationStart = Date.now();
     const step = (): void => {
-      const progress = this.resolveParentColumnAnimationProgress();
+      const progress = resolveParentColumnAnimationProgress(this.parentColumnAnimationStart, Date.now());
       this.render();
       if (progress < 1 && typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
         this.parentColumnAnimationFrame = window.requestAnimationFrame(step);
