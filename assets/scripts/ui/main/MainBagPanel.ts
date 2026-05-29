@@ -232,7 +232,7 @@ export function renderFoodSelectionPanel(options: {
   const headerColor = new Color(151, 105, 76, 210);
   RuntimeUI.createLabel(panel, {
     name: "FoodSelectionTypeHeader",
-    text: "food_type",
+    text: "口粮",
     x: -Math.round(panelWidth * 0.25),
     y: headerY,
     width: Math.round(panelWidth * 0.28),
@@ -243,7 +243,7 @@ export function renderFoodSelectionPanel(options: {
   });
   RuntimeUI.createLabel(panel, {
     name: "FoodSelectionQualityHeader",
-    text: "food_quality",
+    text: "品质",
     x: 0,
     y: headerY,
     width: Math.round(panelWidth * 0.28),
@@ -253,7 +253,7 @@ export function renderFoodSelectionPanel(options: {
   });
   RuntimeUI.createLabel(panel, {
     name: "FoodSelectionCountHeader",
-    text: "count",
+    text: "数量",
     x: Math.round(panelWidth * 0.27),
     y: headerY,
     width: Math.round(panelWidth * 0.16),
@@ -366,7 +366,7 @@ function renderFoodShortageGuide(options: {
   });
   RuntimeUI.createLabel(parent, {
     name: `${name}Text`,
-    text: "粮食不太够啦，完成一次学习任务可以获得新的口粮。",
+    text: compact ? "当前没有可用口粮，去完成作业领取奖励。" : "背包里还没有可用口粮。完成一次作业后，奖励会自动进入背包。",
     x: -Math.round(width * 0.12),
     y: y + (compact ? 12 : 18),
     width: Math.round(width * 0.68),
@@ -377,7 +377,7 @@ function renderFoodShortageGuide(options: {
   });
   const homeworkButton = RuntimeUI.createButton(parent, {
     name: `${name}HomeworkButton`,
-    text: "去提交作业",
+    text: "去做作业",
     x: Math.round(width * 0.3),
     y: y - (compact ? 14 : 18),
     width: Math.max(102, Math.round(width * 0.28)),

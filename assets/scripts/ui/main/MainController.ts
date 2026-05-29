@@ -2924,14 +2924,14 @@ export class MainController extends ScreenController {
       this.journalEventsLoaded = result.success;
       if (!result.success) {
         this.journalSyncMessage = appState.getDiaryDays().length
-          ? "同步失败，当前为上次记录"
+          ? "同步失败，当前显示最近一次缓存记录"
           : "日记暂未同步，请稍后再试";
       }
     } catch {
       this.journalEventsLoaded = false;
       this.journalSyncMessage = appState.getDiaryDays().length
-        ? "同步失败，当前为上次记录"
-        : "日记暂未同步，请稍后再试";
+        ? "网络异常，当前显示最近一次缓存记录"
+        : "日记暂未同步，请检查网络后重试";
     } finally {
       this.journalEventsLoading = false;
       if (this.activeTopBarNavTab === "journal") {
@@ -3215,9 +3215,16 @@ export class MainController extends ScreenController {
     this.render();
     const feedback = await submitTask;
     const latestBackendLog = feedback.logsSynced ? appState.getMainEvents()[0] : null;
+    const rewardGranted = feedback.rewardStatus === "granted";
+    const feedbackTitle = latestBackendLog?.title ?? (rewardGranted ? "作业奖励" : "作业提交");
+    const feedbackDetail =
+      latestBackendLog?.detail ??
+      (rewardGranted
+        ? `${feedback.message}。奖励会进入背包，使用后可在日记里看到记录。`
+        : feedback.message);
     this.appendMainInteraction(
-      latestBackendLog?.title ?? (feedback.rewardStatus === "granted" ? "作业奖励" : "作业提交"),
-      latestBackendLog?.detail ?? feedback.message
+      feedbackTitle,
+      feedbackDetail
     );
     this.render();
 
@@ -3232,7 +3239,7 @@ export class MainController extends ScreenController {
     if (feedback.success && feedback.rewardStatus === "granted" && feedback.shouldRefreshDashboard) {
       const refreshed = await this.tryRefreshMainDashboard();
       if (!refreshed) {
-        this.appendMainInteraction("背包稍后刷新", "奖励已发放，背包稍后刷新。");
+        this.appendMainInteraction("奖励已发放", "背包刷新暂未完成，稍后重新打开背包即可查看。");
         this.render();
       }
     }
@@ -4554,8 +4561,8 @@ export class MainController extends ScreenController {
     this.appendMainInteraction(
       "选择口粮",
       availableFoodCount > 0
-        ? "请选择一份口粮后再调用真实背包使用接口。"
-        : "dashboard 已同步，但当前没有可用口粮；请先提交作业获取奖励。"
+        ? "请选择一份口粮，使用后会刷新宠物状态并写入日记。"
+        : "当前没有可用口粮；先完成一次作业即可获得奖励。"
     );
     this.render();
   }
@@ -4614,7 +4621,8 @@ export class MainController extends ScreenController {
         const latestLog = data?.logs?.[0];
         this.appendMainInteraction(
           latestLog?.title ?? "使用成功",
-          latestLog?.detail ?? `已使用 ${this.formatFoodName(selectedFood)}，已按接口返回结果刷新状态。`
+          latestLog?.detail ??
+            `已使用 ${this.formatFoodName(selectedFood)}，宠物状态已刷新；可到日记查看这次记录。`
         );
         this.render();
         return;
