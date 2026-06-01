@@ -1,4 +1,4 @@
-import { API_CONFIG } from "../core/config";
+import { getApiBaseUrl } from "../core/config";
 import { STORAGE_KEYS, storage } from "../core/storage";
 import type {
   ApiResponse,
@@ -82,7 +82,7 @@ class ApiClient {
         headers.Authorization = `Bearer ${this.token}`;
       }
 
-      const response = await fetch(`${API_CONFIG.baseUrl}${path}`, {
+      const response = await fetch(`${getApiBaseUrl()}${path}`, {
         ...options,
         headers,
       });

@@ -6,6 +6,53 @@ export const API_CONFIG = {
   timeoutMs: 10000,
 } as const;
 
+export const API_BASE_OVERRIDE_KEY = "BUDDY_API_BASE_URL";
+
+function readGlobalApiBaseUrl(): string | null {
+  const runtimeGlobal = globalThis as typeof globalThis & {
+    BUDDY_API_BASE_URL?: unknown;
+  };
+
+  return typeof runtimeGlobal.BUDDY_API_BASE_URL === "string"
+    ? runtimeGlobal.BUDDY_API_BASE_URL
+    : null;
+}
+
+function readStoredApiBaseUrl(): string | null {
+  try {
+    if (typeof localStorage === "undefined") {
+      return null;
+    }
+    return localStorage.getItem(API_BASE_OVERRIDE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeApiBaseUrl(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    return API_CONFIG.baseUrl;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.pathname === "" || url.pathname === "/") {
+      url.pathname = "/api/v1";
+      return url.toString().replace(/\/+$/, "");
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+export function getApiBaseUrl(): string {
+  const override = readGlobalApiBaseUrl() ?? readStoredApiBaseUrl();
+  return override ? normalizeApiBaseUrl(override) : API_CONFIG.baseUrl;
+}
+
 export const SCENE_NAMES = {
   login: "Login",
   main: "Main",
