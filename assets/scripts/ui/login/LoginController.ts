@@ -284,12 +284,18 @@ export class LoginController extends Component {
   private async executeAuthFlow(
     action: () => Promise<LoginAuthOutcome | null>
   ): Promise<void> {
+    this.clearResumableSession();
     const outcome = await action();
     if (!outcome) {
       return;
     }
 
     this.applyAuthOutcome(outcome);
+  }
+
+  private clearResumableSession(): void {
+    this.resumableRole = null;
+    this.resumableUsername = null;
   }
 
   private applyAuthOutcome(outcome: LoginAuthOutcome): void {
