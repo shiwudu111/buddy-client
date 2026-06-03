@@ -1,3 +1,5 @@
+import { sys } from "cc";
+
 export const APP_NAME = "buddy-client";
 export const APP_TITLE = "学伴精灵";
 
@@ -20,10 +22,14 @@ function readGlobalApiBaseUrl(): string | null {
 
 function readStoredApiBaseUrl(): string | null {
   try {
-    if (typeof localStorage === "undefined") {
-      return null;
+    const browserValue =
+      typeof localStorage === "undefined"
+        ? null
+        : localStorage.getItem(API_BASE_OVERRIDE_KEY);
+    if (browserValue) {
+      return browserValue;
     }
-    return localStorage.getItem(API_BASE_OVERRIDE_KEY);
+    return sys.localStorage.getItem(API_BASE_OVERRIDE_KEY);
   } catch {
     return null;
   }
