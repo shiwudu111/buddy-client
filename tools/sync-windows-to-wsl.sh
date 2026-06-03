@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-SOURCE_DIR="${SOURCE_DIR:-/mnt/e/buddy-client}"
+SOURCE_DIR="${SOURCE_DIR:-/mnt/e/buddy/buddy-client}"
 TARGET_DIR="${TARGET_DIR:-/home/openclaw/.openclaw/workspace-cipher/buddy-client}"
 LOG_DIR="${LOG_DIR:-/tmp/buddy-client-sync}"
 LOG_FILE="${LOG_FILE:-$LOG_DIR/sync-windows-to-wsl.log}"
