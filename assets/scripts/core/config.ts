@@ -1,4 +1,5 @@
 import { sys } from "cc";
+import { BUILD_API_BASE_URL } from "./build-config.generated";
 
 export const APP_NAME = "buddy-client";
 export const APP_TITLE = "学伴精灵";
@@ -35,6 +36,10 @@ function readStoredApiBaseUrl(): string | null {
   }
 }
 
+function readBuildApiBaseUrl(): string | null {
+  return BUILD_API_BASE_URL.trim() || null;
+}
+
 function normalizeApiBaseUrl(input: string): string {
   const trimmed = input.trim().replace(/\/+$/, "");
   if (!trimmed) {
@@ -55,7 +60,7 @@ function normalizeApiBaseUrl(input: string): string {
 }
 
 export function getApiBaseUrl(): string {
-  const override = readGlobalApiBaseUrl() ?? readStoredApiBaseUrl();
+  const override = readGlobalApiBaseUrl() ?? readStoredApiBaseUrl() ?? readBuildApiBaseUrl();
   return override ? normalizeApiBaseUrl(override) : API_CONFIG.baseUrl;
 }
 

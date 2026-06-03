@@ -4,5 +4,9 @@
   "creator": {
     "version": "3.8.7"
   },
-  "version": "3.8.7"
+  "version": "3.8.7",
+  "scripts": {
+    "api:local": "node tools/set-api-base.mjs",
+    "api:cloud": "node tools/set-api-base.mjs http://101.133.130.137/api/v1"
+  }
 }
