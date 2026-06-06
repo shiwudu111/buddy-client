@@ -1,7 +1,25 @@
-import { _decorator, Button, Color, Component, EditBox, Node, view } from "cc";
+import {
+  _decorator,
+  Button,
+  Color,
+  Component,
+  EditBox,
+  EventTouch,
+  Graphics,
+  Label,
+  Node,
+  native,
+  sys,
+  UITransform,
+  Vec3,
+  view,
+} from "cc";
 import { appState } from "../../app/AppState";
+import { devActionLogger } from "../../core/DevActionLogger";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
+import { hotUpdateService } from "../../services/HotUpdateService";
+import type { HotUpdateProgress } from "../../services/HotUpdateService";
 import type { UserRole } from "../../types/api";
 import {
   LoginAuthCoordinator,
@@ -76,6 +94,25 @@ export class LoginController extends Component {
   private defaultAccount: LoginSavedAccount | null = loginAccountStore.getDefaultAccount();
   private selectedAccount: LoginSavedAccount | null = this.defaultAccount;
   private isAccountPickerOpen = false;
+  private devLogButton: Button | null = null;
+  private devLogPanel: Node | null = null;
+  private devLogLabel: Label | null = null;
+  private devLogStatusLabel: Label | null = null;
+  private clearHotUpdateButton: Button | null = null;
+  private copyDevLogButton: Button | null = null;
+  private retryHotUpdateButton: Button | null = null;
+  private isDevLogOpen = false;
+  private devLogScrollOffset = 0;
+  private devLogTouchY = 0;
+  private devLogTouchCarry = 0;
+  private hotUpdateGate: Node | null = null;
+  private hotUpdateStatusLabel: Label | null = null;
+  private hotUpdateDetailLabel: Label | null = null;
+  private hotUpdatePercentLabel: Label | null = null;
+  private hotUpdateProgressFill: Node | null = null;
+  private hotUpdateRetryButton: Button | null = null;
+  private hotUpdateContinueButton: Button | null = null;
+  private hotUpdateFailureResolver: ((action: "retry" | "continue") => void) | null = null;
 
   onLoad(): void {
     // 登录页加载时，先抓分辨率、节点引用、按钮事件，再刷新一次显示。
@@ -84,6 +121,8 @@ export class LoginController extends Component {
     this.resolveSceneReferences();
     this.bindActionButtons();
     this.configureInputs();
+    devActionLogger.setHeaderProvider(() => hotUpdateService.getVersionSummary());
+    this.ensureDevLogEntry();
     this.viewOrchestrator = new LoginViewOrchestrator(this.node);
     this.refreshResponsiveView();
     view.on("canvas-resize", this.handleCanvasResize, this);
@@ -91,6 +130,8 @@ export class LoginController extends Component {
 
   onDestroy(): void {
     view.off("canvas-resize", this.handleCanvasResize, this);
+    this.hotUpdateFailureResolver?.("continue");
+    this.hotUpdateFailureResolver = null;
     this.resolutionCoordinator.restore();
   }
 
@@ -99,6 +140,10 @@ export class LoginController extends Component {
     this.flowCoordinator.enterRestore();
     this.setLoading(false);
     this.setStatus(LOGIN_STATUS_STATES.idle);
+    const shouldContinue = await this.runVisibleHotUpdateGate();
+    if (!shouldContinue) {
+      return;
+    }
     await this.restoreSessionIfNeeded();
   }
 
@@ -118,10 +163,18 @@ export class LoginController extends Component {
   }
 
   async onRegisterClick(): Promise<void> {
+    devActionLogger.info("login.registerButton.tap", {
+      mode: this.flowCoordinator.getState().mode,
+      role: "CHILD",
+    });
     await this.handleRegisterAction("CHILD");
   }
 
   async onParentRegisterClick(): Promise<void> {
+    devActionLogger.info("login.registerButton.tap", {
+      mode: this.flowCoordinator.getState().mode,
+      role: "PARENT",
+    });
     await this.handleRegisterAction("PARENT");
   }
 
@@ -240,6 +293,7 @@ export class LoginController extends Component {
       this.flowCoordinator.getState(),
       this.getViewNodes()
     );
+    this.positionDevLogEntry();
   }
 
   private handleCanvasResize(): void {
@@ -248,7 +302,361 @@ export class LoginController extends Component {
     }
 
     this.resolutionCoordinator.applyCurrentFrame();
+    this.positionDevLogEntry();
+    this.positionHotUpdateGate();
     this.refreshResponsiveView();
+  }
+
+  private async runVisibleHotUpdateGate(): Promise<boolean> {
+    this.showHotUpdateGate();
+    this.renderHotUpdateProgress({
+      stage: "checking",
+      localVersion: "unknown",
+      remoteVersion: "unknown",
+      manifestUrl: "",
+    });
+
+    while (this.node.isValid) {
+      const result = await hotUpdateService.checkAndUpdate({
+        onProgress: (progress) => this.renderHotUpdateProgress(progress),
+      });
+
+      if (result.status === "updated" || result.status === "updating") {
+        this.renderHotUpdateProgress({
+          stage: "updated",
+          message: "\u66f4\u65b0\u5df2\u5b8c\u6210\uff0c\u8bf7\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00\u5e94\u7528",
+          percent: 100,
+          localVersion: "unknown",
+          remoteVersion: "unknown",
+          manifestUrl: "",
+        });
+        return await this.waitForHotUpdateCompletedAction();
+      }
+
+      if (result.status === "failed") {
+        const action = await this.waitForHotUpdateFailureAction(result.message);
+        if (action === "retry") {
+          continue;
+        }
+        this.hideHotUpdateGate();
+        return true;
+      }
+
+      if (result.status === "disabled" || result.status === "unsupported") {
+        await this.delay(280);
+        this.hideHotUpdateGate();
+        return true;
+      }
+
+      this.renderHotUpdateProgress({
+        stage: "upToDate",
+        percent: 100,
+        localVersion: "unknown",
+        remoteVersion: "unknown",
+        manifestUrl: "",
+      });
+      await this.delay(280);
+      this.hideHotUpdateGate();
+      return true;
+    }
+
+    return false;
+  }
+
+  private showHotUpdateGate(): void {
+    const canvas = this.node.scene?.getChildByName("Canvas") ?? this.node;
+    if (!canvas) {
+      return;
+    }
+
+    this.ensureHotUpdateGate(canvas);
+    if (this.hotUpdateGate) {
+      this.hotUpdateGate.active = true;
+      this.hotUpdateGate.setSiblingIndex(10000);
+    }
+    this.setHotUpdateActionButtonsVisible(false);
+    this.positionHotUpdateGate();
+  }
+
+  private hideHotUpdateGate(): void {
+    if (this.hotUpdateGate) {
+      this.hotUpdateGate.active = false;
+    }
+    this.hotUpdateFailureResolver = null;
+  }
+
+  private ensureHotUpdateGate(canvas: Node): void {
+    if (this.hotUpdateGate) {
+      return;
+    }
+
+    const gate = new Node("HotUpdateGate");
+    gate.parent = canvas;
+    gate.addComponent(UITransform);
+    this.paintRect(gate, 1280, 720, new Color(6, 14, 30, 216));
+
+    const panel = new Node("HotUpdatePanel");
+    panel.parent = gate;
+    panel.addComponent(UITransform).setContentSize(720, 230);
+    this.paintRect(panel, 720, 230, new Color(10, 20, 36, 120));
+
+    const titleNode = this.createHotUpdateLabel(
+      gate,
+      "HotUpdateTitle",
+      "\u68c0\u67e5\u66f4\u65b0\u4e2d",
+      30,
+      new Color(255, 255, 255, 255),
+      new Vec3(0, 42, 0),
+      520,
+      48
+    );
+    const statusNode = this.createHotUpdateLabel(
+      gate,
+      "HotUpdateStatus",
+      "\u6b63\u5728\u8fde\u63a5\u66f4\u65b0\u670d\u52a1...",
+      20,
+      new Color(232, 244, 255, 238),
+      new Vec3(0, -8, 0),
+      620,
+      34
+    );
+    this.hotUpdateStatusLabel = statusNode.getComponent(Label);
+
+    const progressTrack = new Node("HotUpdateProgressTrack");
+    progressTrack.parent = gate;
+    progressTrack.addComponent(UITransform).setContentSize(560, 16);
+    progressTrack.setPosition(new Vec3(0, -56, 0));
+    this.paintRect(progressTrack, 560, 16, new Color(12, 17, 28, 178));
+
+    const progressFill = new Node("HotUpdateProgressFill");
+    progressFill.parent = progressTrack;
+    progressFill.addComponent(UITransform).setContentSize(0, 16);
+    progressFill.setPosition(new Vec3(-280, 0, 0));
+    this.hotUpdateProgressFill = progressFill;
+    this.paintProgressFill(0);
+
+    const percentNode = this.createHotUpdateLabel(
+      gate,
+      "HotUpdatePercent",
+      "0%",
+      24,
+      new Color(255, 255, 255, 255),
+      new Vec3(0, -92, 0),
+      160,
+      34
+    );
+    this.hotUpdatePercentLabel = percentNode.getComponent(Label);
+
+    const detailNode = this.createHotUpdateLabel(
+      gate,
+      "HotUpdateDetail",
+      "",
+      16,
+      new Color(198, 219, 238, 210),
+      new Vec3(0, -128, 0),
+      680,
+      32
+    );
+    this.hotUpdateDetailLabel = detailNode.getComponent(Label);
+
+    this.hotUpdateRetryButton = this.createHotUpdateButton(
+      gate,
+      "\u91cd\u8bd5",
+      new Vec3(-90, -174, 0),
+      this.onHotUpdateRetryClick
+    );
+    this.hotUpdateContinueButton = this.createHotUpdateButton(
+      gate,
+      "\u7ee7\u7eed\u8fdb\u5165",
+      new Vec3(90, -174, 0),
+      this.onHotUpdateContinueClick
+    );
+
+    this.hotUpdateGate = gate;
+    this.setHotUpdateActionButtonsVisible(false);
+  }
+
+  private createHotUpdateLabel(
+    parent: Node,
+    name: string,
+    text: string,
+    fontSize: number,
+    color: Color,
+    position: Vec3,
+    width: number,
+    height: number
+  ): Node {
+    const node = new Node(name);
+    node.parent = parent;
+    node.addComponent(UITransform).setContentSize(width, height);
+    node.setPosition(position);
+    const label = node.addComponent(Label);
+    label.string = text;
+    label.fontSize = fontSize;
+    label.color = color;
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    label.overflow = Label.Overflow.SHRINK;
+    return node;
+  }
+
+  private createHotUpdateButton(
+    parent: Node,
+    text: string,
+    position: Vec3,
+    handler: () => void
+  ): Button {
+    const buttonNode = new Node(text);
+    buttonNode.parent = parent;
+    buttonNode.addComponent(UITransform).setContentSize(138, 42);
+    buttonNode.setPosition(position);
+    this.paintRect(buttonNode, 138, 42, new Color(24, 76, 102, 232));
+
+    const labelNode = new Node("Label");
+    labelNode.parent = buttonNode;
+    labelNode.addComponent(UITransform).setContentSize(138, 42);
+    const label = labelNode.addComponent(Label);
+    label.string = text;
+    label.fontSize = 18;
+    label.color = new Color(255, 255, 255, 255);
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+
+    const button = buttonNode.addComponent(Button);
+    button.node.on(Button.EventType.CLICK, handler, this);
+    return button;
+  }
+
+  private renderHotUpdateProgress(progress: HotUpdateProgress): void {
+    const percent = this.resolveHotUpdatePercent(progress);
+    if (this.hotUpdateStatusLabel) {
+      this.hotUpdateStatusLabel.string = this.formatHotUpdateStatus(progress);
+    }
+    if (this.hotUpdatePercentLabel) {
+      this.hotUpdatePercentLabel.string = `${percent}%`;
+    }
+    if (this.hotUpdateDetailLabel) {
+      this.hotUpdateDetailLabel.string = this.formatHotUpdateDetail(progress);
+    }
+    this.paintProgressFill(percent);
+  }
+
+  private resolveHotUpdatePercent(progress: HotUpdateProgress): number {
+    if (typeof progress.percent === "number") {
+      return Math.max(0, Math.min(100, Math.round(progress.percent)));
+    }
+
+    if (progress.stage === "upToDate" || progress.stage === "updated") {
+      return 100;
+    }
+
+    if (progress.stage === "checking") {
+      return 6;
+    }
+
+    return 0;
+  }
+
+  private formatHotUpdateStatus(progress: HotUpdateProgress): string {
+    if (progress.stage === "checking") {
+      return "\u6b63\u5728\u68c0\u67e5\u66f4\u65b0...";
+    }
+    if (progress.stage === "downloading") {
+      return "\u53d1\u73b0\u65b0\u7248\u672c\uff0c\u6b63\u5728\u4e0b\u8f7d...";
+    }
+    if (progress.stage === "upToDate") {
+      return "\u5df2\u662f\u6700\u65b0\u7248\u672c";
+    }
+    if (progress.stage === "updated") {
+      return progress.message || "\u66f4\u65b0\u5df2\u5b8c\u6210\uff0c\u8bf7\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00\u5e94\u7528";
+    }
+    if (progress.stage === "failed") {
+      return progress.message
+        ? `\u66f4\u65b0\u68c0\u67e5\u5931\u8d25\uff1a${progress.message}`
+        : "\u66f4\u65b0\u68c0\u67e5\u5931\u8d25";
+    }
+    if (progress.stage === "disabled") {
+      return "\u5f53\u524d\u672a\u914d\u7f6e\u70ed\u66f4\u5730\u5740";
+    }
+    return "\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u70ed\u66f4";
+  }
+
+  private formatHotUpdateDetail(progress: HotUpdateProgress): string {
+    if (progress.stage === "downloading" && progress.total && progress.downloaded !== undefined) {
+      return `\u6587\u4ef6 ${progress.downloaded}/${progress.total}  \u8fdc\u7a0b ${progress.remoteVersion}`;
+    }
+
+    const local = progress.localVersion || "unknown";
+    const remote = progress.remoteVersion || "unknown";
+    return `\u5f53\u524d ${local}  /  \u8fdc\u7a0b ${remote}`;
+  }
+
+  private paintProgressFill(percent: number): void {
+    if (!this.hotUpdateProgressFill) {
+      return;
+    }
+
+    const width = Math.max(0, Math.min(560, (560 * percent) / 100));
+    const transform =
+      this.hotUpdateProgressFill.getComponent(UITransform) ??
+      this.hotUpdateProgressFill.addComponent(UITransform);
+    transform.setContentSize(width, 16);
+    this.hotUpdateProgressFill.setPosition(new Vec3(-280 + width / 2, 0, 0));
+    this.paintRect(this.hotUpdateProgressFill, width, 16, new Color(82, 216, 162, 255));
+  }
+
+  private waitForHotUpdateFailureAction(message?: string): Promise<"retry" | "continue"> {
+    this.renderHotUpdateProgress({
+      stage: "failed",
+      message,
+      localVersion: "unknown",
+      remoteVersion: "unknown",
+      manifestUrl: "",
+    });
+    this.setHotUpdateActionButtonsVisible(true);
+    return new Promise((resolve) => {
+      this.hotUpdateFailureResolver = resolve;
+    });
+  }
+
+  private async waitForHotUpdateCompletedAction(): Promise<boolean> {
+    if (this.hotUpdateRetryButton) {
+      this.hotUpdateRetryButton.node.active = false;
+    }
+    if (this.hotUpdateContinueButton) {
+      this.hotUpdateContinueButton.node.active = true;
+    }
+    await new Promise<void>((resolve) => {
+      this.hotUpdateFailureResolver = () => resolve();
+    });
+    this.hideHotUpdateGate();
+    return true;
+  }
+
+  private setHotUpdateActionButtonsVisible(visible: boolean): void {
+    if (this.hotUpdateRetryButton) {
+      this.hotUpdateRetryButton.node.active = visible;
+    }
+    if (this.hotUpdateContinueButton) {
+      this.hotUpdateContinueButton.node.active = visible;
+    }
+  }
+
+  private onHotUpdateRetryClick = (): void => {
+    this.setHotUpdateActionButtonsVisible(false);
+    const resolver = this.hotUpdateFailureResolver;
+    this.hotUpdateFailureResolver = null;
+    resolver?.("retry");
+  };
+
+  private onHotUpdateContinueClick = (): void => {
+    const resolver = this.hotUpdateFailureResolver;
+    this.hotUpdateFailureResolver = null;
+    resolver?.("continue");
+  };
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async restoreSessionIfNeeded(): Promise<void> {
@@ -299,6 +707,11 @@ export class LoginController extends Component {
   }
 
   private applyAuthOutcome(outcome: LoginAuthOutcome): void {
+    devActionLogger.info("login.auth.outcome", {
+      status: outcome.status.key,
+      shouldNavigate: outcome.shouldNavigate,
+      role: outcome.resolvedRole,
+    });
     if (outcome.resolvedRole && !outcome.shouldNavigate) {
       this.enterAuthForm(outcome.resolvedRole, "login");
     }
@@ -317,6 +730,7 @@ export class LoginController extends Component {
   }
 
   private handlePendingStatus = (status: LoginStatusState): void => {
+    devActionLogger.info("login.status.pending", status.key);
     this.setStatus(status);
     this.setLoading(true);
   };
@@ -432,6 +846,7 @@ export class LoginController extends Component {
 
     const validationStatus = this.validateRegisterForm();
     if (validationStatus) {
+      devActionLogger.warn("login.register.formValidation", validationStatus.key);
       this.setStatus(validationStatus);
       this.setLoading(false);
       return;
@@ -445,6 +860,324 @@ export class LoginController extends Component {
         this.handlePendingStatus
       )
     );
+  }
+
+  private ensureDevLogEntry(): void {
+    const canvas = this.node.scene?.getChildByName("Canvas") ?? this.node;
+    if (!canvas || this.devLogButton) {
+      return;
+    }
+
+    const buttonNode = new Node("DevActionLogButton");
+    buttonNode.parent = canvas;
+    buttonNode.addComponent(UITransform).setContentSize(116, 44);
+    this.paintRect(buttonNode, 116, 44, new Color(16, 42, 58, 230));
+
+    const buttonLabelNode = new Node("Label");
+    buttonLabelNode.parent = buttonNode;
+    buttonLabelNode.addComponent(UITransform).setContentSize(116, 44);
+    const buttonLabel = buttonLabelNode.addComponent(Label);
+    buttonLabel.string = "日志";
+    buttonLabel.fontSize = 22;
+    buttonLabel.color = new Color(255, 250, 230, 255);
+    buttonLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+    buttonLabel.verticalAlign = Label.VerticalAlign.CENTER;
+
+    this.devLogButton = buttonNode.addComponent(Button);
+    this.devLogButton.node.on(Button.EventType.CLICK, this.toggleDevLogPanel, this);
+
+    const panel = new Node("DevActionLogPanel");
+    panel.parent = canvas;
+    panel.active = false;
+    panel.addComponent(UITransform).setContentSize(720, 360);
+    this.paintRect(panel, 720, 360, new Color(8, 15, 24, 232));
+    panel.on(Node.EventType.TOUCH_START, this.onDevLogTouchStart, this);
+    panel.on(Node.EventType.TOUCH_MOVE, this.onDevLogTouchMove, this);
+
+    const labelNode = new Node("Text");
+    labelNode.parent = panel;
+    labelNode.addComponent(UITransform).setContentSize(660, 214);
+    labelNode.setPosition(new Vec3(0, 46, 0));
+    this.devLogLabel = labelNode.addComponent(Label);
+    this.devLogLabel.string = this.formatDevLogWindow();
+    this.devLogLabel.fontSize = 12;
+    this.devLogLabel.color = new Color(232, 246, 255, 255);
+    this.devLogLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+    this.devLogLabel.verticalAlign = Label.VerticalAlign.TOP;
+    this.devLogLabel.overflow = Label.Overflow.CLAMP;
+
+    const statusNode = new Node("Status");
+    statusNode.parent = panel;
+    statusNode.addComponent(UITransform).setContentSize(660, 28);
+    statusNode.setPosition(new Vec3(0, -82, 0));
+    this.devLogStatusLabel = statusNode.addComponent(Label);
+    this.devLogStatusLabel.string = this.formatDevLogStatus("日志面板已就绪");
+    this.devLogStatusLabel.fontSize = 13;
+    this.devLogStatusLabel.color = new Color(160, 218, 184, 255);
+    this.devLogStatusLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+    this.devLogStatusLabel.verticalAlign = Label.VerticalAlign.CENTER;
+    this.devLogStatusLabel.overflow = Label.Overflow.SHRINK;
+
+    this.clearHotUpdateButton = this.createDevPanelButton(
+      panel,
+      "清热更",
+      new Vec3(-276, -140, 0),
+      this.onClearHotUpdateClick
+    );
+    this.copyDevLogButton = this.createDevPanelButton(
+      panel,
+      "复制",
+      new Vec3(-138, -140, 0),
+      this.onCopyDevLogClick
+    );
+    this.retryHotUpdateButton = this.createDevPanelButton(
+      panel,
+      "查热更",
+      new Vec3(138, -140, 0),
+      this.onRetryHotUpdateClick
+    );
+
+    this.devLogPanel = panel;
+    this.positionDevLogEntry();
+    devActionLogger.info("devLog.entry.ready");
+  }
+
+  private toggleDevLogPanel(): void {
+    this.isDevLogOpen = !this.isDevLogOpen;
+    if (this.devLogPanel) {
+      this.devLogPanel.active = this.isDevLogOpen;
+    }
+    devActionLogger.info("devLog.toggle", this.isDevLogOpen ? "open" : "close");
+    this.refreshDevLogPanel(this.isDevLogOpen ? "日志已打开" : "日志已关闭");
+  }
+
+  private onCopyDevLogClick = async (): Promise<void> => {
+    const copyResult = this.prepareDevLogClipboardText();
+    const copiedToClipboard = await this.copyTextToClipboard(copyResult.text);
+    devActionLogger.info("devLog.copy", copiedToClipboard ? "clipboard" : "localCache");
+    const status = copiedToClipboard ? "已复制全部日志" : "已保存到本地缓存，系统剪贴板不可用";
+    this.refreshDevLogPanel(copyResult.truncated ? `${status}，内容较大已截断` : status);
+  };
+
+  private onClearHotUpdateClick = (): void => {
+    hotUpdateService.clearCache();
+    this.devLogScrollOffset = 0;
+    this.refreshDevLogPanel("已清理热更缓存，下次会重新检查更新");
+  };
+
+  private onRetryHotUpdateClick = async (): Promise<void> => {
+    this.refreshDevLogPanel("正在检查热更...");
+    await hotUpdateService.manualCheckAndUpdate();
+    this.devLogScrollOffset = 0;
+    this.refreshDevLogPanel("热更检查已完成，请看最新日志");
+  };
+
+  private onDevLogTouchStart = (event: EventTouch): void => {
+    this.devLogTouchY = event.getUILocation().y;
+    this.devLogTouchCarry = 0;
+  };
+
+  private onDevLogTouchMove = (event: EventTouch): void => {
+    const nextY = event.getUILocation().y;
+    const deltaY = nextY - this.devLogTouchY;
+    this.devLogTouchY = nextY;
+    this.devLogTouchCarry += deltaY;
+
+    const lineStep = 30;
+    if (Math.abs(this.devLogTouchCarry) < lineStep) {
+      return;
+    }
+
+    const lines = Math.trunc(this.devLogTouchCarry / lineStep);
+    this.devLogTouchCarry -= lines * lineStep;
+    const maxOffset = Math.max(0, devActionLogger.getCount() - 8);
+    this.devLogScrollOffset = Math.max(
+      0,
+      Math.min(maxOffset, this.devLogScrollOffset + lines)
+    );
+    this.refreshDevLogPanel("滑动查看日志");
+  };
+
+  private refreshDevLogPanel(status?: string): void {
+    if (this.devLogLabel) {
+      this.devLogLabel.string = this.formatDevLogWindow();
+    }
+    if (this.devLogStatusLabel) {
+      this.devLogStatusLabel.string = this.formatDevLogStatus(status);
+    }
+  }
+
+  private formatDevLogWindow(): string {
+    return devActionLogger.formatRecent(8, this.devLogScrollOffset);
+  }
+
+  private formatDevLogStatus(status?: string): string {
+    const count = devActionLogger.getCount();
+    const start = count === 0 ? 0 : this.devLogScrollOffset + 1;
+    const end = Math.min(count, this.devLogScrollOffset + 8);
+    const prefix = status ? `${status}  ` : "";
+    return `${prefix}${start}-${end}/${count} 条，最新在上`;
+  }
+
+  private createDevPanelButton(
+    parent: Node,
+    text: string,
+    position: Vec3,
+    handler: () => void | Promise<void>
+  ): Button {
+    const buttonNode = new Node(text);
+    buttonNode.parent = parent;
+    buttonNode.addComponent(UITransform).setContentSize(138, 38);
+    buttonNode.setPosition(position);
+    this.paintRect(buttonNode, 138, 38, new Color(24, 72, 92, 238));
+
+    const labelNode = new Node("Label");
+    labelNode.parent = buttonNode;
+    labelNode.addComponent(UITransform).setContentSize(138, 38);
+    const label = labelNode.addComponent(Label);
+    label.string = text;
+    label.fontSize = 18;
+    label.color = new Color(255, 250, 230, 255);
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+
+    const button = buttonNode.addComponent(Button);
+    button.node.on(Button.EventType.CLICK, handler, this);
+    return button;
+  }
+
+  private async copyTextToClipboard(text: string): Promise<boolean> {
+    try {
+      sys.localStorage.setItem("buddy.dev.actionLog.copied", text);
+    } catch {
+      // Copy is a debug helper; storage failures should never affect login.
+    }
+
+    if (sys.isNative && sys.os === sys.OS.ANDROID) {
+      const nativeCopyResult = this.copyTextToAndroidClipboard(text);
+      if (nativeCopyResult.copied) {
+        return true;
+      }
+      if (nativeCopyResult.reason) {
+        devActionLogger.warn("devLog.copy.androidClipboard", nativeCopyResult.reason);
+      }
+    }
+
+    const runtimeGlobal = globalThis as typeof globalThis & {
+      navigator?: { clipboard?: { writeText?: (value: string) => Promise<void> } };
+    };
+
+    try {
+      await runtimeGlobal.navigator?.clipboard?.writeText?.(text);
+      return true;
+    } catch {
+      return false;
+    }
+
+    return false;
+  }
+
+  private prepareDevLogClipboardText(): { text: string; truncated: boolean } {
+    const text = devActionLogger.formatAll();
+    const maxLength = 30000;
+    if (text.length <= maxLength) {
+      return { text, truncated: false };
+    }
+    return { text: `${text.slice(0, maxLength)}\n...`, truncated: true };
+  }
+
+  private copyTextToAndroidClipboard(text: string): { copied: boolean; reason?: string } {
+    type ReflectionBridge = {
+      callStaticMethod?: (
+        className: string,
+        methodName: string,
+        methodSignature: string,
+        value: string
+      ) => boolean;
+    };
+    const runtimeGlobal = globalThis as typeof globalThis & {
+      jsb?: { reflection?: ReflectionBridge };
+    };
+    const nativeBridge = native as typeof native & {
+      reflection?: ReflectionBridge;
+    };
+    const bridges = [
+      { name: "native.reflection", bridge: nativeBridge.reflection },
+      { name: "jsb.reflection", bridge: runtimeGlobal.jsb?.reflection },
+    ];
+
+    const errors: string[] = [];
+    for (const { name, bridge } of bridges) {
+      if (!bridge?.callStaticMethod) {
+        errors.push(`${name}:missing`);
+        continue;
+      }
+      try {
+        bridge.callStaticMethod(
+          "com/cocos/game/AppActivity",
+          "copyLogToClipboard",
+          "(Ljava/lang/String;)V",
+          text
+        );
+        return { copied: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${name}:void:${message}`);
+      }
+      try {
+        const copied = bridge.callStaticMethod(
+          "com/cocos/game/AppActivity",
+          "copyTextToClipboard",
+          "(Ljava/lang/String;)Z",
+          text
+        );
+        if (copied) {
+          return { copied: true };
+        }
+        errors.push(`${name}:false`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${name}:${message}`);
+      }
+    }
+
+    return { copied: false, reason: errors.join(";") || "no reflection bridge" };
+  }
+
+  private positionDevLogEntry(): void {
+    const visibleSize = view.getVisibleSize();
+    this.devLogButton?.node.setPosition(
+      new Vec3(visibleSize.width / 2 - 92, -visibleSize.height / 2 + 138, 0)
+    );
+    this.devLogPanel?.setPosition(
+      new Vec3(visibleSize.width / 2 - 410, -visibleSize.height / 2 + 338, 0)
+    );
+    this.devLogButton?.node.setSiblingIndex(9999);
+    this.devLogPanel?.setSiblingIndex(9999);
+  }
+
+  private positionHotUpdateGate(): void {
+    if (!this.hotUpdateGate) {
+      return;
+    }
+
+    const visibleSize = view.getVisibleSize();
+    const width = visibleSize.width;
+    const height = visibleSize.height;
+    this.hotUpdateGate
+      .getComponent(UITransform)
+      ?.setContentSize(width, height);
+    this.paintRect(this.hotUpdateGate, width, height, new Color(6, 14, 30, 216));
+    this.hotUpdateGate.setPosition(new Vec3(0, 0, 0));
+    this.hotUpdateGate.setSiblingIndex(10000);
+  }
+
+  private paintRect(node: Node, width: number, height: number, color: Color): void {
+    const graphics = node.getComponent(Graphics) ?? node.addComponent(Graphics);
+    graphics.clear();
+    graphics.fillColor = color;
+    graphics.rect(-width / 2, -height / 2, width, height);
+    graphics.fill();
   }
 
   private prepareAuthFormForAccount(account: LoginSavedAccount): void {

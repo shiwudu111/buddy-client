@@ -1,5 +1,8 @@
 import { sys } from "cc";
-import { BUILD_API_BASE_URL } from "./build-config.generated";
+import {
+  BUILD_API_BASE_URL,
+  BUILD_HOT_UPDATE_MANIFEST_URL,
+} from "./build-config.generated";
 
 export const APP_NAME = "buddy-client";
 export const APP_TITLE = "学伴精灵";
@@ -10,6 +13,31 @@ export const API_CONFIG = {
 } as const;
 
 export const API_BASE_OVERRIDE_KEY = "BUDDY_API_BASE_URL";
+export const HOT_UPDATE_MANIFEST_OVERRIDE_KEY = "BUDDY_HOT_UPDATE_MANIFEST_URL";
+export const BASE_APK_VERSION = "0.0.0";
+
+export type HotUpdateEnv = "dev" | "staging" | "prod";
+
+export const HOT_UPDATE_ENVS: Record<HotUpdateEnv, { packageUrl: string; manifestUrl: string }> = {
+  dev: {
+    packageUrl:
+      "https://buddy-hotupdate-zhzhwd1290.oss-cn-shanghai.aliyuncs.com/buddy-hot-update/dev/",
+    manifestUrl:
+      "https://buddy-hotupdate-zhzhwd1290.oss-cn-shanghai.aliyuncs.com/buddy-hot-update/dev/project.manifest",
+  },
+  staging: {
+    packageUrl:
+      "https://buddy-hotupdate-zhzhwd1290.oss-cn-shanghai.aliyuncs.com/buddy-hot-update/staging/",
+    manifestUrl:
+      "https://buddy-hotupdate-zhzhwd1290.oss-cn-shanghai.aliyuncs.com/buddy-hot-update/staging/project.manifest",
+  },
+  prod: {
+    packageUrl:
+      "https://buddy-hotupdate-zhzhwd1290.oss-cn-shanghai.aliyuncs.com/buddy-hot-update/prod/",
+    manifestUrl:
+      "https://buddy-hotupdate-zhzhwd1290.oss-cn-shanghai.aliyuncs.com/buddy-hot-update/prod/project.manifest",
+  },
+};
 
 function readGlobalApiBaseUrl(): string | null {
   const runtimeGlobal = globalThis as typeof globalThis & {
@@ -31,6 +59,21 @@ function readStoredApiBaseUrl(): string | null {
       return browserValue;
     }
     return sys.localStorage.getItem(API_BASE_OVERRIDE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function readStoredHotUpdateManifestUrl(): string | null {
+  try {
+    const browserValue =
+      typeof localStorage === "undefined"
+        ? null
+        : localStorage.getItem(HOT_UPDATE_MANIFEST_OVERRIDE_KEY);
+    if (browserValue) {
+      return browserValue;
+    }
+    return sys.localStorage.getItem(HOT_UPDATE_MANIFEST_OVERRIDE_KEY);
   } catch {
     return null;
   }
@@ -62,6 +105,15 @@ function normalizeApiBaseUrl(input: string): string {
 export function getApiBaseUrl(): string {
   const override = readGlobalApiBaseUrl() ?? readStoredApiBaseUrl() ?? readBuildApiBaseUrl();
   return override ? normalizeApiBaseUrl(override) : API_CONFIG.baseUrl;
+}
+
+function normalizeHotUpdateManifestUrl(input: string): string {
+  return input.trim();
+}
+
+export function getHotUpdateManifestUrl(): string {
+  const override = readStoredHotUpdateManifestUrl() ?? BUILD_HOT_UPDATE_MANIFEST_URL.trim();
+  return override ? normalizeHotUpdateManifestUrl(override) : "";
 }
 
 export const SCENE_NAMES = {

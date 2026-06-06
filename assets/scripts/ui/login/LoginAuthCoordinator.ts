@@ -1,3 +1,4 @@
+import { devActionLogger } from "../../core/DevActionLogger";
 import { authService } from "../../services/AuthService";
 import type { ApiResponse, AuthPayload, UserRole } from "../../types/api";
 
@@ -259,12 +260,20 @@ export class LoginAuthCoordinator {
     role: UserRole = "CHILD",
     onStatusChange?: LoginStatusListener
   ): Promise<LoginAuthOutcome | null> {
+    devActionLogger.info("login.register.click", {
+      username,
+      role,
+      usernameLength: username.length,
+      passwordLength: password.length,
+    });
     // 注册入口。学生和家长都复用这里，只是 role 不同。
     if (!this.canSubmit()) {
+      devActionLogger.warn("login.register.blocked", "submit disabled");
       return null;
     }
 
     if (!username || !password) {
+      devActionLogger.warn("login.register.validation", "missing fields");
       return {
         status: LOGIN_STATUS_STATES.registerMissingFields,
         shouldNavigate: false,
@@ -273,6 +282,7 @@ export class LoginAuthCoordinator {
     }
 
     if (username.length < 3 || password.length < 6) {
+      devActionLogger.warn("login.register.validation", "invalid length");
       return {
         status: LOGIN_STATUS_STATES.registerInvalidFields,
         shouldNavigate: false,
@@ -304,6 +314,11 @@ export class LoginAuthCoordinator {
     options.onStatusChange?.(options.pendingStatus);
     try {
       const result = await options.action();
+      devActionLogger.info("login.auth.result", {
+        success: result.success,
+        code: result.code,
+        statusCode: result.statusCode,
+      });
       if (!result.success) {
         return {
           status: createErrorStatus(
@@ -316,6 +331,7 @@ export class LoginAuthCoordinator {
       }
 
       if (!hasCompleteAuthPayload(result)) {
+        devActionLogger.warn("login.auth.incompletePayload", result.message);
         this.auth.logout();
         return {
           status: createErrorStatus(
@@ -333,6 +349,10 @@ export class LoginAuthCoordinator {
         resolvedRole: result.data.user.role,
       };
     } catch (error) {
+      devActionLogger.error(
+        "login.auth.exception",
+        error instanceof Error ? error.message : String(error)
+      );
       const message =
         error instanceof Error ? error.message : LOGIN_STATUS_STATES.networkError.message;
       return {

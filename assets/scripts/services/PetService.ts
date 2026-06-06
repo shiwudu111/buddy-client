@@ -1,4 +1,5 @@
 import { appState } from "../app/AppState";
+import { devActionLogger } from "../core/DevActionLogger";
 import { apiClient } from "../network/ApiClient";
 import type {
   ApiResponse,
@@ -41,19 +42,44 @@ type InventoryUseResponse = ApiResponse<UseInventoryItemResultPayload> & {
 
 class PetService {
   async refreshDashboard(
-    canCommit?: () => boolean
+    canCommit?: () => boolean,
+    petIdOverride?: string | null
   ): Promise<PetStatusResponse> {
-    const petId = appState.getPetId();
+    devActionLogger.info("pet.dashboard.enter");
+    const petId = petIdOverride ?? appState.getPetId();
     if (!petId) {
+      devActionLogger.warn("pet.dashboard.skip", "missing petId");
       return {
         success: false,
         message: "当前没有宠物 ID",
       };
     }
 
+    devActionLogger.info("pet.dashboard.request", { petId });
     const dashboardResult = await apiClient.getPetDashboard(petId);
+    devActionLogger.info("pet.dashboard.response", {
+      success: dashboardResult.success,
+      statusCode: dashboardResult.statusCode,
+      hasData: Boolean(dashboardResult.data),
+      message: dashboardResult.message,
+    });
     if (dashboardResult.success && dashboardResult.data && (!canCommit || canCommit())) {
+      devActionLogger.info("pet.dashboard.beforeApply", {
+        statusCode: dashboardResult.statusCode,
+        hasPet: Boolean(dashboardResult.data.pet),
+        foodCount:
+          dashboardResult.data.foods?.length ??
+          dashboardResult.data.inventory?.length ??
+          0,
+        recentEventCount: dashboardResult.data.recent_events?.length ?? 0,
+      });
       const pet = this.applyDashboardPayload(dashboardResult.data);
+      devActionLogger.info("pet.dashboard.afterApply", {
+        petId: pet.pet_id,
+        level: pet.level,
+        mood: pet.mood,
+        inventoryCount: appState.getPetFoodInventory().length,
+      });
       return {
         success: true,
         data: pet,
@@ -64,8 +90,15 @@ class PetService {
       };
     }
 
+    devActionLogger.warn("pet.dashboard.fallbackStatus", {
+      dashboardStatusCode: dashboardResult.statusCode,
+      dashboardMessage: dashboardResult.message,
+    });
     const statusResult = await apiClient.getPetStatus(petId);
     if (statusResult.success && statusResult.data && (!canCommit || canCommit())) {
+      devActionLogger.info("pet.status.apply", {
+        statusCode: statusResult.statusCode,
+      });
       const pet = this.normalizePetStatus(statusResult.data);
       appState.setPetId(pet.pet_id);
       appState.setCurrentPet(pet);
@@ -79,6 +112,7 @@ class PetService {
     }
 
     if (statusResult.statusCode === 404 && (!canCommit || canCommit())) {
+      devActionLogger.warn("pet.status.notFound.clear");
       appState.clearPetState();
     }
 
@@ -110,14 +144,20 @@ class PetService {
   async refreshCurrentPetEvents(limit = 20): Promise<ApiResponse<PetEventsPayload>> {
     const petId = appState.getPetId();
     if (!petId) {
+      devActionLogger.warn("pet.events.skip", "missing petId");
       return {
         success: false,
         message: "当前没有宠物 ID",
       };
     }
 
+    devActionLogger.info("pet.events.request", { petId, limit });
     const result = await apiClient.getPetEvents(petId, limit);
     if (result.success && Array.isArray(result.data?.events)) {
+      devActionLogger.info("pet.events.apply", {
+        count: result.data.events.length,
+        statusCode: result.statusCode,
+      });
       appState.setMainEvents(result.data.events);
       return result;
     }
@@ -134,17 +174,23 @@ class PetService {
   async loadPetDiary(days = 7): Promise<ApiResponse<DiaryPayload>> {
     const petId = appState.getPetId();
     if (!petId) {
+      devActionLogger.warn("pet.diary.skip", "missing petId");
       return {
         success: false,
         message: "当前没有宠物 ID",
       };
     }
 
+    devActionLogger.info("pet.diary.requestEvents", { petId, days });
     const eventsResult = await apiClient.getPetEvents(petId, 100);
     let sourcePayload = this.extractDiaryPayload(eventsResult);
     let sourceStatusCode = eventsResult.statusCode;
 
     if (!sourcePayload) {
+      devActionLogger.warn("pet.diary.fallbackLogs", {
+        eventsStatusCode: eventsResult.statusCode,
+        eventsMessage: eventsResult.message,
+      });
       const logsResult = await apiClient.getPetLogs(petId, { days });
       sourcePayload = this.extractDiaryPayload(logsResult);
       sourceStatusCode = logsResult.statusCode;
@@ -162,6 +208,10 @@ class PetService {
     }
 
     const diaryDays = this.normalizeDiaryDays(sourcePayload, days);
+    devActionLogger.info("pet.diary.apply", {
+      days: diaryDays.length,
+      statusCode: sourceStatusCode,
+    });
     appState.setDiaryDays(diaryDays);
     return {
       success: true,
@@ -185,12 +235,18 @@ class PetService {
   ): Promise<InventoryUseResponse> {
     const petId = appState.getPetId();
     if (!petId) {
+      devActionLogger.warn("pet.inventoryUse.skip", "missing petId");
       return {
         success: false,
         message: "请先创建宠物",
       };
     }
 
+    devActionLogger.info("pet.inventoryUse.request", {
+      petId,
+      foodType: food.food_type,
+      foodQuality: food.food_quality,
+    });
     const result = await apiClient.useInventoryItem(petId, {
       itemType: "food",
       food_type: food.food_type,
@@ -199,6 +255,11 @@ class PetService {
 
     const inventory = this.normalizeInventoryFoods(result.data);
     if (result.success && result.data?.pet && inventory) {
+      devActionLogger.info("pet.inventoryUse.apply", {
+        statusCode: result.statusCode,
+        inventoryCount: inventory.length,
+        logCount: Array.isArray(result.data.logs) ? result.data.logs.length : 0,
+      });
       const pet = this.normalizePetStatus(result.data.pet);
       const logs = this.normalizeMainEvents(result.data.logs);
       appState.setCurrentPet(pet);

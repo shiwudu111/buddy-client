@@ -18,6 +18,7 @@ import {
   view,
 } from "cc";
 import { appState } from "../../app/AppState";
+import { devActionLogger } from "../../core/DevActionLogger";
 import { storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
@@ -310,6 +311,7 @@ export class MainController extends ScreenController {
   });
   private homeworkDevResetting = false;
   private homeworkDevResetMessage: string | null = null;
+  private isDevLogOpen = false;
   private lastOfflineDecay: OfflineDecaySummary | null = null;
   private localPetMode: LocalPetMode = null;
   private timeContext: TimeContextPayload | null = null;
@@ -361,28 +363,47 @@ export class MainController extends ScreenController {
   }
 
   async start(): Promise<void> {
-    const hasSession = await this.redirectToLoginWhenSessionMissing();
-    if (!hasSession) {
-      return;
-    }
-
-    if (this.isParentUser()) {
-      this.render();
-      if (appState.getLinkedChildId()) {
-        void this.handleParentLoadOverview();
+    devActionLogger.info("main.start.begin", {
+      userRole: appState.getCurrentUser()?.role,
+      hasPetId: Boolean(appState.getPetId()),
+    });
+    try {
+      const hasSession = await this.redirectToLoginWhenSessionMissing();
+      if (!hasSession) {
+        devActionLogger.warn("main.start.redirectToLogin");
+        return;
       }
-      return;
-    }
 
-    if (this.openFirstPetCreationIfNeeded()) {
-      this.render();
-      return;
-    }
+      if (this.isParentUser()) {
+        devActionLogger.info("main.start.parent", {
+          hasLinkedChild: Boolean(appState.getLinkedChildId()),
+        });
+        this.render();
+        if (appState.getLinkedChildId()) {
+          void this.handleParentLoadOverview();
+        }
+        return;
+      }
 
-    this.render();
-    await this.tryRefreshMainDashboard();
-    if (this.openFirstPetCreationIfNeeded()) {
+      if (this.openFirstPetCreationIfNeeded()) {
+        devActionLogger.info("main.start.petCreationGate");
+        this.render();
+        return;
+      }
+
       this.render();
+      await this.tryRefreshMainDashboard();
+      if (this.openFirstPetCreationIfNeeded()) {
+        devActionLogger.info("main.start.petCreationGateAfterDashboard");
+        this.render();
+      }
+      devActionLogger.info("main.start.done");
+    } catch (error) {
+      devActionLogger.error(
+        "MainController.start failed",
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
     }
   }
 
@@ -390,13 +411,19 @@ export class MainController extends ScreenController {
     try {
       const user = appState.getCurrentUser() ?? (await authService.bootstrapSession());
       if (!user) {
+        devActionLogger.warn("main.session.missing");
         this.persistCurrentMainSeenAt();
         this.clearLifeRuntimeState();
         sceneRouter.goToLogin();
         return false;
       }
+      devActionLogger.info("main.session.ready", { role: user.role });
       return true;
-    } catch {
+    } catch (error) {
+      devActionLogger.error(
+        "main.session.bootstrap failed",
+        error instanceof Error ? error.message : String(error)
+      );
       this.persistCurrentMainSeenAt();
       this.clearLifeRuntimeState();
       sceneRouter.goToLogin();
@@ -441,15 +468,18 @@ export class MainController extends ScreenController {
     if (this.isParentUser()) {
       this.renderParentHomeV2(root, layout);
       this.renderBackgroundDebugEntry(root, layout);
+      this.renderDevLogEntry(root, layout);
       return;
     }
     if (this.petCreationGate.isActive()) {
       this.petCreationGate.render(root, layout);
       this.renderBackgroundDebugEntry(root, layout);
+      this.renderDevLogEntry(root, layout);
       return;
     }
     this.renderShell(root, layout);
     this.renderBackgroundDebugEntry(root, layout);
+    this.renderDevLogEntry(root, layout);
   }
 
   private requestRender(): void {
@@ -491,22 +521,51 @@ export class MainController extends ScreenController {
 
   private async tryRefreshMainDashboard(): Promise<boolean> {
     if (this.dashboardLoading) {
+      devActionLogger.info("main.dashboard.joinInFlight");
       return this.dashboardRefreshPromise ?? false;
     }
-    if (!appState.getCurrentUser() || !appState.getPetId()) {
+    const currentUser = appState.getCurrentUser();
+    const petId = appState.getPetId();
+    if (!currentUser || !petId) {
+      devActionLogger.warn("main.dashboard.skip", {
+        hasUser: Boolean(currentUser),
+        hasPetId: Boolean(petId),
+      });
       return false;
     }
 
     const requestSeq = this.dashboardRequestSeq + 1;
     this.dashboardRequestSeq = requestSeq;
     this.dashboardLoading = true;
+    devActionLogger.info("main.dashboard.start", {
+      requestSeq,
+      petId,
+    });
     const refreshTask = (async (): Promise<boolean> => {
       try {
-        const result = await petService.refreshDashboard(() => requestSeq === this.dashboardRequestSeq);
+        devActionLogger.info("main.dashboard.beforeRefreshDashboard", {
+          requestSeq,
+        });
+        const result = await petService.refreshDashboard(
+          () => requestSeq === this.dashboardRequestSeq,
+          petId
+        );
+        devActionLogger.info("main.dashboard.afterRefreshDashboard", {
+          requestSeq,
+          success: result.success,
+          statusCode: result.statusCode,
+          hasData: Boolean(result.data),
+        });
         if (requestSeq !== this.dashboardRequestSeq) {
+          devActionLogger.warn("main.dashboard.stale", { requestSeq });
           return false;
         }
         if (result.success) {
+          devActionLogger.info("main.dashboard.success", {
+            statusCode: result.statusCode,
+            hasDailyFood: Boolean(result.dailyBasicFood),
+            hasOfflineDecay: Boolean(result.offlineDecay),
+          });
           this.localPetMode = null;
           this.activeVisualState = "serverDerived";
           this.lastOfflineDecay = result.offlineDecay ?? null;
@@ -521,6 +580,10 @@ export class MainController extends ScreenController {
         }
 
         if (!this.dashboardFailureLogged) {
+          devActionLogger.warn("main.dashboard.failure", {
+            message: result.message,
+            statusCode: result.statusCode,
+          });
           this.dashboardFailureLogged = true;
           this.appendMainInteraction(
             "主页同步失败",
@@ -533,7 +596,11 @@ export class MainController extends ScreenController {
           this.render();
         }
         return false;
-      } catch {
+      } catch (error) {
+        devActionLogger.error(
+          "main.dashboard.exception",
+          error instanceof Error ? error.message : String(error)
+        );
         if (requestSeq === this.dashboardRequestSeq && !this.dashboardFailureLogged) {
           this.dashboardFailureLogged = true;
           this.appendMainInteraction("主页同步失败", "dashboard 请求异常，当前保留已有状态。");
@@ -1332,6 +1399,59 @@ export class MainController extends ScreenController {
     if (this.showBackgroundDebugPanel) {
       this.renderBackgroundDebugPanel(root, right, entryY - DEBUG_ENTRY_SIZE / 2 - DEBUG_TOGGLE_GAP);
     }
+  }
+
+  private renderDevLogEntry(root: Node, layout: MainLayout): void {
+    const left = -layout.viewportWidth / 2 + 24;
+    const top = layout.viewportHeight / 2 - 24;
+    const buttonWidth = 74;
+    const buttonHeight = 30;
+    const panelWidth = Math.max(320, Math.min(620, layout.viewportWidth - 48));
+    const panelHeight = Math.max(180, Math.min(300, layout.viewportHeight - 120));
+
+    const { node, button } = RuntimeUI.createButton(root, {
+      name: "DevActionLogEntry",
+      text: "Log",
+      x: left + buttonWidth / 2,
+      y: top - buttonHeight / 2,
+      width: buttonWidth,
+      height: buttonHeight,
+      color: this.isDevLogOpen
+        ? new Color(18, 74, 118, 230)
+        : new Color(18, 34, 54, 190),
+      textColor: new Color(232, 246, 255, 255),
+      fontSize: 14,
+      radius: 8,
+    });
+    button.transition = Button.Transition.NONE;
+    node.on(
+      Button.EventType.CLICK,
+      () => {
+        this.isDevLogOpen = !this.isDevLogOpen;
+        devActionLogger.info("main.devLog.toggle", this.isDevLogOpen ? "open" : "close");
+        this.render();
+      },
+      this
+    );
+
+    if (!this.isDevLogOpen) {
+      return;
+    }
+
+    RuntimeUI.createScrollText(root, {
+      name: "DevActionLogPanel",
+      text: devActionLogger.formatRecent(36),
+      x: left + panelWidth / 2,
+      y: top - buttonHeight - 12 - panelHeight / 2,
+      width: panelWidth,
+      height: panelHeight,
+      fontSize: 14,
+      color: new Color(232, 246, 255, 255),
+      backgroundColor: new Color(8, 15, 24, 238),
+      padding: 14,
+      radius: 8,
+      elastic: true,
+    });
   }
 
   private renderBackgroundDebugPanel(root: Node, right: number, top: number): void {
@@ -2913,21 +3033,36 @@ export class MainController extends ScreenController {
 
   private async tryRefreshJournalEvents(): Promise<void> {
     if (this.journalEventsLoading || !appState.getCurrentUser() || !appState.getPetId()) {
+      devActionLogger.warn("main.journal.skip", {
+        loading: this.journalEventsLoading,
+        hasUser: Boolean(appState.getCurrentUser()),
+        hasPetId: Boolean(appState.getPetId()),
+      });
       return;
     }
 
+    devActionLogger.info("main.journal.start", { days: 7 });
     this.journalEventsLoading = true;
     this.journalSyncMessage = null;
     this.render();
     try {
       const result = await petService.loadPetDiary(7);
+      devActionLogger.info(result.success ? "main.journal.success" : "main.journal.failure", {
+        statusCode: result.statusCode,
+        message: result.message,
+        days: appState.getDiaryDays().length,
+      });
       this.journalEventsLoaded = result.success;
       if (!result.success) {
         this.journalSyncMessage = appState.getDiaryDays().length
           ? "同步失败，当前显示最近一次缓存记录"
           : "日记暂未同步，请稍后再试";
       }
-    } catch {
+    } catch (error) {
+      devActionLogger.error(
+        "main.journal.exception",
+        error instanceof Error ? error.message : String(error)
+      );
       this.journalEventsLoaded = false;
       this.journalSyncMessage = appState.getDiaryDays().length
         ? "网络异常，当前显示最近一次缓存记录"
@@ -2943,12 +3078,20 @@ export class MainController extends ScreenController {
   private async tryRefreshChatHistory(): Promise<void> {
     const petId = appState.getPetId();
     if (!petId) {
+      devActionLogger.warn("main.chatHistory.skip", "missing petId");
       return;
     }
     const requestSeq = this.chatRefreshSeq + 1;
     this.chatRefreshSeq = requestSeq;
+    devActionLogger.info("main.chatHistory.start", { requestSeq });
     try {
       await chatService.refreshHistory(petId, 20, () => requestSeq === this.chatRefreshSeq);
+      devActionLogger.info("main.chatHistory.done", { requestSeq });
+    } catch (error) {
+      devActionLogger.error(
+        "main.chatHistory.exception",
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       if (this.activeTopBarNavTab === "chat" && requestSeq === this.chatRefreshSeq) {
         this.render();
@@ -2958,6 +3101,7 @@ export class MainController extends ScreenController {
 
   private async handleChatSend(): Promise<void> {
     if (this.chatSending) {
+      devActionLogger.warn("main.chat.sendBlocked", "in flight");
       return;
     }
     const petId = appState.getPetId();
@@ -2966,11 +3110,13 @@ export class MainController extends ScreenController {
     this.chatCoordinator.setDraft(message);
 
     if (!petId) {
+      devActionLogger.warn("main.chat.sendBlocked", "missing petId");
       this.appendMainInteraction("聊天暂不可用", "请先创建宠物再开始聊天。");
       this.render();
       return;
     }
     if (!message) {
+      devActionLogger.warn("main.chat.sendBlocked", "empty message");
       this.appendMainInteraction("聊天未发送", "请先输入想对宠物说的话。");
       this.render();
       return;
@@ -2979,6 +3125,10 @@ export class MainController extends ScreenController {
     const requestSeq = this.chatRefreshSeq + 1;
     this.chatRefreshSeq = requestSeq;
     this.chatSending = true;
+    devActionLogger.info("main.chat.sendStart", {
+      requestSeq,
+      messageLength: message.length,
+    });
     this.render();
     try {
       const result = await chatService.sendMessage({
@@ -2988,12 +3138,21 @@ export class MainController extends ScreenController {
         canCommit: () => requestSeq === this.chatRefreshSeq,
       });
       if (result.success) {
+        devActionLogger.info("main.chat.sendSuccess", {
+          requestSeq,
+          usedFallback: result.usedFallback,
+        });
         this.chatCoordinator.clearDraftIfMatch(message);
         this.appendMainInteraction("聊天已发送", result.usedFallback ? "已使用本地回复兜底。" : "宠物已回复。");
       } else {
+        devActionLogger.warn("main.chat.sendFailure", result.message);
         this.appendMainInteraction("聊天发送失败", result.message);
       }
-    } catch {
+    } catch (error) {
+      devActionLogger.error(
+        "main.chat.sendException",
+        error instanceof Error ? error.message : String(error)
+      );
       this.appendMainInteraction("聊天发送失败", "请求异常，请稍后再试。");
     } finally {
       if (requestSeq === this.chatRefreshSeq) {
@@ -3102,6 +3261,7 @@ export class MainController extends ScreenController {
   }
 
   private openHomeworkCenterFromFoodShortage(): void {
+    devActionLogger.info("main.homework.open", "food shortage");
     this.isFoodSelectionPanelOpen = false;
     this.isHomeworkCenterOpen = true;
     this.appendMainInteraction("打开学习任务", "完成一次学习任务可以获得新的口粮。");
@@ -3110,6 +3270,7 @@ export class MainController extends ScreenController {
   }
 
   private closeHomeworkCenter(): void {
+    devActionLogger.info("main.homework.close");
     this.syncHomeworkNoteDraft();
     this.isHomeworkCenterOpen = false;
     this.appendMainInteraction("回到宠物主页", "学习任务面板已收起。");
@@ -3117,6 +3278,7 @@ export class MainController extends ScreenController {
   }
 
   private handleHomeworkViewBag(): void {
+    devActionLogger.info("main.homework.viewBag");
     this.syncHomeworkNoteDraft();
     this.isHomeworkCenterOpen = false;
     this.activeTopBarNavTab = "bag";
@@ -3143,12 +3305,17 @@ export class MainController extends ScreenController {
   }
 
   private async refreshHomeworkCenterData(): Promise<void> {
+    devActionLogger.info("main.homework.refresh.start");
     await homeworkService.refreshTodayStatus();
     if (this.isHomeworkCenterOpen) {
       this.render();
     }
 
     const historyResult = await homeworkService.refreshHistory(1, 5);
+    devActionLogger.info("main.homework.refresh.result", {
+      historySuccess: historyResult.success,
+      statusCode: historyResult.statusCode,
+    });
     if (this.isHomeworkCenterOpen && historyResult.success) {
       this.render();
     }
@@ -3156,9 +3323,11 @@ export class MainController extends ScreenController {
 
   private async handleHomeworkDevResetToday(): Promise<void> {
     if (this.homeworkDevResetting) {
+      devActionLogger.warn("main.homework.devResetBlocked", "in flight");
       return;
     }
 
+    devActionLogger.info("main.homework.devReset.start");
     this.syncHomeworkNoteDraft();
     this.homeworkDevResetting = true;
     this.homeworkDevResetMessage = "正在重置今日作业状态...";
@@ -3166,6 +3335,10 @@ export class MainController extends ScreenController {
 
     try {
       const result = await homeworkService.resetTodayForDev(appState.getPetId());
+      devActionLogger.info(result.success ? "main.homework.devReset.success" : "main.homework.devReset.failure", {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
       if (!result.success) {
         this.homeworkDevResetMessage = result.message ?? "开发重置接口不可用。";
         this.appendMainInteraction("开发重置失败", this.homeworkDevResetMessage);
@@ -3177,7 +3350,11 @@ export class MainController extends ScreenController {
       await homeworkService.refreshTodayStatus();
       await homeworkService.refreshHistory(1, 5);
       this.appendMainInteraction("开发重置完成", this.homeworkDevResetMessage);
-    } catch {
+    } catch (error) {
+      devActionLogger.error(
+        "main.homework.devReset.exception",
+        error instanceof Error ? error.message : String(error)
+      );
       this.homeworkDevResetMessage = "开发重置失败，请确认后端接口已启用。";
       this.appendMainInteraction("开发重置失败", this.homeworkDevResetMessage);
     } finally {
@@ -3191,17 +3368,21 @@ export class MainController extends ScreenController {
   private async handleHomeworkImageUpload(): Promise<void> {
     this.syncHomeworkNoteDraft();
     if (this.homeworkCenterCoordinator.isUploading() || this.homeworkCenterCoordinator.isSubmitting()) {
+      devActionLogger.warn("main.homework.uploadBlocked", "busy");
       return;
     }
 
     const file = await this.pickHomeworkImageFile();
     if (!file) {
+      devActionLogger.warn("main.homework.uploadCancelled");
       return;
     }
 
+    devActionLogger.info("main.homework.upload.start");
     const uploadTask = this.homeworkCenterCoordinator.uploadCurrentImage(file);
     this.render();
     const feedback = await uploadTask;
+    devActionLogger.info(feedback.success ? "main.homework.upload.success" : "main.homework.upload.failure", feedback.message);
     this.appendMainInteraction(
       feedback.success ? "图片已上传" : "图片上传失败",
       feedback.message
@@ -3211,9 +3392,19 @@ export class MainController extends ScreenController {
 
   private async handleHomeworkSubmit(): Promise<void> {
     this.syncHomeworkNoteDraft();
+    devActionLogger.info("main.homework.submit.start", {
+      petId: appState.getPetId(),
+    });
     const submitTask = this.homeworkCenterCoordinator.submitCurrent(appState.getPetId());
     this.render();
     const feedback = await submitTask;
+    devActionLogger.info(feedback.success ? "main.homework.submit.success" : "main.homework.submit.failure", {
+      message: feedback.message,
+      rewardStatus: feedback.rewardStatus,
+      inventorySynced: feedback.inventorySynced,
+      logsSynced: feedback.logsSynced,
+      shouldRefreshDashboard: feedback.shouldRefreshDashboard,
+    });
     const latestBackendLog = feedback.logsSynced ? appState.getMainEvents()[0] : null;
     const rewardGranted = feedback.rewardStatus === "granted";
     const feedbackTitle = latestBackendLog?.title ?? (rewardGranted ? "作业奖励" : "作业提交");
@@ -4411,7 +4602,9 @@ export class MainController extends ScreenController {
   }
 
   private async handleCorePetAction(action: CorePetAction): Promise<void> {
+    devActionLogger.info("main.petAction.start", action);
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
+      devActionLogger.warn("main.petAction.blocked", "inventory request in flight");
       this.appendMainInteraction("正在同步精灵状态", "背包使用请求还在处理，请稍后再试。");
       this.render();
       return;
@@ -4419,6 +4612,7 @@ export class MainController extends ScreenController {
 
     const beginResult = this.petInteraction.beginCoreAction(action);
     if (beginResult.ok === false) {
+      devActionLogger.warn("main.petAction.blocked", beginResult.reason);
       if (beginResult.reason === "disposed") {
         return;
       }
@@ -4428,10 +4622,12 @@ export class MainController extends ScreenController {
     }
 
     if (this.dashboardLoading) {
+      devActionLogger.info("main.petAction.waitDashboard", action);
       this.appendMainInteraction("正在同步精灵状态", "正在等待 dashboard 同步完成，随后继续本次互动。");
       this.render();
       await (this.dashboardRefreshPromise ?? Promise.resolve(false));
       if (this.dashboardLoading) {
+        devActionLogger.warn("main.petAction.blocked", "dashboard still loading");
         this.petInteraction.clearCoreAction(action);
         this.appendMainInteraction("互动暂不可用", "dashboard 仍在同步中，请稍后再试。");
         this.render();
@@ -4441,12 +4637,14 @@ export class MainController extends ScreenController {
 
     const viewModel = this.createMainViewModel();
     if (action === "sleep" && viewModel.stamina !== null && viewModel.stamina >= 90) {
+      devActionLogger.warn("main.petAction.blocked", "sleep stamina high");
       this.petInteraction.clearCoreAction(action);
       this.appendMainInteraction("精灵现在还不困哦", "体力已经很充足，本次不发起休息请求。");
       this.render();
       return;
     }
     if (action === "play" && viewModel.stamina !== null && viewModel.stamina <= 10) {
+      devActionLogger.warn("main.petAction.blocked", "play stamina low");
       this.petInteraction.clearCoreAction(action);
       this.appendMainInteraction("精灵有点累", "先休息一下吧，本次不发起玩耍请求。");
       this.render();
@@ -4455,6 +4653,10 @@ export class MainController extends ScreenController {
 
     const cooldownRemainingMs = this.petInteraction.getCoreActionCooldownRemainingMs();
     if (cooldownRemainingMs > 0) {
+      devActionLogger.warn("main.petAction.blocked", {
+        reason: "cooldown",
+        cooldownRemainingMs,
+      });
       this.petInteraction.clearCoreAction(action);
       const waitSeconds = Math.max(0.3, Math.ceil(cooldownRemainingMs / 100) / 10);
       this.appendMainInteraction("操作太快啦", `请稍等 ${waitSeconds.toFixed(1)} 秒再继续互动。`);
@@ -4498,6 +4700,11 @@ export class MainController extends ScreenController {
 
     try {
       const result = await config.request();
+      devActionLogger.info(result.success ? "main.petAction.success" : "main.petAction.failure", {
+        action,
+        statusCode: result.statusCode,
+        message: result.message,
+      });
       if (!this.petInteraction.isCurrentCoreAction(action)) {
         return;
       }
@@ -4533,7 +4740,11 @@ export class MainController extends ScreenController {
         : "互动接口暂不可用，未修改正式宠物状态，未修改口粮库存。";
       this.appendMainInteraction(config.failureTitle, detail);
       this.render();
-    } catch {
+    } catch (error) {
+      devActionLogger.error(
+        "main.petAction.exception",
+        error instanceof Error ? error.message : String(error)
+      );
       if (this.petInteraction.isCurrentCoreAction(action)) {
         this.petInteraction.clearCoreAction(action);
         this.appendMainInteraction(config.failureTitle, "请求异常，未修改正式宠物状态，未修改口粮库存。");
@@ -4543,14 +4754,17 @@ export class MainController extends ScreenController {
   }
 
   private async handleFeedAction(): Promise<void> {
+    devActionLogger.info("main.feed.open");
     this.petAnimator.resetInactivity();
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
+      devActionLogger.warn("main.feed.blocked", "request in flight");
       this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
       this.render();
       return;
     }
 
     if (this.dashboardLoading) {
+      devActionLogger.info("main.feed.waitDashboard");
       this.appendMainInteraction("正在同步口粮", "正在等待进入 Main 时触发的 dashboard 同步完成。");
       this.render();
       await (this.dashboardRefreshPromise ?? Promise.resolve(false));
@@ -4569,12 +4783,19 @@ export class MainController extends ScreenController {
 
   private async handleFoodSelection(selectedFood: PetFoodInventoryItem): Promise<void> {
     this.petAnimator.resetInactivity();
+    devActionLogger.info("main.feed.select", {
+      foodType: selectedFood.food_type,
+      foodQuality: selectedFood.food_quality,
+      count: selectedFood.count,
+    });
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
+      devActionLogger.warn("main.feed.blocked", "request in flight");
       this.appendMainInteraction("喂食进行中", "已有喂食请求在处理，已忽略重复点击。");
       this.render();
       return;
     }
     if (selectedFood.count <= 0) {
+      devActionLogger.warn("main.feed.blocked", "empty inventory");
       this.backendFeedBlocked = true;
       this.appendMainInteraction(
         "喂食暂不可用",
@@ -4600,8 +4821,13 @@ export class MainController extends ScreenController {
         food_type: selectedFood.food_type,
         food_quality: selectedFood.food_quality,
       });
+      devActionLogger.info(result.success ? "main.feed.success" : "main.feed.failure", {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
 
       if (requestSeq !== this.feedRequestSeq) {
+        devActionLogger.warn("main.feed.stale", { requestSeq });
         return;
       }
 
@@ -4640,7 +4866,11 @@ export class MainController extends ScreenController {
       if (result.message?.includes("返回不完整")) {
         await this.tryRefreshMainDashboard();
       }
-    } catch {
+    } catch (error) {
+      devActionLogger.error(
+        "main.feed.exception",
+        error instanceof Error ? error.message : String(error)
+      );
       if (requestSeq === this.feedRequestSeq) {
         this.backendFeedBlocked = true;
         this.feedRequestInFlight = false;

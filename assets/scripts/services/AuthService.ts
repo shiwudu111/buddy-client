@@ -1,4 +1,5 @@
 import { appState } from "../app/AppState";
+import { devActionLogger } from "../core/DevActionLogger";
 import { apiClient } from "../network/ApiClient";
 import type { ApiResponse, AuthPayload, AuthUser, UserRole } from "../types/api";
 import { loginAccountStore } from "../ui/login/LoginAccountStore";
@@ -39,7 +40,14 @@ class AuthService {
   }
 
   async login(username: string, password: string): Promise<ApiResponse<AuthPayload>> {
+    devActionLogger.info("auth.login.start", { username });
     const result = await apiClient.login({ username, password });
+    devActionLogger.info("auth.login.result", {
+      username,
+      success: result.success,
+      code: result.code,
+      statusCode: result.statusCode,
+    });
     if (result.success && result.data?.user) {
       const user = normalizeUser(result.data.user);
       loginAccountStore.rememberAccount(user);
@@ -53,7 +61,15 @@ class AuthService {
     password: string,
     role: UserRole = "CHILD"
   ): Promise<ApiResponse<AuthPayload>> {
+    devActionLogger.info("auth.register.start", { username, role });
     const result = await apiClient.register({ username, password, role });
+    devActionLogger.info("auth.register.result", {
+      username,
+      role,
+      success: result.success,
+      code: result.code,
+      statusCode: result.statusCode,
+    });
     if (result.success && result.data?.user) {
       const user = normalizeUser(result.data.user);
       loginAccountStore.rememberAccount(user);
@@ -63,6 +79,7 @@ class AuthService {
   }
 
   logout(): void {
+    devActionLogger.info("auth.logout");
     apiClient.clearToken();
     appState.clearSession();
   }

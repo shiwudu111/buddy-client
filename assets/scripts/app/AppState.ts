@@ -23,6 +23,10 @@ class AppState {
   private chatHistory: ChatConversationItem[] = [];
   private suppressNextChatHistoryBootstrap = false;
 
+  constructor() {
+    this.hydratePetIdForCurrentUser();
+  }
+
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
   }
@@ -34,7 +38,7 @@ class AppState {
     if (user.petId) {
       this.persistPetIdForCurrentUser(user.petId);
     } else {
-      this.removeStoredPetIdForCurrentUser();
+      this.hydratePetIdForCurrentUser();
     }
   }
 
@@ -57,7 +61,6 @@ class AppState {
   getPetId(): string | null {
     const userPetId = this.currentUser?.petId?.trim();
     if (userPetId) {
-      this.persistPetIdForCurrentUser(userPetId);
       return userPetId;
     }
 
@@ -66,7 +69,7 @@ class AppState {
       return mappedPetId;
     }
 
-    return this.migrateLegacyPetIdForCurrentUser();
+    return null;
   }
 
   setPetId(petId: string): void {
@@ -226,7 +229,8 @@ class AppState {
     }
 
     const petIdMap = storage.getJson<Record<string, string>>(STORAGE_KEYS.petIdMap) ?? {};
-    return petIdMap[ownerKey] ?? null;
+    const petId = petIdMap[ownerKey]?.trim();
+    return petId || null;
   }
 
   private getCurrentUserKey(): string | null {
@@ -264,19 +268,28 @@ class AppState {
     storage.setJson(STORAGE_KEYS.petIdMap, petIdMap);
   }
 
-  private migrateLegacyPetIdForCurrentUser(): string | null {
+  private hydratePetIdForCurrentUser(): void {
+    const userPetId = this.currentUser?.petId?.trim();
+    if (userPetId) {
+      this.persistPetIdForCurrentUser(userPetId);
+      return;
+    }
+
+    this.migrateLegacyPetIdForCurrentUser();
+  }
+
+  private migrateLegacyPetIdForCurrentUser(): void {
     const legacyPetId = storage.get(STORAGE_KEYS.petId);
     if (!legacyPetId) {
-      return null;
+      return;
     }
 
     if (!this.getCurrentUserKey()) {
-      return legacyPetId;
+      return;
     }
 
     this.persistPetIdForCurrentUser(legacyPetId);
     storage.remove(STORAGE_KEYS.petId);
-    return legacyPetId;
   }
 }
 

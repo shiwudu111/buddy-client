@@ -7,6 +7,12 @@
   "version": "3.8.7",
   "scripts": {
     "api:local": "node tools/set-api-base.mjs",
-    "api:cloud": "node tools/set-api-base.mjs http://101.133.130.137/api/v1"
+    "api:cloud": "node tools/set-api-base.mjs http://101.133.130.137/api/v1",
+    "hot-update:url": "node tools/set-hot-update-url.mjs",
+    "hot-update:url:dev": "node tools/set-hot-update-url.mjs dev",
+    "hot-update:url:staging": "node tools/set-hot-update-url.mjs staging",
+    "hot-update:url:prod": "node tools/set-hot-update-url.mjs prod",
+    "hot-update:manifest": "node tools/generate-hot-update-manifest.mjs",
+    "hot-update:upload": "node tools/upload-hot-update-oss.mjs"
   }
 }

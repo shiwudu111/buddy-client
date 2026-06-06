@@ -1,4 +1,5 @@
 import { appState } from "../app/AppState";
+import { devActionLogger } from "../core/DevActionLogger";
 import { apiClient } from "../network/ApiClient";
 import { petService } from "./PetService";
 import type {
@@ -20,10 +21,19 @@ export type HomeworkSubmitServiceResponse = ApiResponse<HomeworkSubmitResultPayl
 
 class HomeworkService {
   async uploadImage(file: File | Blob): Promise<ApiResponse<HomeworkUploadResult>> {
+    devActionLogger.info("homework.upload.request", {
+      size: "size" in file ? file.size : undefined,
+      type: "type" in file ? file.type : undefined,
+    });
     return apiClient.uploadHomeworkImage(file);
   }
 
   async submit(input: HomeworkSubmitPayload): Promise<HomeworkSubmitServiceResponse> {
+    devActionLogger.info("homework.submit.request", {
+      petId: input.petId,
+      subject: input.subject,
+      hasImage: Boolean(input.imageUrl),
+    });
     const result = await apiClient.submitHomework(input);
     let inventorySynced = false;
     let logsSynced = false;
@@ -32,6 +42,11 @@ class HomeworkService {
     if (result.success && result.data) {
       this.normalizeSubmitPayload(result.data);
       const rewardStatus = this.resolveRewardStatus(result.data);
+      devActionLogger.info("homework.submit.apply", {
+        rewardStatus,
+        hasRewardItems: Boolean(result.data.reward?.items?.length),
+        hasLogs: Array.isArray(result.data.logs),
+      });
       const hasGrantedRewardItems =
         rewardStatus === "granted" && Boolean(result.data.reward?.items?.length);
       const inventory = petService.normalizeFoodInventoryPayload(result.data);
@@ -40,14 +55,25 @@ class HomeworkService {
       if (shouldApplyInventory) {
         appState.setPetFoodInventory(inventory);
         inventorySynced = true;
+        devActionLogger.info("homework.submit.inventorySynced", {
+          count: inventory.length,
+        });
       }
 
       if (Array.isArray(result.data.logs)) {
         appState.setMainEvents(result.data.logs);
         logsSynced = true;
+        devActionLogger.info("homework.submit.logsSynced", {
+          count: result.data.logs.length,
+        });
       }
 
       shouldRefreshDashboard = rewardStatus === "granted" && !inventorySynced;
+    } else {
+      devActionLogger.warn("homework.submit.failure", {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
     }
 
     return {
@@ -63,9 +89,14 @@ class HomeworkService {
     limit = 10,
     canCommit?: () => boolean
   ): Promise<ApiResponse<HomeworkHistoryPayload>> {
+    devActionLogger.info("homework.history.request", { page, limit });
     const result = await apiClient.getHomeworkHistory(page, limit);
     if (result.success && result.data && (!canCommit || canCommit())) {
       appState.setHomeworkHistory(this.normalizeHomeworkHistory(result.data));
+      devActionLogger.info("homework.history.apply", {
+        count: result.data.list.length,
+        statusCode: result.statusCode,
+      });
     }
     return result;
   }
@@ -73,18 +104,24 @@ class HomeworkService {
   async refreshTodayStatus(
     canCommit?: () => boolean
   ): Promise<ApiResponse<HomeworkTodayStatus>> {
+    devActionLogger.info("homework.status.request");
     const result = await apiClient.getHomeworkStatus();
     if (result.success && result.data && (!canCommit || canCommit())) {
       appState.setTodayHomeworkStatus(this.normalizeTodayStatus(result.data));
+      devActionLogger.info("homework.status.apply", {
+        statusCode: result.statusCode,
+      });
     }
     return result;
   }
 
   async resetTodayForDev(petId?: string | null): Promise<ApiResponse<{ message?: string }>> {
+    devActionLogger.info("homework.devReset.request", { petId });
     const result = await apiClient.resetTodayHomeworkForDev(petId);
     if (result.success) {
       appState.setHomeworkHistory(null);
       appState.setTodayHomeworkStatus(null);
+      devActionLogger.info("homework.devReset.apply");
     }
     return result;
   }

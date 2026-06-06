@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from "../core/config";
+import { devActionLogger } from "../core/DevActionLogger";
 import { STORAGE_KEYS, storage } from "../core/storage";
 import type {
   ApiResponse,
@@ -70,6 +71,9 @@ class ApiClient {
     path: string,
     options: RequestOptions = {}
   ): Promise<ApiResponse<T>> {
+    const method = options.method ?? "GET";
+    const startedAt = Date.now();
+    devActionLogger.info("api.request.start", `${method} ${path}`);
     try {
       const isFormDataBody =
         typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -86,6 +90,10 @@ class ApiClient {
         ...options,
         headers,
       });
+      devActionLogger.info(
+        response.ok ? "api.request.ok" : "api.request.fail",
+        `${method} ${path} status=${response.status} ${Date.now() - startedAt}ms`
+      );
 
       const raw = await response.text();
       let payload: ApiResponse<T> = { success: response.ok };
@@ -122,6 +130,10 @@ class ApiClient {
         statusCode: response.status,
       };
     } catch (error) {
+      devActionLogger.error(
+        "api.request.error",
+        `${method} ${path} ${error instanceof Error ? error.message : String(error)}`
+      );
       const rawMessage = error instanceof Error ? error.message : "请求失败";
       const message =
         rawMessage === "Failed to fetch"
@@ -141,6 +153,10 @@ class ApiClient {
     email?: string;
     role?: "CHILD" | "PARENT";
   }): Promise<ApiResponse<AuthPayload>> {
+    devActionLogger.info("auth.register.api", {
+      username: input.username,
+      role: input.role ?? "CHILD",
+    });
     const result = await this.request<AuthPayload>("/auth/register", {
       method: "POST",
       body: JSON.stringify(input),
@@ -159,6 +175,7 @@ class ApiClient {
     username: string;
     password: string;
   }): Promise<ApiResponse<AuthPayload>> {
+    devActionLogger.info("auth.login.api", { username: input.username });
     const result = await this.request<AuthPayload>("/auth/login", {
       method: "POST",
       body: JSON.stringify(input),
@@ -193,7 +210,9 @@ class ApiClient {
   }
 
   async getPetDashboard(petId: string): Promise<ApiResponse<PetDashboardPayload>> {
-    return this.request<PetDashboardPayload>(`/pets/${petId}/dashboard`);
+    const encodedPetId = encodeURIComponent(petId);
+    devActionLogger.info("api.petDashboard.path", { petId, encodedPetId });
+    return this.request<PetDashboardPayload>(`/pets/${encodedPetId}/dashboard`);
   }
 
   async getPetEvents(petId: string, limit = 20): Promise<ApiResponse<PetEventsPayload>> {
