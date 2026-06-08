@@ -309,17 +309,33 @@ class PetService {
   }
 
   private applyDashboardPayload(payload: PetDashboardPayload): PetStatus {
+    devActionLogger.info("pet.dashboard.apply.start", {
+      hasPet: Boolean(payload.pet),
+      foodCount: payload.foods?.length ?? payload.inventory?.length ?? 0,
+      recentEventCount: payload.recent_events?.length ?? 0,
+    });
     const pet = this.normalizePetStatus(payload.pet);
+    devActionLogger.info("pet.dashboard.apply.petNormalized", {
+      petId: pet.pet_id,
+      level: pet.level,
+    });
     appState.setPetId(pet.pet_id);
     appState.setCurrentPet(pet);
+    devActionLogger.info("pet.dashboard.apply.petStored");
     appState.setPetFoodInventory(this.normalizeDashboardFoodInventory(payload));
+    devActionLogger.info("pet.dashboard.apply.inventoryStored");
     if (Array.isArray(payload.recent_events)) {
       const recentEvents = this.normalizeMainEvents(payload.recent_events);
+      devActionLogger.info("pet.dashboard.apply.eventsNormalized", {
+        count: recentEvents.length,
+      });
       appState.setMainEvents(recentEvents);
       if (recentEvents.length) {
         appState.setDiaryDays(this.normalizeDiaryDays({ events: recentEvents }, 7));
       }
+      devActionLogger.info("pet.dashboard.apply.eventsStored");
     }
+    devActionLogger.info("pet.dashboard.apply.done");
     return pet;
   }
 

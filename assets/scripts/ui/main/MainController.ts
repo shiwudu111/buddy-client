@@ -556,6 +556,11 @@ export class MainController extends ScreenController {
           statusCode: result.statusCode,
           hasData: Boolean(result.data),
         });
+        devActionLogger.info("main.dashboard.beforeResultHandling", {
+          requestSeq,
+          currentSeq: this.dashboardRequestSeq,
+          success: result.success,
+        });
         if (requestSeq !== this.dashboardRequestSeq) {
           devActionLogger.warn("main.dashboard.stale", { requestSeq });
           return false;
@@ -575,7 +580,9 @@ export class MainController extends ScreenController {
             result.dailyBasicFood?.granted ? "每日基础口粮" : "主页数据已同步",
             this.resolveDashboardSyncDetail(result.offlineDecay, result.dailyBasicFood)
           );
+          devActionLogger.info("main.dashboard.beforeRenderSuccess", { requestSeq });
           this.render();
+          devActionLogger.info("main.dashboard.afterRenderSuccess", { requestSeq });
           return true;
         }
 
@@ -590,10 +597,14 @@ export class MainController extends ScreenController {
             result.message ? `${result.message}；当前保留已有状态。` : "dashboard 暂不可用，当前保留已有状态。"
           );
           if (this.openFirstPetCreationIfNeeded()) {
+            devActionLogger.info("main.dashboard.beforeRenderFirstPet", { requestSeq });
             this.render();
+            devActionLogger.info("main.dashboard.afterRenderFirstPet", { requestSeq });
             return false;
           }
+          devActionLogger.info("main.dashboard.beforeRenderFailure", { requestSeq });
           this.render();
+          devActionLogger.info("main.dashboard.afterRenderFailure", { requestSeq });
         }
         return false;
       } catch (error) {
@@ -605,20 +616,34 @@ export class MainController extends ScreenController {
           this.dashboardFailureLogged = true;
           this.appendMainInteraction("主页同步失败", "dashboard 请求异常，当前保留已有状态。");
           if (this.openFirstPetCreationIfNeeded()) {
+            devActionLogger.info("main.dashboard.beforeRenderExceptionFirstPet", { requestSeq });
             this.render();
+            devActionLogger.info("main.dashboard.afterRenderExceptionFirstPet", { requestSeq });
             return false;
           }
+          devActionLogger.info("main.dashboard.beforeRenderException", { requestSeq });
           this.render();
+          devActionLogger.info("main.dashboard.afterRenderException", { requestSeq });
         }
         return false;
       } finally {
+        devActionLogger.info("main.dashboard.finally", {
+          requestSeq,
+          currentSeq: this.dashboardRequestSeq,
+          willClearLoading: requestSeq === this.dashboardRequestSeq,
+        });
         if (requestSeq === this.dashboardRequestSeq) {
           this.dashboardLoading = false;
         }
+        devActionLogger.info("main.dashboard.finally.done", {
+          requestSeq,
+          dashboardLoading: this.dashboardLoading,
+        });
       }
     })();
 
     this.dashboardRefreshPromise = refreshTask;
+    devActionLogger.info("main.dashboard.promiseStored", { requestSeq });
     try {
       return await refreshTask;
     } finally {

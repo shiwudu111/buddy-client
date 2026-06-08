@@ -116,6 +116,7 @@ export class LoginController extends Component {
 
   onLoad(): void {
     // 登录页加载时，先抓分辨率、节点引用、按钮事件，再刷新一次显示。
+    devActionLogger.info("runtime.bundle.fingerprint.v21", "login.onLoad");
     this.resolutionCoordinator.capture();
     this.resolutionCoordinator.applyCurrentFrame();
     this.resolveSceneReferences();

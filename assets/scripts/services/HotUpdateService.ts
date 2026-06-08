@@ -75,6 +75,8 @@ export type HotUpdateOptions = {
 
 const HOT_UPDATE_STORAGE_DIR = "buddy-hot-update";
 const LOCAL_MANIFEST_FILE = "buddy-local-project.manifest";
+const HOT_UPDATE_NATIVE_SEARCH_PATHS_FILE = "buddy-hot-update-search-paths.txt";
+const HOT_UPDATE_SEARCH_PATHS_KEY = "HotUpdateSearchPaths";
 const LOCAL_VERSION = "0.0.0";
 const HOT_UPDATE_STEP_TIMEOUT_MS = 60000;
 const HOT_UPDATE_FAILED_COUNT_KEY = "buddy.hotUpdate.failedCount";
@@ -116,6 +118,8 @@ class HotUpdateService {
       this.reportStage("unsupported", "not native runtime", "warn", onProgress);
       return { status: "unsupported", message: "not native runtime" };
     }
+
+    this.restoreHotUpdateSearchPaths();
 
     const failedCount = this.getFailedCount();
     if (!force && failedCount >= HOT_UPDATE_AUTO_PAUSE_THRESHOLD) {
@@ -203,7 +207,12 @@ class HotUpdateService {
         if (native.fileUtils.isFileExist(localManifestPath)) {
           native.fileUtils.removeFile(localManifestPath);
         }
+        const nativeSearchPathsPath = this.resolveNativeSearchPathsPath();
+        if (native.fileUtils.isFileExist(nativeSearchPathsPath)) {
+          native.fileUtils.removeFile(nativeSearchPathsPath);
+        }
       }
+      sys.localStorage.removeItem(HOT_UPDATE_SEARCH_PATHS_KEY);
       this.clearFailedCount();
       this.localVersion = LOCAL_VERSION;
       this.remoteVersion = "unknown";
@@ -363,19 +372,80 @@ class HotUpdateService {
   }
 
   private applyHotUpdateSearchPaths(manager: NativeAssetsManager): void {
-    const searchPaths = manager.getLocalManifest?.()?.getSearchPaths?.();
-    if (!searchPaths?.length) {
+    const manifestSearchPaths = manager.getLocalManifest?.()?.getSearchPaths?.() ?? [];
+    const searchPaths = manifestSearchPaths.length
+      ? manifestSearchPaths
+      : [this.resolveStorageSearchPath()];
+    if (!manifestSearchPaths.length) {
+      devActionLogger.warn("hotUpdate.searchPaths.emptyUsingStorage");
+    }
+
+    const currentSearchPaths = native.fileUtils.getSearchPaths?.() ?? [];
+    const nextSearchPaths = this.mergeSearchPaths(searchPaths, currentSearchPaths);
+    try {
+      sys.localStorage.setItem(HOT_UPDATE_SEARCH_PATHS_KEY, JSON.stringify(nextSearchPaths));
+    } catch {
+      // Search paths are also applied in memory; storage only helps the next native boot.
+    }
+    this.writeNativeSearchPaths(nextSearchPaths);
+    native.fileUtils.setSearchPaths?.(nextSearchPaths);
+    devActionLogger.info("hotUpdate.searchPaths.applied", `count=${nextSearchPaths.length}`);
+  }
+
+  private restoreHotUpdateSearchPaths(): void {
+    let storedSearchPaths: string[] = [];
+    try {
+      const raw = sys.localStorage.getItem(HOT_UPDATE_SEARCH_PATHS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      storedSearchPaths = Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+    } catch {
+      storedSearchPaths = [];
+    }
+
+    if (!storedSearchPaths.length) {
+      devActionLogger.info("hotUpdate.searchPaths.restore", "empty");
       return;
     }
 
     const currentSearchPaths = native.fileUtils.getSearchPaths?.() ?? [];
-    const nextSearchPaths = [...searchPaths, ...currentSearchPaths];
-    try {
-      sys.localStorage.setItem("HotUpdateSearchPaths", JSON.stringify(nextSearchPaths));
-    } catch {
-      // Search paths are also applied in memory; storage only helps the next native boot.
-    }
+    const nextSearchPaths = this.mergeSearchPaths(storedSearchPaths, currentSearchPaths);
     native.fileUtils.setSearchPaths?.(nextSearchPaths);
+    devActionLogger.info("hotUpdate.searchPaths.restore", `count=${nextSearchPaths.length}`);
+  }
+
+  private resolveStorageSearchPath(): string {
+    const storagePath = this.resolveStoragePath();
+    return storagePath.endsWith("/") ? storagePath : `${storagePath}/`;
+  }
+
+  private resolveNativeSearchPathsPath(): string {
+    return `${native.fileUtils.getWritablePath()}${HOT_UPDATE_NATIVE_SEARCH_PATHS_FILE}`;
+  }
+
+  private writeNativeSearchPaths(searchPaths: string[]): void {
+    try {
+      const content = searchPaths.filter((path) => path.length > 0).join("\n");
+      native.fileUtils.writeStringToFile(content, this.resolveNativeSearchPathsPath());
+      devActionLogger.info("hotUpdate.searchPaths.nativeSaved", `count=${searchPaths.length}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      devActionLogger.warn("hotUpdate.searchPaths.nativeSaveFailed", message);
+    }
+  }
+
+  private mergeSearchPaths(primary: string[], secondary: string[]): string[] {
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    for (const path of [...primary, ...secondary]) {
+      if (!path || seen.has(path)) {
+        continue;
+      }
+      seen.add(path);
+      merged.push(path);
+    }
+    return merged;
   }
 
   private readStoredProjectVersion(storagePath: string): string | null {

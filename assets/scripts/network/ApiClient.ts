@@ -33,6 +33,25 @@ type RequestOptions = RequestInit & {
   skipAuth?: boolean;
 };
 
+type ApiTransportResponse = {
+  status: number;
+  ok: boolean;
+  text: () => Promise<string>;
+};
+
+const DASHBOARD_REQUEST_TIMEOUT_MS = 8000;
+
+function isFormDataRequestBody(body: BodyInit | null | undefined): boolean {
+  if (!body || typeof FormData === "undefined") {
+    return false;
+  }
+  try {
+    return body instanceof FormData;
+  } catch {
+    return Object.prototype.toString.call(body) === "[object FormData]";
+  }
+}
+
 type PetResourceReason =
   | "manual_feed"
   | "manual_play"
@@ -73,10 +92,14 @@ class ApiClient {
   ): Promise<ApiResponse<T>> {
     const method = options.method ?? "GET";
     const startedAt = Date.now();
-    devActionLogger.info("api.request.start", `${method} ${path}`);
+    const url = `${getApiBaseUrl()}${path}`;
+    const isDashboardRequest = path.includes("/dashboard");
+    devActionLogger.info(
+      isDashboardRequest ? "api.dashboard.request.start.v21" : "api.request.start",
+      `${method} ${path}`
+    );
     try {
-      const isFormDataBody =
-        typeof FormData !== "undefined" && options.body instanceof FormData;
+      const isFormDataBody = isFormDataRequestBody(options.body);
       const headers: Record<string, string> = {
         ...(isFormDataBody ? {} : { "Content-Type": "application/json" }),
         ...(options.headers as Record<string, string> | undefined),
@@ -86,25 +109,59 @@ class ApiClient {
         headers.Authorization = `Bearer ${this.token}`;
       }
 
-      const response = await fetch(`${getApiBaseUrl()}${path}`, {
-        ...options,
-        headers,
-      });
+      if (isDashboardRequest) {
+        devActionLogger.info("api.dashboard.xhr.prepare.v21", {
+          method,
+          url,
+          hasToken: Boolean(this.token),
+        });
+      }
+
+      const response = isDashboardRequest
+        ? await this.requestDashboardWithXhr(url, method, headers, options.body)
+        : await fetch(url, {
+            ...options,
+            headers,
+          });
+      if (isDashboardRequest) {
+        devActionLogger.info(
+          "api.dashboard.transport.after.v21",
+          `status=${response.status} ok=${response.ok} elapsed=${Date.now() - startedAt}ms`
+        );
+      }
       devActionLogger.info(
         response.ok ? "api.request.ok" : "api.request.fail",
         `${method} ${path} status=${response.status} ${Date.now() - startedAt}ms`
       );
 
+      if (isDashboardRequest) {
+        devActionLogger.info("api.dashboard.text.before", `status=${response.status}`);
+      }
       const raw = await response.text();
+      if (isDashboardRequest) {
+        devActionLogger.info("api.dashboard.text.after", `rawLength=${raw.length}`);
+      }
       let payload: ApiResponse<T> = { success: response.ok };
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as ApiResponse<T> | T;
+          if (isDashboardRequest) {
+            devActionLogger.info(
+              "api.dashboard.json.parsed",
+              `wrapped=${Boolean(parsed && typeof parsed === "object" && "success" in parsed)}`
+            );
+          }
           payload =
             parsed && typeof parsed === "object" && "success" in parsed
               ? (parsed as ApiResponse<T>)
               : { success: response.ok, data: parsed as T };
-        } catch {
+        } catch (error) {
+          if (isDashboardRequest) {
+            devActionLogger.error(
+              "api.dashboard.json.parseError",
+              error instanceof Error ? error.message : String(error)
+            );
+          }
           payload = {
             success: response.ok,
             message: response.ok ? undefined : `HTTP ${response.status}`,
@@ -147,6 +204,91 @@ class ApiClient {
     }
   }
 
+  private requestDashboardWithXhr(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: BodyInit | null
+  ): Promise<ApiTransportResponse> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = DASHBOARD_REQUEST_TIMEOUT_MS;
+      xhr.open(method, url, true);
+      for (const [key, value] of Object.entries(headers)) {
+        xhr.setRequestHeader(key, value);
+      }
+
+      devActionLogger.info("api.dashboard.xhr.before.v21", {
+        method,
+        url,
+        timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+      });
+
+      const timeoutId = setTimeout(() => {
+        devActionLogger.error("api.dashboard.xhr.watchdogTimeout.v21", {
+          url,
+          readyState: xhr.readyState,
+          timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+        });
+        try {
+          xhr.abort();
+        } catch {
+          // Ignore abort errors; the promise rejection below drives the UI fallback.
+        }
+        reject(new Error(`Dashboard XHR timeout after ${DASHBOARD_REQUEST_TIMEOUT_MS}ms`));
+      }, DASHBOARD_REQUEST_TIMEOUT_MS + 1000);
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState !== 4) {
+          return;
+        }
+        clearTimeout(timeoutId);
+        devActionLogger.info("api.dashboard.xhr.done.v21", {
+          status: xhr.status,
+          responseLength: xhr.responseText?.length ?? 0,
+        });
+        resolve({
+          status: xhr.status,
+          ok: xhr.status >= 200 && xhr.status < 300,
+          text: async () => xhr.responseText ?? "",
+        });
+      };
+
+      xhr.onerror = () => {
+        clearTimeout(timeoutId);
+        devActionLogger.error("api.dashboard.xhr.error.v21", {
+          status: xhr.status,
+          readyState: xhr.readyState,
+        });
+        reject(new Error(`Dashboard XHR failed with status ${xhr.status}`));
+      };
+
+      xhr.ontimeout = () => {
+        clearTimeout(timeoutId);
+        devActionLogger.error("api.dashboard.xhr.timeout.v21", {
+          status: xhr.status,
+          readyState: xhr.readyState,
+          timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+        });
+        reject(new Error(`Dashboard XHR timeout after ${DASHBOARD_REQUEST_TIMEOUT_MS}ms`));
+      };
+
+      try {
+        xhr.send((body as XMLHttpRequestBodyInit | null | undefined) ?? null);
+        devActionLogger.info("api.dashboard.xhr.sent.v21", {
+          method,
+          hasBody: Boolean(body),
+        });
+      } catch (error) {
+        clearTimeout(timeoutId);
+        devActionLogger.error(
+          "api.dashboard.xhr.sendError.v21",
+          error instanceof Error ? error.message : String(error)
+        );
+        reject(error);
+      }
+    });
+  }
   async register(input: {
     username: string;
     password: string;
@@ -211,6 +353,7 @@ class ApiClient {
 
   async getPetDashboard(petId: string): Promise<ApiResponse<PetDashboardPayload>> {
     const encodedPetId = encodeURIComponent(petId);
+    devActionLogger.info("api.petDashboard.path.v21", `petId=${petId}`);
     devActionLogger.info("api.petDashboard.path", { petId, encodedPetId });
     return this.request<PetDashboardPayload>(`/pets/${encodedPetId}/dashboard`);
   }
