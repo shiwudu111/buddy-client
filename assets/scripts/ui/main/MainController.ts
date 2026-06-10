@@ -9,9 +9,8 @@ import {
   Mask,
   Material,
   Node,
-  Size,
-  Sprite,
   SpriteFrame,
+  sys,
   UITransform,
   Vec3,
   Vec4,
@@ -324,6 +323,7 @@ export class MainController extends ScreenController {
   private renderFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private renderScheduled = false;
   private openingBubbleShownThisSession = false;
+  private artDebugNativeSkipLogged = false;
   private highPriorityOpeningBubbleVisible = false;
   private handleMainVisibilityChange = (): void => {
     if (typeof document !== "undefined" && document.hidden) {
@@ -337,8 +337,15 @@ export class MainController extends ScreenController {
   };
 
   onLoad(): void {
-    this.hydrateArtTuningFromStorage();
-    this.installArtDebugBridge();
+    if (this.shouldDisableArtDebugOnNative()) {
+      devActionLogger.warn("main.artDebug.disabled.native", {
+        reason: "disable art debug bridge and tuning page on Android native",
+      });
+    } else {
+      this.hydrateArtTuningFromStorage();
+      this.installArtDebugBridge();
+    }
+
     view.on("canvas-resize", this.render, this);
     this.installLifeContextListeners();
   }
@@ -462,7 +469,10 @@ export class MainController extends ScreenController {
     this.chatInput = null;
     this.parentBindInput = null;
     this.petCreationGate.clearRefs();
-    this.installArtDebugBridge();
+
+    if (!this.shouldDisableArtDebugOnNative()) {
+      this.installArtDebugBridge();
+    }
     this.ensureButtonGradientEffectLoaded();
     this.renderBackdrop(root, layout);
     if (this.isParentUser()) {
@@ -541,21 +551,25 @@ export class MainController extends ScreenController {
       requestSeq,
       petId,
     });
+
     const refreshTask = (async (): Promise<boolean> => {
       try {
         devActionLogger.info("main.dashboard.beforeRefreshDashboard", {
           requestSeq,
         });
+
         const result = await petService.refreshDashboard(
           () => requestSeq === this.dashboardRequestSeq,
           petId
         );
+
         devActionLogger.info("main.dashboard.afterRefreshDashboard", {
           requestSeq,
           success: result.success,
           statusCode: result.statusCode,
           hasData: Boolean(result.data),
         });
+
         devActionLogger.info("main.dashboard.beforeResultHandling", {
           requestSeq,
           currentSeq: this.dashboardRequestSeq,
@@ -788,7 +802,9 @@ export class MainController extends ScreenController {
       activeVisualState: this.activeVisualState,
     });
   }
-
+  private shouldDisableArtDebugOnNative(): boolean {
+    return sys.isNative && sys.os === sys.OS.ANDROID;
+  }
   private isParentUser(): boolean {
     return appState.getCurrentUser()?.role === "PARENT";
   }
@@ -850,6 +866,10 @@ export class MainController extends ScreenController {
   }
 
   private installArtDebugBridge(): void {
+    if (this.shouldDisableArtDebugOnNative()) {
+      return;
+    }
+
     if (typeof window === "undefined") {
       return;
     }
@@ -1391,6 +1411,15 @@ export class MainController extends ScreenController {
   }
 
   private renderBackgroundDebugEntry(root: Node, layout: MainLayout): void {
+    if (this.shouldDisableArtDebugOnNative()) {
+      if (!this.artDebugNativeSkipLogged) {
+        this.artDebugNativeSkipLogged = true;
+        devActionLogger.warn("main.renderBackgroundDebugEntry.skip.native", {
+          reason: "art debug entry is disabled on Android native",
+        });
+      }
+      return;
+    }
     const right = layout.viewportWidth / 2 - 24;
     const top = layout.viewportHeight / 2 - 24;
     const entryX = right - DEBUG_ENTRY_SIZE / 2;
@@ -2600,16 +2629,16 @@ export class MainController extends ScreenController {
     // 如果以后要调主舞台在壳层里的呼吸感，优先动这里的边距、圆角和描边粗细。
     const shellFrameContainer = this.showShellFrameLayer
       ? RuntimeUI.createCard(shell, {
-          name: "ShellFrame",
-          x: 0,
-          y: 0,
-          width: shellFrameWidth,
-          height: shellFrameHeight,
-          style: "shell",
-          borderColor: new Color(255, 255, 255, 186),
-          radius: mainViewportRadius + 2,
-          lineWidth: 4,
-        })
+        name: "ShellFrame",
+        x: 0,
+        y: 0,
+        width: shellFrameWidth,
+        height: shellFrameHeight,
+        style: "shell",
+        borderColor: new Color(255, 255, 255, 186),
+        radius: mainViewportRadius + 2,
+        lineWidth: 4,
+      })
       : shell;
 
     // 美术可调参数清单（ShellFrame / MainViewport / MainStage）
@@ -2668,17 +2697,17 @@ export class MainController extends ScreenController {
 
     const stageArea = this.showMainViewportLayer
       ? RuntimeUI.createCard(viewportContainer, {
-          name: "MainViewport",
-          x: 0,
-          y: stageY,
-          width: stageWidth,
-          height: stageHeight,
-          color: new Color(235, 207, 180, mainViewportAlpha),
-          innerColor: new Color(255, 246, 237, Math.max(0, Math.round(mainViewportAlpha * 0.96))),
-          radius: mainViewportRadius,
-          borderThickness: 2,
-          innerRadius: Math.max(0, mainViewportRadius - 2),
-        })
+        name: "MainViewport",
+        x: 0,
+        y: stageY,
+        width: stageWidth,
+        height: stageHeight,
+        color: new Color(235, 207, 180, mainViewportAlpha),
+        innerColor: new Color(255, 246, 237, Math.max(0, Math.round(mainViewportAlpha * 0.96))),
+        radius: mainViewportRadius,
+        borderThickness: 2,
+        innerRadius: Math.max(0, mainViewportRadius - 2),
+      })
       : new Node("StageArea");
     if (!this.showMainViewportLayer) {
       stageArea.setParent(viewportContainer);
@@ -2687,11 +2716,11 @@ export class MainController extends ScreenController {
       stageAreaTransform.setContentSize(stageWidth, stageHeight);
     }
 
-	renderMainStageBase(this.createMainStageRendererContext(), stageArea, stageWidth, stageHeight, {
+    renderMainStageBase(this.createMainStageRendererContext(), stageArea, stageWidth, stageHeight, {
       borderThickness: 2,
       radius: mainViewportRadius,
     });
-	
+
 
     // 这一层是主舞台的氛围底光。
     // 它不承载内容，只负责把舞台从主视口里“托”出来一点，避免画面太平。
@@ -3003,18 +3032,18 @@ export class MainController extends ScreenController {
     });
     if (isBag) {
       renderBagPanelContent({
-      panel,
-      foods: viewModel.foods,
-      panelWidth,
-      panelHeight,
-      inventoryUseRequestInFlight: this.inventoryUseRequestInFlight,
-      formatFoodName: (food) => this.formatFoodName(food),
-      resolveFoodIcon: (food) => this.resolveFoodIcon(food),
-      resolveFoodEffectText: (food) => this.resolveFoodEffectText(food),
-      onUseFood: (food) => void this.handleFoodSelection(food),
-      onOpenHomework: () => this.openHomeworkCenterFromFoodShortage(),
-      eventTarget: this,
-    });
+        panel,
+        foods: viewModel.foods,
+        panelWidth,
+        panelHeight,
+        inventoryUseRequestInFlight: this.inventoryUseRequestInFlight,
+        formatFoodName: (food) => this.formatFoodName(food),
+        resolveFoodIcon: (food) => this.resolveFoodIcon(food),
+        resolveFoodEffectText: (food) => this.resolveFoodEffectText(food),
+        onUseFood: (food) => void this.handleFoodSelection(food),
+        onOpenHomework: () => this.openHomeworkCenterFromFoodShortage(),
+        eventTarget: this,
+      });
       return;
     }
     if (isChat) {
@@ -3742,11 +3771,11 @@ export class MainController extends ScreenController {
       text: string;
       icon: string;
     }> = [
-      { key: "petHome", name: "PetHome", text: "宠物主页", icon: "" },
-      { key: "bag", name: "Bag", text: "背包", icon: "" },
-      { key: "journal", name: "Journal", text: "日记", icon: "" },
-      { key: "chat", name: "Chat", text: "聊天", icon: "" },
-    ];
+        { key: "petHome", name: "PetHome", text: "宠物主页", icon: "" },
+        { key: "bag", name: "Bag", text: "背包", icon: "" },
+        { key: "journal", name: "Journal", text: "日记", icon: "" },
+        { key: "chat", name: "Chat", text: "聊天", icon: "" },
+      ];
     const navGap = 10;
     const navItemWidth = Math.round((navWidth - 20 - navGap * (navItems.length - 1)) / navItems.length);
     const navItemHeight = navHeight - 14;
@@ -4717,7 +4746,7 @@ export class MainController extends ScreenController {
         failureTitle: "关怀失败",
         request: () => petService.careCurrentPet(),
       },
-  };
+    };
 
     const config = actionConfig[action];
     this.appendMainInteraction(config.runningTitle, "正在请求真实互动接口，不修改口粮库存。");
@@ -4873,7 +4902,7 @@ export class MainController extends ScreenController {
         this.appendMainInteraction(
           latestLog?.title ?? "使用成功",
           latestLog?.detail ??
-            `已使用 ${this.formatFoodName(selectedFood)}，宠物状态已刷新；可到日记查看这次记录。`
+          `已使用 ${this.formatFoodName(selectedFood)}，宠物状态已刷新；可到日记查看这次记录。`
         );
         this.render();
         return;
