@@ -78,9 +78,11 @@ const LOCAL_MANIFEST_FILE = "buddy-local-project.manifest";
 const HOT_UPDATE_NATIVE_SEARCH_PATHS_FILE = "buddy-hot-update-search-paths.txt";
 const HOT_UPDATE_SEARCH_PATHS_KEY = "HotUpdateSearchPaths";
 const LOCAL_VERSION = "0.0.0";
-const HOT_UPDATE_STEP_TIMEOUT_MS = 60000;
+const HOT_UPDATE_CHECK_TIMEOUT_MS = 90000;
+const HOT_UPDATE_DOWNLOAD_INACTIVITY_TIMEOUT_MS = 180000;
 const HOT_UPDATE_FAILED_COUNT_KEY = "buddy.hotUpdate.failedCount";
 const HOT_UPDATE_AUTO_PAUSE_THRESHOLD = 3;
+const HOT_UPDATE_APPLIED_VERSION_KEY = "buddy.hotUpdate.appliedVersion";
 
 class HotUpdateService {
   private isChecking = false;
@@ -119,7 +121,15 @@ class HotUpdateService {
       return { status: "unsupported", message: "not native runtime" };
     }
 
-    this.restoreHotUpdateSearchPaths();
+    const restoredSearchPaths = this.restoreHotUpdateSearchPaths();
+    const appliedVersion = this.readAppliedVersion();
+    if (appliedVersion && !restoredSearchPaths.length) {
+      this.reportHotUpdateStateInconsistent(
+        "applied version exists but search paths are empty",
+        { appliedVersion }
+      );
+      this.clearPartialHotUpdateState({ clearAppliedVersion: true });
+    }
 
     const failedCount = this.getFailedCount();
     if (!force && failedCount >= HOT_UPDATE_AUTO_PAUSE_THRESHOLD) {
@@ -142,8 +152,9 @@ class HotUpdateService {
     this.isChecking = true;
     try {
       const storagePath = this.resolveStoragePath();
-      this.localVersion = this.readStoredProjectVersion(storagePath) ?? LOCAL_VERSION;
+      this.localVersion = this.readAppliedVersion() ?? LOCAL_VERSION;
       this.packageUrl = this.resolvePackageUrl(manifestUrl);
+      this.reportHotUpdateStoredState(storagePath);
       this.resetDownloadLogThrottle();
       this.reportStage("checking", undefined, "info", onProgress);
       const localManifestPath = this.writeLocalManifest(manifestUrl, this.localVersion);
@@ -213,6 +224,7 @@ class HotUpdateService {
         }
       }
       sys.localStorage.removeItem(HOT_UPDATE_SEARCH_PATHS_KEY);
+      sys.localStorage.removeItem(HOT_UPDATE_APPLIED_VERSION_KEY);
       this.clearFailedCount();
       this.localVersion = LOCAL_VERSION;
       this.remoteVersion = "unknown";
@@ -235,7 +247,7 @@ class HotUpdateService {
         const message = "hot update check timeout";
         this.reportStage("failed", message, "warn", onProgress);
         resolve({ status: "failed", message });
-      }, HOT_UPDATE_STEP_TIMEOUT_MS);
+      }, HOT_UPDATE_CHECK_TIMEOUT_MS);
 
       const finish = (result: HotUpdateResult): void => {
         clearTimeout(timeoutId);
@@ -280,15 +292,41 @@ class HotUpdateService {
     onProgress?: (progress: HotUpdateProgress) => void
   ): Promise<HotUpdateResult> {
     return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        manager.setEventCallback(null);
-        const message = "hot update download timeout";
-        this.reportStage("failed", message, "warn", onProgress);
-        resolve({ status: "failed", message });
-      }, HOT_UPDATE_STEP_TIMEOUT_MS);
+      let finished = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+      const clearWatchdog = (): void => {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      const armWatchdog = (): void => {
+        clearWatchdog();
+        timeoutId = setTimeout(() => {
+          if (finished) {
+            return;
+          }
+          manager.setEventCallback(null);
+          const message = "hot update download inactivity timeout";
+          this.reportStage(
+            "failed",
+            { reason: message, timeoutMs: HOT_UPDATE_DOWNLOAD_INACTIVITY_TIMEOUT_MS },
+            "warn",
+            onProgress
+          );
+          finished = true;
+          resolve({ status: "failed", message });
+        }, HOT_UPDATE_DOWNLOAD_INACTIVITY_TIMEOUT_MS);
+      };
 
       const finish = (result: HotUpdateResult): void => {
-        clearTimeout(timeoutId);
+        if (finished) {
+          return;
+        }
+        finished = true;
+        clearWatchdog();
         manager.setEventCallback(null);
         resolve(result);
       };
@@ -296,6 +334,7 @@ class HotUpdateService {
       manager.setEventCallback((event) => {
         const code = event.getEventCode();
         if (code === eventCodes.UPDATE_PROGRESSION) {
+          armWatchdog();
           this.reportDownloadProgress({
             percent: this.normalizePercent(event.getPercent?.() ?? 0),
             downloaded: event.getDownloadedFiles?.(),
@@ -306,8 +345,18 @@ class HotUpdateService {
 
         if (code === eventCodes.UPDATE_FINISHED) {
           this.captureVersions(manager);
-          this.applyHotUpdateSearchPaths(manager);
-          this.reportStage("updated", { needRestart: true }, "info", onProgress);
+          const appliedSearchPaths = this.applyHotUpdateSearchPaths(manager);
+          const versionToApply = this.remoteVersion !== "unknown"
+            ? this.remoteVersion
+            : manager.getLocalManifest?.()?.getVersion?.() ?? this.localVersion;
+          this.saveAppliedVersion(versionToApply);
+          this.localVersion = versionToApply;
+          this.reportStage(
+            "updated",
+            { needRestart: true, appliedVersion: versionToApply, searchPathCount: appliedSearchPaths.length },
+            "info",
+            onProgress
+          );
           finish({ status: "updated" });
           return;
         }
@@ -323,6 +372,7 @@ class HotUpdateService {
         }
       });
       this.reportStage("downloading", undefined, "info", onProgress);
+      armWatchdog();
       manager.update();
     });
   }
@@ -371,7 +421,7 @@ class HotUpdateService {
     this.packageUrl = this.resolvePackageUrl(this.manifestUrl);
   }
 
-  private applyHotUpdateSearchPaths(manager: NativeAssetsManager): void {
+  private applyHotUpdateSearchPaths(manager: NativeAssetsManager): string[] {
     const manifestSearchPaths = manager.getLocalManifest?.()?.getSearchPaths?.() ?? [];
     const searchPaths = manifestSearchPaths.length
       ? manifestSearchPaths
@@ -390,9 +440,10 @@ class HotUpdateService {
     this.writeNativeSearchPaths(nextSearchPaths);
     native.fileUtils.setSearchPaths?.(nextSearchPaths);
     devActionLogger.info("hotUpdate.searchPaths.applied", `count=${nextSearchPaths.length}`);
+    return nextSearchPaths;
   }
 
-  private restoreHotUpdateSearchPaths(): void {
+  private restoreHotUpdateSearchPaths(): string[] {
     let storedSearchPaths: string[] = [];
     try {
       const raw = sys.localStorage.getItem(HOT_UPDATE_SEARCH_PATHS_KEY);
@@ -405,14 +456,19 @@ class HotUpdateService {
     }
 
     if (!storedSearchPaths.length) {
+      storedSearchPaths = this.readNativeSearchPaths();
+    }
+
+    if (!storedSearchPaths.length) {
       devActionLogger.info("hotUpdate.searchPaths.restore", "empty");
-      return;
+      return [];
     }
 
     const currentSearchPaths = native.fileUtils.getSearchPaths?.() ?? [];
     const nextSearchPaths = this.mergeSearchPaths(storedSearchPaths, currentSearchPaths);
     native.fileUtils.setSearchPaths?.(nextSearchPaths);
     devActionLogger.info("hotUpdate.searchPaths.restore", `count=${nextSearchPaths.length}`);
+    return nextSearchPaths;
   }
 
   private resolveStorageSearchPath(): string {
@@ -446,6 +502,117 @@ class HotUpdateService {
       merged.push(path);
     }
     return merged;
+  }
+
+  private readStoredSearchPaths(): string[] {
+    try {
+      const raw = sys.localStorage.getItem(HOT_UPDATE_SEARCH_PATHS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private readNativeSearchPaths(): string[] {
+    if (!sys.isNative) {
+      return [];
+    }
+    try {
+      const nativeSearchPathsPath = this.resolveNativeSearchPathsPath();
+      if (!native.fileUtils.isFileExist(nativeSearchPathsPath)) {
+        return [];
+      }
+      return native.fileUtils
+        .getStringFromFile(nativeSearchPathsPath)
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private readAppliedVersion(): string | null {
+    try {
+      const value = sys.localStorage.getItem(HOT_UPDATE_APPLIED_VERSION_KEY);
+      return value && value.trim() ? value.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveAppliedVersion(version: string): void {
+    if (!version || version === "unknown") {
+      return;
+    }
+    try {
+      sys.localStorage.setItem(HOT_UPDATE_APPLIED_VERSION_KEY, version);
+      devActionLogger.info("hotUpdate.appliedVersion.saved", version);
+    } catch {
+      // Applied version only improves consistency checks; ignore storage failures.
+    }
+  }
+
+  private reportHotUpdateStoredState(storagePath: string): void {
+    devActionLogger.info("hotUpdate.storage.state", {
+      storagePath,
+      storedProjectVersion: this.readStoredProjectVersion(storagePath) ?? "none",
+      appliedVersion: this.readAppliedVersion() ?? "none",
+      storedSearchPathCount: this.readStoredSearchPaths().length,
+      nativeSearchPathCount: this.readNativeSearchPaths().length,
+    });
+  }
+
+  private reportHotUpdateStateInconsistent(reason: string, detail?: Record<string, unknown>): void {
+    devActionLogger.warn("hotUpdate.state.inconsistent", {
+      reason,
+      ...(detail ?? {}),
+    });
+  }
+
+  private clearPartialHotUpdateState(options: { clearAppliedVersion?: boolean } = {}): void {
+    if (!sys.isNative) {
+      return;
+    }
+    try {
+      const storagePath = this.resolveStoragePath(false);
+      if (native.fileUtils.isDirectoryExist(storagePath)) {
+        native.fileUtils.removeDirectory(storagePath);
+        devActionLogger.info("hotUpdate.partialCache.storageCleared");
+      }
+      const temporaryPath = `${storagePath}_temp`;
+      if (native.fileUtils.isDirectoryExist(temporaryPath)) {
+        native.fileUtils.removeDirectory(temporaryPath);
+        devActionLogger.info("hotUpdate.partialCache.tempCleared");
+      }
+      this.removeFileIfExists(`${native.fileUtils.getWritablePath()}${LOCAL_MANIFEST_FILE}`);
+      this.removeFileIfExists(this.resolveNativeSearchPathsPath());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      devActionLogger.warn("hotUpdate.partialCache.clearFailed", message);
+    }
+
+    try {
+      sys.localStorage.removeItem(HOT_UPDATE_SEARCH_PATHS_KEY);
+      if (options.clearAppliedVersion) {
+        sys.localStorage.removeItem(HOT_UPDATE_APPLIED_VERSION_KEY);
+      }
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  }
+
+  private removeFileIfExists(path: string): void {
+    try {
+      if (native.fileUtils.isFileExist(path)) {
+        native.fileUtils.removeFile(path);
+      }
+    } catch {
+      // Best effort.
+    }
   }
 
   private readStoredProjectVersion(storagePath: string): string | null {
@@ -620,6 +787,7 @@ class HotUpdateService {
   private handleFailure(reason: string): void {
     const failedCount = this.incrementFailedCount();
     this.cleanupFailedDownload();
+    this.localVersion = this.readAppliedVersion() ?? LOCAL_VERSION;
     this.reportStage("failed", { reason, failedCount, willContinueLogin: true }, "warn");
   }
 
@@ -631,9 +799,25 @@ class HotUpdateService {
       const temporaryPath = `${this.resolveStoragePath(false)}_temp`;
       if (native.fileUtils.isDirectoryExist(temporaryPath)) {
         native.fileUtils.removeDirectory(temporaryPath);
+        devActionLogger.info("hotUpdate.partialCache.tempCleared");
       }
-    } catch {
-      // Cleanup is best effort only; failed cleanup must never affect login.
+
+      const appliedVersion = this.readAppliedVersion();
+      const storedSearchPaths = this.readStoredSearchPaths();
+      const storagePath = this.resolveStoragePath(false);
+      if (!appliedVersion || !storedSearchPaths.length) {
+        if (native.fileUtils.isDirectoryExist(storagePath)) {
+          native.fileUtils.removeDirectory(storagePath);
+          devActionLogger.info("hotUpdate.partialCache.storageCleared");
+        }
+        return;
+      }
+
+      this.removeFileIfExists(`${storagePath}/project.manifest`);
+      this.removeFileIfExists(`${storagePath}/version.manifest`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      devActionLogger.warn("hotUpdate.partialCache.clearFailed", message);
     }
   }
 
