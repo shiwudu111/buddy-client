@@ -144,6 +144,8 @@ const PET_VISUAL_FEED_DURATION_MS = 1800;
 const PET_VISUAL_PLAY_DURATION_MS = 2200;
 const PET_VISUAL_MUSIC_DURATION_MS = 2000;
 const PET_VISUAL_SOOTHED_DURATION_MS = 2000;
+const CORE_ACTION_TAP_LOCK_MS = 1800;
+const CORE_ACTION_BLOCK_NOTICE_THROTTLE_MS = 1500;
 const RETURN_GREETING_SHORT_MINUTES = 10;
 const RETURN_GREETING_NORMAL_MINUTES = 60;
 const RETURN_GREETING_LONG_MINUTES = 360;
@@ -273,6 +275,8 @@ export class MainController extends ScreenController {
   private feedRequestInFlight = false;
   private inventoryUseRequestInFlight = false;
   private petInteraction = new MainPetInteractionController();
+  private coreActionTapBlockedUntil = 0;
+  private coreActionBlockNoticeAt = 0;
   private journalEventsLoading = false;
   private journalEventsLoaded = false;
   private journalSyncMessage: string | null = null;
@@ -805,6 +809,45 @@ export class MainController extends ScreenController {
   private shouldDisableArtDebugOnNative(): boolean {
     return sys.isNative && sys.os === sys.OS.ANDROID;
   }
+  private reserveCoreActionTapSlot(action: CorePetAction): boolean {
+    const now = Date.now();
+
+    if (now >= this.coreActionTapBlockedUntil) {
+      this.coreActionTapBlockedUntil = now + CORE_ACTION_TAP_LOCK_MS;
+      return true;
+    }
+
+    if (now >= this.coreActionBlockNoticeAt) {
+      const cooldownRemainingMs = this.coreActionTapBlockedUntil - now;
+      this.coreActionBlockNoticeAt = now + CORE_ACTION_BLOCK_NOTICE_THROTTLE_MS;
+
+      devActionLogger.warn("main.petAction.blocked", {
+        reason: "tapLock",
+        action,
+        cooldownRemainingMs,
+      });
+
+      this.appendMainInteraction("操作太快啦", "等精灵回应一下，再继续互动。");
+      this.render();
+    }
+
+    return false;
+  }
+
+  private extendCoreActionTapLock(durationMs = CORE_ACTION_TAP_LOCK_MS): void {
+    this.coreActionTapBlockedUntil = Math.max(
+      this.coreActionTapBlockedUntil,
+      Date.now() + durationMs
+    );
+  }
+
+  private extendCoreActionTapCooldown(durationMs: number): void {
+    this.coreActionTapBlockedUntil = Math.max(
+      this.coreActionTapBlockedUntil,
+      Date.now() + durationMs
+    );
+  }
+
   private isParentUser(): boolean {
     return appState.getCurrentUser()?.role === "PARENT";
   }
@@ -1504,7 +1547,8 @@ export class MainController extends ScreenController {
       backgroundColor: new Color(8, 15, 24, 238),
       padding: 14,
       radius: 8,
-      elastic: true,
+      elastic: false,
+      startAtTop: true,
     });
   }
 
@@ -4656,6 +4700,10 @@ export class MainController extends ScreenController {
   }
 
   private async handleCorePetAction(action: CorePetAction): Promise<void> {
+    if (!this.reserveCoreActionTapSlot(action)) {
+      return;
+    }
+
     devActionLogger.info("main.petAction.start", action);
     if (this.feedRequestInFlight || this.inventoryUseRequestInFlight) {
       devActionLogger.warn("main.petAction.blocked", "inventory request in flight");
@@ -4788,6 +4836,7 @@ export class MainController extends ScreenController {
       }
 
       this.petInteraction.startCoreActionCooldown();
+      this.extendCoreActionTapLock();
       this.petInteraction.clearCoreAction(action);
       const detail = result.message
         ? `${result.message}；未修改正式宠物状态，未修改口粮库存。`

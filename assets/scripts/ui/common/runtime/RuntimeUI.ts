@@ -115,6 +115,7 @@ type ScrollTextOptions = SizeLike &
     padding?: number;
     radius?: number;
     elastic?: boolean;
+    startAtTop?: boolean;
     scrollToTopOnCreate?: boolean;
   };
 
@@ -300,34 +301,34 @@ export const RuntimeUI = {
     return node;
   },
   createRoundedClip(parent: Node, options: ClipBoxOptions): Node {
-	  const node = new Node(options.name);
-	  node.setParent(parent);
+    const node = new Node(options.name);
+    node.setParent(parent);
 
-	  const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
-	  node.setPosition(new Vec3(options.x, options.y, 0));
-	  transform.setContentSize(options.width, options.height);
+    const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
+    node.setPosition(new Vec3(options.x, options.y, 0));
+    transform.setContentSize(options.width, options.height);
 
-	  const mask = node.addComponent(Mask);
-	  mask.type = Mask.Type.GRAPHICS_STENCIL;
-	  mask.inverted = false;
+    const mask = node.addComponent(Mask);
+    mask.type = Mask.Type.GRAPHICS_STENCIL;
+    mask.inverted = false;
 
-	  const graphics = getGraphicsMaskSubComp(mask);
-	  if (!graphics) {
-		return node;
-	  }
+    const graphics = getGraphicsMaskSubComp(mask);
+    if (!graphics) {
+      return node;
+    }
 
-	  graphics.clear();
-	  graphics.fillColor = Color.WHITE;
-	  graphics.roundRect(
-		-options.width / 2,
-		-options.height / 2,
-		options.width,
-		options.height,
-		options.radius ?? 0
-	  );
-	  graphics.fill();
+    graphics.clear();
+    graphics.fillColor = Color.WHITE;
+    graphics.roundRect(
+      -options.width / 2,
+      -options.height / 2,
+      options.width,
+      options.height,
+      options.radius ?? 0
+    );
+    graphics.fill();
 
-	  return node;
+    return node;
   },
   createSpriteFrame(parent: Node, options: SpriteFrameOptions): {
     node: Node;
@@ -560,15 +561,15 @@ export const RuntimeUI = {
     });
     const label = options.label
       ? this.createLabel(node, {
-          name: `${options.name}Label`,
-          text: options.label,
-          x: 0,
-          y: 0,
-          width: options.width,
-          height: Math.max(18, options.height + 18),
-          fontSize: options.labelFontSize ?? UiTokens.fontSizes.small,
-          color: options.labelColor ?? UiTokens.colors.textSecondary,
-        })
+        name: `${options.name}Label`,
+        text: options.label,
+        x: 0,
+        y: 0,
+        width: options.width,
+        height: Math.max(18, options.height + 18),
+        fontSize: options.labelFontSize ?? UiTokens.fontSizes.small,
+        color: options.labelColor ?? UiTokens.colors.textSecondary,
+      })
       : undefined;
     return { node, track, fill, label };
   },
@@ -946,27 +947,42 @@ export const RuntimeUI = {
     });
     label.overflow = Label.Overflow.RESIZE_HEIGHT;
 
+    const lineHeight = (options.fontSize ?? 18) + 8;
+    const lineCount = Math.max(1, options.text.split(/\r?\n/).length);
+    const textHeight = Math.max(options.height - padding * 2, lineCount * lineHeight);
+
     const labelTransform = label.node.getComponent(UITransform)!;
+    labelTransform.setContentSize(innerWidth, textHeight);
+    label.lineHeight = lineHeight;
+    label.verticalAlign = VerticalTextAlignment.TOP;
+
     const content = new Node(`${options.name}Content`);
     content.setParent(node);
     const contentTransform = content.addComponent(UITransform);
-    const contentHeight = Math.max(options.height, labelTransform.height + padding * 2);
+    const contentHeight = Math.max(options.height, textHeight + padding * 2);
     contentTransform.setContentSize(innerWidth, contentHeight);
+
     label.node.setParent(content);
     label.node.setPosition(
-      new Vec3(0, contentHeight / 2 - padding - labelTransform.height / 2, 0)
+      new Vec3(0, contentHeight / 2 - padding - textHeight / 2, 0)
     );
-    content.setPosition(Vec3.ZERO);
 
+    content.setPosition(Vec3.ZERO);
     scrollView.content = content;
     // 内容要等到这一帧布局都稳定后，再把视图拉回顶部。
     // 这样进入页面时，用户会先看到最上面的文字，而不是中间一段。
-    if (options.scrollToTopOnCreate ?? true) {
-      scrollView.scheduleOnce(() => {
-        if (scrollView.node.isValid) {
-          scrollView.scrollToTop(0);
+    if (options.startAtTop || options.scrollToTopOnCreate) {
+      const scrollToTop = (): void => {
+        if (!scrollView.node.isValid || !content.isValid) {
+          return;
         }
-      }, 0);
+        scrollView.stopAutoScroll();
+        scrollView.scrollToTop(0);
+      };
+
+      scrollToTop();
+      scrollView.scheduleOnce(scrollToTop, 0);
+      scrollView.scheduleOnce(scrollToTop, 0.05);
     }
 
     return { node, scrollView, content, label };

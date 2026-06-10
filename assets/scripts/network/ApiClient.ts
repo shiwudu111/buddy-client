@@ -65,6 +65,15 @@ function looksLikeChildId(identifier: string): boolean {
   );
 }
 
+type QueryValue = string | number | boolean | null | undefined;
+
+function buildQuery(params: Record<string, QueryValue>): string {
+  return Object.entries(params)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join("&");
+}
+
 class ApiClient {
   private token: string | null = storage.get(STORAGE_KEYS.token);
 
@@ -120,9 +129,9 @@ class ApiClient {
       const response = isDashboardRequest
         ? await this.requestDashboardWithXhr(url, method, headers, options.body)
         : await fetch(url, {
-            ...options,
-            headers,
-          });
+          ...options,
+          headers,
+        });
       if (isDashboardRequest) {
         devActionLogger.info(
           "api.dashboard.transport.after.v21",
@@ -359,20 +368,16 @@ class ApiClient {
   }
 
   async getPetEvents(petId: string, limit = 20): Promise<ApiResponse<PetEventsPayload>> {
-    const query = new URLSearchParams({
-      limit: String(limit),
-    });
+    const query = buildQuery({ limit });
     return this.request<PetEventsPayload>(
-      `/pets/${encodeURIComponent(petId)}/events?${query.toString()}`
+      `/pets/${encodeURIComponent(petId)}/events?${query}`
     );
   }
 
   async getPetLogs(petId: string, options: { days: number }): Promise<ApiResponse<DiaryPayload>> {
-    const query = new URLSearchParams({
-      days: String(options.days),
-    });
+    const query = buildQuery({ days: options.days });
     return this.request<DiaryPayload>(
-      `/pets/${encodeURIComponent(petId)}/logs?${query.toString()}`
+      `/pets/${encodeURIComponent(petId)}/logs?${query}`
     );
   }
 
@@ -387,11 +392,9 @@ class ApiClient {
     petId: string,
     limit = 20
   ): Promise<ApiResponse<ChatHistoryPayload>> {
-    const query = new URLSearchParams({
-      limit: String(limit),
-    });
+    const query = buildQuery({ limit });
     return this.request<ChatHistoryPayload>(
-      `/chat/${encodeURIComponent(petId)}/history?${query.toString()}`
+      `/chat/${encodeURIComponent(petId)}/history?${query}`
     );
   }
 
@@ -476,13 +479,8 @@ class ApiClient {
     page = 1,
     limit = 10
   ): Promise<ApiResponse<HomeworkHistoryPayload>> {
-    const query = new URLSearchParams({
-      page: String(page),
-      limit: String(limit),
-    });
-    return this.request<HomeworkHistoryPayload>(
-      `/homeworks/history?${query.toString()}`
-    );
+    const query = buildQuery({ page, limit });
+    return this.request<HomeworkHistoryPayload>(`/homeworks/history?${query}`);
   }
 
   async getHomeworkStatus(): Promise<ApiResponse<HomeworkTodayStatus>> {
