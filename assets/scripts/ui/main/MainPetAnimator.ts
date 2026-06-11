@@ -5,6 +5,8 @@ import {
   type PetBehaviorState,
 } from "./MainPetBehaviorController";
 
+export type PetAnimatorEvent = "idleShowStarted";
+
 export function resolveFoxAtlasFrames(atlas: SpriteAtlas, framePrefix: string): SpriteFrame[] {
   return atlas
     .getSpriteFrames()
@@ -94,7 +96,8 @@ export class MainPetAnimator {
     }
   }
 
-  update(deltaTime: number, shouldAnimate: boolean): void {
+  update(deltaTime: number, shouldAnimate: boolean): PetAnimatorEvent | null {
+    const previousState = this.behaviorController.getAnimationState();
     const didUpdateFrame = this.behaviorController.update({
       shouldAnimate,
       idleFrameCount: this.idleDefaultFrames.length,
@@ -104,6 +107,9 @@ export class MainPetAnimator {
     if (didUpdateFrame) {
       this.applyCurrentSpriteFrame();
     }
+    return previousState !== "idleShow" && this.behaviorController.getAnimationState() === "idleShow"
+      ? "idleShowStarted"
+      : null;
   }
 
   private applyCurrentSpriteFrame(): void {

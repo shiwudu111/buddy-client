@@ -15,6 +15,7 @@ import {
   view,
 } from "cc";
 import { appState } from "../../app/AppState";
+import { isDiagnosticsEnabled } from "../../core/config";
 import { devActionLogger } from "../../core/DevActionLogger";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
@@ -123,7 +124,9 @@ export class LoginController extends Component {
     this.bindActionButtons();
     this.configureInputs();
     devActionLogger.setHeaderProvider(() => hotUpdateService.getVersionSummary());
-    this.ensureDevLogEntry();
+    if (isDiagnosticsEnabled()) {
+      this.ensureDevLogEntry();
+    }
     this.viewOrchestrator = new LoginViewOrchestrator(this.node);
     this.refreshResponsiveView();
     view.on("canvas-resize", this.handleCanvasResize, this);

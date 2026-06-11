@@ -17,6 +17,7 @@ import {
   view,
 } from "cc";
 import { appState } from "../../app/AppState";
+import { isDiagnosticsEnabled } from "../../core/config";
 import { devActionLogger } from "../../core/DevActionLogger";
 import { storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
@@ -80,6 +81,7 @@ import {
   formatOfflineDecayDetail,
   resolveCurrentSeenAt,
   resolveHighPriorityOpeningBubble,
+  resolveIdleShowBubbleCopy,
   resolveLastMainSeenAtStorageKey,
   resolveNormalOpeningBubble,
   type OpeningBubblePriority,
@@ -144,6 +146,7 @@ const PET_VISUAL_FEED_DURATION_MS = 1800;
 const PET_VISUAL_PLAY_DURATION_MS = 2200;
 const PET_VISUAL_MUSIC_DURATION_MS = 2000;
 const PET_VISUAL_SOOTHED_DURATION_MS = 2000;
+const PET_IDLE_SHOW_BUBBLE_COOLDOWN_MS = 45000;
 const CORE_ACTION_TAP_LOCK_MS = 1800;
 const CORE_ACTION_BLOCK_NOTICE_THROTTLE_MS = 1500;
 const RETURN_GREETING_SHORT_MINUTES = 10;
@@ -337,6 +340,8 @@ export class MainController extends ScreenController {
   private openingBubbleShownThisSession = false;
   private artDebugNativeSkipLogged = false;
   private highPriorityOpeningBubbleVisible = false;
+  private lastIdleShowBubbleAt = 0;
+  private idleShowBubbleIndex = 0;
   private handleMainVisibilityChange = (): void => {
     if (typeof document !== "undefined" && document.hidden) {
       this.persistCurrentMainSeenAt();
@@ -378,7 +383,10 @@ export class MainController extends ScreenController {
   }
 
   update(deltaTime: number): void {
-    this.petAnimator.update(deltaTime, this.activeTopBarNavTab === "petHome");
+    const animatorEvent = this.petAnimator.update(deltaTime, this.activeTopBarNavTab === "petHome");
+    if (animatorEvent === "idleShowStarted") {
+      this.handlePetIdleShowStarted();
+    }
   }
 
   async start(): Promise<void> {
@@ -490,23 +498,23 @@ export class MainController extends ScreenController {
     if (this.isParentUser()) {
       this.renderParentHomeV2(root, layout);
       this.renderBackgroundDebugEntry(root, layout);
-      this.renderDevLogEntry(root, layout);
+      this.renderDevLogEntryIfEnabled(root, layout);
       return;
     }
     if (this.petCreationGate.isActive()) {
       this.petCreationGate.render(root, layout);
       this.renderBackgroundDebugEntry(root, layout);
-      this.renderDevLogEntry(root, layout);
+      this.renderDevLogEntryIfEnabled(root, layout);
       return;
     }
     if (this.shouldUsePhoneLandscapeHome(layout)) {
       this.renderPhoneLandscapeHome(root, layout);
-      this.renderDevLogEntry(root, layout);
+      this.renderDevLogEntryIfEnabled(root, layout);
       return;
     }
     this.renderShell(root, layout);
     this.renderBackgroundDebugEntry(root, layout);
-    this.renderDevLogEntry(root, layout);
+    this.renderDevLogEntryIfEnabled(root, layout);
   }
 
   private requestRender(): void {
@@ -768,6 +776,26 @@ export class MainController extends ScreenController {
       this.petBubbleTimer = null;
       this.render();
     }, PET_BUBBLE_DURATION_MS);
+  }
+
+  private handlePetIdleShowStarted(): void {
+    if (this.activeTopBarNavTab !== "petHome" || this.activeVisualState !== "serverDerived") {
+      return;
+    }
+    if (this.petBubble || this.highPriorityOpeningBubbleVisible) {
+      return;
+    }
+    const now = Date.now();
+    if (now - this.lastIdleShowBubbleAt < PET_IDLE_SHOW_BUBBLE_COOLDOWN_MS) {
+      return;
+    }
+
+    const copy = resolveIdleShowBubbleCopy(appState.getCurrentPet(), this.idleShowBubbleIndex);
+    this.idleShowBubbleIndex += 1;
+    this.lastIdleShowBubbleAt = now;
+    devActionLogger.info("main.petLife.idleShow", { copyIndex: this.idleShowBubbleIndex });
+    this.showPetBubble(copy, "stateBubble");
+    this.render();
   }
 
   private clearPetBubbleTimer(): void {
@@ -1527,6 +1555,14 @@ export class MainController extends ScreenController {
     if (this.showBackgroundDebugPanel) {
       this.renderBackgroundDebugPanel(root, right, entryY - DEBUG_ENTRY_SIZE / 2 - DEBUG_TOGGLE_GAP);
     }
+  }
+
+  private renderDevLogEntryIfEnabled(root: Node, layout: MainLayout): void {
+    if (!isDiagnosticsEnabled()) {
+      this.isDevLogOpen = false;
+      return;
+    }
+    this.renderDevLogEntry(root, layout);
   }
 
   private renderDevLogEntry(root: Node, layout: MainLayout): void {

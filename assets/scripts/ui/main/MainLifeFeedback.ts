@@ -173,6 +173,28 @@ export function resolveStateBubbleCopy(pet: PetStatus | null): string | null {
   return null;
 }
 
+export function resolveIdleShowBubbleCopy(pet: PetStatus | null, copyIndex: number): string {
+  const hunger = normalizeStatusValue(pet?.hunger);
+  const energy = normalizeStatusValue(pet?.energy);
+  const mood = normalizeStatusValue(pet?.mood);
+  if (hunger !== null && hunger < 35) {
+    return "肚子有点空空的，等你想起我。";
+  }
+  if (energy !== null && energy < 30) {
+    return "我有点困，先安静趴一会儿。";
+  }
+  if (mood !== null && mood < 35) {
+    return "今天想被多陪一会儿。";
+  }
+
+  const copies = [
+    "我在这里慢慢等你。",
+    "要不要陪我待一会儿？",
+    "我刚刚伸了个懒腰。",
+  ];
+  return copies[copyIndex % copies.length];
+}
+
 export function resolveTimePeriodCopy(dayPeriod: TimeContextDayPeriod): string | null {
   const copy: Record<TimeContextDayPeriod, string> = {
     morning: "早上好呀，今天也一起慢慢来。",

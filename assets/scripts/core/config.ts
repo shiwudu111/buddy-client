@@ -14,6 +14,7 @@ export const API_CONFIG = {
 
 export const API_BASE_OVERRIDE_KEY = "BUDDY_API_BASE_URL";
 export const HOT_UPDATE_MANIFEST_OVERRIDE_KEY = "BUDDY_HOT_UPDATE_MANIFEST_URL";
+export const DIAGNOSTICS_ENABLED_OVERRIDE_KEY = "BUDDY_DIAGNOSTICS_ENABLED";
 export const BASE_APK_VERSION = "0.0.0";
 
 export type HotUpdateEnv = "dev" | "staging" | "prod";
@@ -79,6 +80,44 @@ function readStoredHotUpdateManifestUrl(): string | null {
   }
 }
 
+function readDiagnosticsEnabledOverride(): boolean | null {
+  try {
+    const runtimeGlobal = globalThis as typeof globalThis & {
+      BUDDY_DIAGNOSTICS_ENABLED?: unknown;
+    };
+    if (typeof runtimeGlobal.BUDDY_DIAGNOSTICS_ENABLED === "boolean") {
+      return runtimeGlobal.BUDDY_DIAGNOSTICS_ENABLED;
+    }
+    if (typeof runtimeGlobal.BUDDY_DIAGNOSTICS_ENABLED === "string") {
+      const normalized = runtimeGlobal.BUDDY_DIAGNOSTICS_ENABLED.trim().toLowerCase();
+      if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+      }
+    }
+    const browserValue =
+      typeof localStorage === "undefined"
+        ? null
+        : localStorage.getItem(DIAGNOSTICS_ENABLED_OVERRIDE_KEY);
+    const value = browserValue ?? sys.localStorage.getItem(DIAGNOSTICS_ENABLED_OVERRIDE_KEY);
+    if (value === null) {
+      return null;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function readBuildApiBaseUrl(): string | null {
   return BUILD_API_BASE_URL.trim() || null;
 }
@@ -114,6 +153,15 @@ function normalizeHotUpdateManifestUrl(input: string): string {
 export function getHotUpdateManifestUrl(): string {
   const override = readStoredHotUpdateManifestUrl() ?? BUILD_HOT_UPDATE_MANIFEST_URL.trim();
   return override ? normalizeHotUpdateManifestUrl(override) : "";
+}
+
+export function isDiagnosticsEnabled(): boolean {
+  const override = readDiagnosticsEnabledOverride();
+  if (override !== null) {
+    return override;
+  }
+  const manifestUrl = getHotUpdateManifestUrl();
+  return !manifestUrl.includes("/buddy-hot-update/prod/");
 }
 
 export const SCENE_NAMES = {
