@@ -233,6 +233,14 @@ type MainInteractionEntry = {
   createdAt: string;
 };
 
+type MobileMainLayoutProfile = {
+  compact: boolean;
+  marginRatio: number;
+  chromeScale: number;
+  sideCardScale: number;
+  stageInsetScale: number;
+};
+
 @ccclass("MainController")
 export class MainController extends ScreenController {
   private referencePageUrl: string | null = null;
@@ -488,6 +496,11 @@ export class MainController extends ScreenController {
     if (this.petCreationGate.isActive()) {
       this.petCreationGate.render(root, layout);
       this.renderBackgroundDebugEntry(root, layout);
+      this.renderDevLogEntry(root, layout);
+      return;
+    }
+    if (this.shouldUsePhoneLandscapeHome(layout)) {
+      this.renderPhoneLandscapeHome(root, layout);
       this.renderDevLogEntry(root, layout);
       return;
     }
@@ -841,13 +854,6 @@ export class MainController extends ScreenController {
     );
   }
 
-  private extendCoreActionTapCooldown(durationMs: number): void {
-    this.coreActionTapBlockedUntil = Math.max(
-      this.coreActionTapBlockedUntil,
-      Date.now() + durationMs
-    );
-  }
-
   private isParentUser(): boolean {
     return appState.getCurrentUser()?.role === "PARENT";
   }
@@ -1144,19 +1150,44 @@ export class MainController extends ScreenController {
     return subComp instanceof Graphics ? subComp : null;
   }
 
+  private resolveMobileMainLayoutProfile(viewportWidth: number, viewportHeight: number): MobileMainLayoutProfile {
+    const minSide = Math.min(viewportWidth, viewportHeight);
+    const aspect = viewportWidth / Math.max(1, viewportHeight);
+    const compact = aspect >= 1 && (sys.isMobile || (aspect >= 1.45 && minSide <= 820));
+    if (!compact) {
+      return {
+        compact: false,
+        marginRatio: 0.045,
+        chromeScale: 1,
+        sideCardScale: 1,
+        stageInsetScale: 1,
+      };
+    }
+
+    const heightPressure = Math.max(0, Math.min(1, (760 - minSide) / 340));
+    return {
+      compact: true,
+      marginRatio: 0.008 + heightPressure * 0.006,
+      chromeScale: 0.72 - heightPressure * 0.05,
+      sideCardScale: 0.58 - heightPressure * 0.04,
+      stageInsetScale: 0.46,
+    };
+  }
+
   private resolveLayout(): MainLayout {
     const visible = view.getVisibleSize();
     const viewportWidth = visible.width || FALLBACK_VIEWPORT.width;
     const viewportHeight = visible.height || FALLBACK_VIEWPORT.height;
     const viewportAspect = viewportWidth / Math.max(1, viewportHeight);
+    const mobileProfile = this.resolveMobileMainLayoutProfile(viewportWidth, viewportHeight);
 
     // 根据当前可视区比例，决定壳层在屏幕里的横竖向倾向。
     // 这里的目标不是撑满屏幕，而是先把壳体放到一个“看起来舒服”的上限里。
     const shellAspect = this.resolveShellAspect(viewportAspect);
     const isPortrait = viewportAspect < 1;
     const margin = Math.max(
-      isPortrait ? 10 : 20,
-      Math.round(Math.min(viewportWidth, viewportHeight) * (isPortrait ? 0.016 : 0.045))
+      isPortrait ? 10 : mobileProfile.compact ? 8 : 20,
+      Math.round(Math.min(viewportWidth, viewportHeight) * (isPortrait ? 0.016 : mobileProfile.marginRatio))
     );
     const maxShellWidth = viewportWidth - margin * 2;
     const maxShellHeight = viewportHeight - margin * 2;
@@ -2611,6 +2642,495 @@ export class MainController extends ScreenController {
     };
   }
 
+  private createPhoneMainStageRendererContext(): MainStageRendererContext {
+    const baseContext = this.createMainStageRendererContext();
+    return {
+      ...baseContext,
+      tuning: {
+        ...baseContext.tuning,
+        getValue: (key) => {
+          const value = this.getArtTuningValue(key);
+          if (key === "foxCharacterScale") {
+            return value * 1.45;
+          }
+          if (key === "foxCharacterOffsetYRatio") {
+            return value - 0.035;
+          }
+          return value;
+        },
+      },
+    };
+  }
+
+  private shouldUsePhoneLandscapeHome(layout: MainLayout): boolean {
+    return this.resolveMobileMainLayoutProfile(layout.viewportWidth, layout.viewportHeight).compact;
+  }
+
+  private renderPhoneLandscapeHome(root: Node, layout: MainLayout): void {
+    const margin = Math.max(12, Math.round(Math.min(layout.viewportWidth, layout.viewportHeight) * 0.024));
+    const topBarHeight = Math.max(56, Math.min(64, Math.round(layout.viewportHeight * 0.085)));
+    const bottomDockHeight = Math.max(74, Math.min(88, Math.round(layout.viewportHeight * 0.125)));
+    const verticalGap = Math.max(6, Math.round(layout.viewportHeight * 0.014));
+    const topBarY = layout.viewportHeight / 2 - margin - topBarHeight / 2;
+    const bottomDockY = -layout.viewportHeight / 2 + margin + bottomDockHeight / 2;
+    const stageTop = topBarY - topBarHeight / 2 - verticalGap;
+    const stageBottom = bottomDockY + bottomDockHeight / 2 + verticalGap;
+    const stageWidth = Math.round(layout.viewportWidth - margin * 2);
+    const stageHeight = Math.max(260, Math.round(stageTop - stageBottom));
+    const stageY = Math.round((stageTop + stageBottom) / 2);
+    const stageRadius = Math.max(22, Math.min(30, Math.round(stageHeight * 0.07)));
+
+    const stageArea = RuntimeUI.createCard(root, {
+      name: "PhoneLandscapeStage",
+      x: 0,
+      y: stageY,
+      width: stageWidth,
+      height: stageHeight,
+      color: new Color(235, 207, 180, 118),
+      innerColor: new Color(255, 247, 238, 178),
+      radius: stageRadius,
+      borderThickness: 1,
+      innerRadius: Math.max(0, stageRadius - 1),
+    });
+    renderMainStageBase(this.createPhoneMainStageRendererContext(), stageArea, stageWidth, stageHeight, {
+      borderThickness: 1,
+      radius: stageRadius,
+    });
+
+    this.renderPhoneTopBar(root, {
+      x: 0,
+      y: topBarY,
+      width: layout.viewportWidth - margin * 2,
+      height: topBarHeight,
+    });
+
+    const sidePanelInset = Math.max(14, Math.round(stageHeight * 0.04));
+    const sidePanelWidth = Math.max(184, Math.min(238, Math.round(stageWidth * 0.16)));
+    const sidePanelHeight = Math.max(220, Math.round(stageHeight - sidePanelInset * 2));
+    const sidePanelX = stageWidth / 2 - sidePanelInset - sidePanelWidth / 2;
+    const sidePanelRadius = Math.max(18, Math.round(sidePanelWidth * 0.1));
+    this.renderSideCardStructure(root, {
+      name: "PhoneLeftStatus",
+      x: -sidePanelX,
+      y: stageY,
+      width: sidePanelWidth,
+      height: sidePanelHeight,
+      radius: sidePanelRadius,
+      title: "成长概览",
+      subtitle: "今日陪伴",
+      side: "left",
+      summary: true,
+    });
+
+    this.renderSideCardStructure(root, {
+      name: "PhoneRightStatus",
+      x: sidePanelX,
+      y: stageY,
+      width: sidePanelWidth,
+      height: sidePanelHeight,
+      radius: sidePanelRadius,
+      title: "",
+      subtitle: "",
+      side: "right",
+    });
+
+    this.renderActiveTabPlaceholder(root, {
+      stageY,
+      stageWidth,
+      stageHeight,
+    });
+
+    this.renderPhoneBottomDock(root, {
+      x: 0,
+      y: bottomDockY,
+      width: layout.viewportWidth - margin * 2,
+      height: bottomDockHeight,
+    });
+
+    renderFoodSelectionPanel({
+      parent: root,
+      stageY,
+      stageWidth,
+      stageHeight,
+      isOpen: this.isFoodSelectionPanelOpen,
+      foods: appState.getPetFoodInventory(),
+      feedRequestInFlight: this.feedRequestInFlight,
+      onClose: () => {
+        this.isFoodSelectionPanelOpen = false;
+        this.render();
+      },
+      onSelectFood: (food) => void this.handleFoodSelection(food),
+      onOpenHomework: () => this.openHomeworkCenterFromFoodShortage(),
+      eventTarget: this,
+    });
+
+    this.renderHomeworkCenterOverlay(root, {
+      stageY,
+      stageWidth,
+      stageHeight,
+      bottomDockY,
+      bottomDockWidth: layout.viewportWidth - margin * 2,
+      bottomDockHeight,
+    });
+  }
+
+  private renderPhoneTopBar(
+    parent: Node,
+    options: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.createMainViewModel();
+    const bar = RuntimeUI.createCard(parent, {
+      name: "PhoneTopBar",
+      x: Math.round(options.x),
+      y: Math.round(options.y),
+      width: Math.round(options.width),
+      height: Math.round(options.height),
+      color: new Color(255, 250, 243, 166),
+      innerColor: new Color(255, 255, 255, 106),
+      radius: Math.round(options.height / 2),
+      borderThickness: 1,
+      innerRadius: Math.max(0, Math.round(options.height / 2) - 1),
+    });
+
+    const avatarSize = Math.max(42, Math.min(50, Math.round(options.height * 0.78)));
+    const leftInset = Math.max(14, Math.round(options.width * 0.018));
+    const avatarX = -options.width / 2 + leftInset + avatarSize / 2;
+    const avatar = RuntimeUI.createRoundedClip(bar, {
+      name: "PhoneTopAvatar",
+      x: Math.round(avatarX),
+      y: 0,
+      width: avatarSize,
+      height: avatarSize,
+      radius: Math.round(avatarSize * 0.34),
+    });
+    const gradientFrame = this.getButtonGradientCarrierSpriteFrame();
+    if (gradientFrame) {
+      RuntimeUI.createSpriteFrame(avatar, {
+        name: "PhoneTopAvatarGradient",
+        x: 0,
+        y: 0,
+        width: avatarSize,
+        height: avatarSize,
+        spriteFrame: gradientFrame,
+      });
+    } else {
+      RuntimeUI.createBox(avatar, {
+        name: "PhoneTopAvatarFill",
+        x: 0,
+        y: 0,
+        width: avatarSize,
+        height: avatarSize,
+        color: new Color(245, 160, 72, 255),
+        radius: Math.round(avatarSize * 0.34),
+      });
+    }
+    RuntimeUI.createLabel(avatar, {
+      name: "PhoneTopAvatarIcon",
+      text: "🐾",
+      x: 0,
+      y: 0,
+      width: avatarSize,
+      height: avatarSize,
+      fontSize: Math.round(avatarSize * 0.44),
+      color: Color.WHITE,
+    });
+    RuntimeUI.createLabel(bar, {
+      name: "PhoneTopTitle",
+      text: "学伴精灵",
+      x: Math.round(avatarX + avatarSize / 2 + 78),
+      y: 0,
+      width: 150,
+      height: Math.round(options.height * 0.72),
+      fontSize: Math.max(22, Math.min(28, Math.round(options.height * 0.4))),
+      color: new Color(86, 52, 35, 255),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+
+    const statusWidth = Math.max(128, Math.min(162, Math.round(options.width * 0.12)));
+    const statusHeight = Math.max(40, Math.min(48, Math.round(options.height * 0.74)));
+    const statusX = options.width / 2 - leftInset - statusWidth / 2;
+    RuntimeUI.createCard(bar, {
+      name: "PhoneTopStatusChip",
+      x: Math.round(statusX),
+      y: 0,
+      width: statusWidth,
+      height: statusHeight,
+      color: new Color(229, 224, 255, 214),
+      innerColor: new Color(255, 255, 255, 82),
+      radius: Math.round(statusHeight / 2),
+      borderThickness: 0,
+      innerRadius: Math.round(statusHeight / 2),
+    });
+    RuntimeUI.createLabel(bar, {
+      name: "PhoneTopStatusText",
+      text: viewModel.statusValueText,
+      x: Math.round(statusX),
+      y: 0,
+      width: statusWidth - 18,
+      height: statusHeight,
+      fontSize: Math.max(16, Math.min(20, Math.round(options.height * 0.28))),
+      color: new Color(86, 69, 130, 245),
+    });
+
+    const navWidth = Math.max(360, Math.min(500, Math.round(options.width * 0.38)));
+    const navHeight = Math.max(42, Math.min(50, Math.round(options.height * 0.74)));
+    const navX = Math.round(options.width * 0.1);
+    const navWrap = RuntimeUI.createCard(bar, {
+      name: "PhoneTopNav",
+      x: navX,
+      y: 0,
+      width: navWidth,
+      height: navHeight,
+      color: new Color(255, 255, 255, 112),
+      innerColor: new Color(255, 255, 255, 84),
+      radius: Math.round(navHeight / 2),
+      borderThickness: 1,
+      innerRadius: Math.max(0, Math.round(navHeight / 2) - 1),
+    });
+    const tabs: Array<{ key: TopBarNavTab; name: string; text: string }> = [
+      { key: "petHome", name: "PetHome", text: "宠物主页" },
+      { key: "bag", name: "Bag", text: "背包" },
+      { key: "journal", name: "Journal", text: "日记" },
+      { key: "chat", name: "Chat", text: "聊天" },
+    ];
+    const gap = 6;
+    const itemWidth = Math.round((navWidth - 16 - gap * (tabs.length - 1)) / tabs.length);
+    const itemHeight = navHeight - 10;
+    tabs.forEach((tab, index) => {
+      const itemX = -navWidth / 2 + 8 + itemWidth / 2 + index * (itemWidth + gap);
+      const isActive = this.activeTopBarNavTab === tab.key;
+      if (isActive) {
+        RuntimeUI.createBox(navWrap, {
+          name: `PhoneTop${tab.name}Active`,
+          x: Math.round(itemX),
+          y: 0,
+          width: itemWidth,
+          height: itemHeight,
+          color: new Color(244, 154, 42, 244),
+          radius: Math.round(itemHeight / 2),
+        });
+      }
+      RuntimeUI.createLabel(navWrap, {
+        name: `PhoneTop${tab.name}Label`,
+        text: tab.text,
+        x: Math.round(itemX),
+        y: 0,
+        width: itemWidth - 8,
+        height: itemHeight,
+        fontSize: Math.max(15, Math.min(18, Math.round(options.height * 0.25))),
+        color: isActive ? Color.WHITE : new Color(104, 72, 50, 238),
+      });
+      const hitArea = RuntimeUI.createBox(navWrap, {
+        name: `PhoneTop${tab.name}Hit`,
+        x: Math.round(itemX),
+        y: 0,
+        width: itemWidth,
+        height: itemHeight,
+        color: new Color(255, 255, 255, 0),
+        radius: Math.round(itemHeight / 2),
+      });
+      const button = hitArea.addComponent(Button);
+      button.transition = Button.Transition.NONE;
+      hitArea.on(Button.EventType.CLICK, () => this.handleTopBarTabSelect(tab.key), this);
+    });
+  }
+
+  private renderPhoneFeedbackBubble(
+    parent: Node,
+    options: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.createMainViewModel();
+    const bubble = RuntimeUI.createCard(parent, {
+      name: "PhoneFeedbackBubble",
+      x: Math.round(options.x),
+      y: Math.round(options.y),
+      width: Math.round(options.width),
+      height: Math.round(options.height),
+      color: new Color(255, 250, 243, 184),
+      innerColor: new Color(255, 255, 255, 96),
+      radius: 18,
+      borderThickness: 1,
+      innerRadius: 17,
+    });
+    RuntimeUI.createLabel(bubble, {
+      name: "PhoneFeedbackTitle",
+      text: viewModel.displayStatus,
+      x: 0,
+      y: Math.round(options.height * 0.18),
+      width: Math.round(options.width * 0.78),
+      height: 24,
+      fontSize: Math.max(18, Math.min(22, Math.round(options.width * 0.095))),
+      color: new Color(99, 58, 34, 246),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    const detail = RuntimeUI.createLabel(bubble, {
+      name: "PhoneFeedbackDetail",
+      text: "今日口粮已送达",
+      x: 0,
+      y: -Math.round(options.height * 0.2),
+      width: Math.round(options.width * 0.78),
+      height: 22,
+      fontSize: Math.max(14, Math.min(17, Math.round(options.width * 0.072))),
+      color: new Color(126, 80, 48, 204),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    detail.enableWrapText = false;
+    detail.overflow = Label.Overflow.CLAMP;
+  }
+
+  private renderPhoneBottomDock(
+    parent: Node,
+    options: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const dock = RuntimeUI.createCard(parent, {
+      name: "PhoneBottomDock",
+      x: Math.round(options.x),
+      y: Math.round(options.y),
+      width: Math.round(options.width),
+      height: Math.round(options.height),
+      color: new Color(255, 250, 243, 174),
+      innerColor: new Color(255, 255, 255, 76),
+      radius: Math.round(options.height * 0.42),
+      borderThickness: 1,
+      innerRadius: Math.max(0, Math.round(options.height * 0.42) - 1),
+    });
+    const actions: Array<{
+      name: string;
+      action: BottomDockAction;
+      icon: string;
+      text: string;
+      topColor: Color;
+      bottomColor: Color;
+    }> = [
+      { name: "Feed", action: "feed", icon: "🍚", text: "喂食", topColor: new Color(249, 206, 104, 255), bottomColor: new Color(238, 157, 50, 255) },
+      { name: "Play", action: "play", icon: "◇", text: "玩耍", topColor: new Color(207, 183, 255, 255), bottomColor: new Color(154, 121, 226, 255) },
+      { name: "Bath", action: "bath", icon: "≋", text: "洗澡", topColor: new Color(145, 226, 176, 255), bottomColor: new Color(86, 190, 131, 255) },
+      { name: "Sleep", action: "sleep", icon: "Zz", text: "睡觉", topColor: new Color(157, 176, 255, 255), bottomColor: new Color(96, 119, 220, 255) },
+      { name: "Music", action: "music", icon: "♪", text: "听歌", topColor: new Color(248, 202, 92, 255), bottomColor: new Color(231, 150, 41, 255) },
+      { name: "Care", action: "care", icon: "♡", text: "心情", topColor: new Color(251, 179, 199, 255), bottomColor: new Color(226, 111, 148, 255) },
+    ];
+    const gap = Math.max(8, Math.round(options.width * 0.012));
+    const trackWidth = options.width - Math.max(22, options.width * 0.024) * 2;
+    const slotWidth = (trackWidth - gap * (actions.length - 1)) / actions.length;
+    const iconSize = Math.max(42, Math.min(52, Math.round(options.height * 0.55)));
+    const iconY = Math.round(options.height * 0.14);
+    actions.forEach((item, index) => {
+      const x = -trackWidth / 2 + slotWidth / 2 + index * (slotWidth + gap);
+      const palette = this.resolvePhoneDockActionPalette(item.action);
+      const iconClip = RuntimeUI.createRoundedClip(dock, {
+        name: `PhoneDock${item.name}IconBg`,
+        x: Math.round(x),
+        y: iconY,
+        width: iconSize,
+        height: iconSize,
+        radius: Math.round(iconSize * 0.34),
+      });
+      const gradientFrame = this.getButtonGradientCarrierSpriteFrame();
+      if (gradientFrame) {
+        const sprite = RuntimeUI.createSpriteFrame(iconClip, {
+          name: `PhoneDock${item.name}Gradient`,
+          x: 0,
+          y: 0,
+          width: iconSize,
+          height: iconSize,
+          spriteFrame: gradientFrame,
+        });
+        const material = this.createButtonGradientMaterial({
+          shapeRect: this.resolveSpriteWorldRect(sprite.node, iconSize, iconSize),
+          topColor: palette.topColor,
+          bottomColor: palette.bottomColor,
+          glossColor: new Color(255, 252, 241, 44),
+        });
+        if (material) {
+          sprite.sprite.customMaterial = material;
+          sprite.sprite.setMaterial(material, 0);
+        }
+      } else {
+        RuntimeUI.createBox(iconClip, {
+          name: `PhoneDock${item.name}Fallback`,
+          x: 0,
+          y: 0,
+          width: iconSize,
+          height: iconSize,
+          color: palette.bottomColor,
+          radius: Math.round(iconSize * 0.34),
+        });
+      }
+      RuntimeUI.createLabel(dock, {
+        name: `PhoneDock${item.name}Icon`,
+        text: item.icon,
+        x: Math.round(x),
+        y: iconY,
+        width: iconSize,
+        height: iconSize,
+        fontSize: Math.max(20, Math.round(iconSize * 0.42)),
+        color: new Color(94, 59, 40, 238),
+      });
+      RuntimeUI.createLabel(dock, {
+        name: `PhoneDock${item.name}Text`,
+        text: item.text,
+        x: Math.round(x),
+        y: -Math.round(options.height * 0.28),
+        width: Math.round(slotWidth),
+        height: 26,
+        fontSize: Math.max(19, Math.min(23, Math.round(options.height * 0.25))),
+        color: new Color(86, 52, 35, 246),
+      });
+      const hitArea = RuntimeUI.createBox(dock, {
+        name: `PhoneDock${item.name}Hit`,
+        x: Math.round(x),
+        y: 0,
+        width: Math.round(slotWidth),
+        height: Math.round(options.height),
+        color: new Color(255, 255, 255, 0),
+        radius: 18,
+      });
+      const button = hitArea.addComponent(Button);
+      button.transition = Button.Transition.NONE;
+      hitArea.on(Button.EventType.CLICK, () => this.handleBottomDockAction(item.action), this);
+    });
+  }
+
+  private resolvePhoneDockActionPalette(action: BottomDockAction): { topColor: Color; bottomColor: Color } {
+    if (action === "feed" || action === "music") {
+      return {
+        topColor: new Color(248, 204, 96, 255),
+        bottomColor: new Color(232, 151, 42, 255),
+      };
+    }
+    if (action === "play" || action === "sleep") {
+      return {
+        topColor: new Color(176, 181, 255, 255),
+        bottomColor: new Color(116, 126, 226, 255),
+      };
+    }
+    if (action === "bath") {
+      return {
+        topColor: new Color(140, 224, 177, 255),
+        bottomColor: new Color(80, 188, 132, 255),
+      };
+    }
+    return {
+      topColor: new Color(249, 176, 198, 255),
+      bottomColor: new Color(224, 108, 148, 255),
+    };
+  }
+
   private renderMainStageLayer(shell: Node, shellWidth: number, shellHeight: number, shellBorderWidth: number): void {
     // 主舞台层的尺寸关系是：壳层 -> ShellFrame -> MainViewport -> MainStage。
     // 这四层不是重复绘制，而是每一层负责不同的视觉职责：
@@ -2623,9 +3143,16 @@ export class MainController extends ScreenController {
     // 2. 再从 ShellFrame 扣出主视口留白
     // 3. 最后从主视口扣出 MainStage 留白
     // 这样可以保证每一层都保留独立的呼吸空间，后续美术调参也更直观。
-    const appShellPadding = Math.round(this.getArtTuningValue("appShellPadding"));
-    const shellFramePadding = Math.round(this.getArtTuningValue("shellFramePadding"));
-    const mainViewportRadius = Math.round(this.getArtTuningValue("mainViewportRadius"));
+    const mobileProfile = this.resolveMobileMainLayoutProfile(shellWidth, shellHeight);
+    const appShellPadding = mobileProfile.compact
+      ? Math.max(8, Math.round(Math.min(shellWidth, shellHeight) * 0.018))
+      : Math.round(this.getArtTuningValue("appShellPadding"));
+    const shellFramePadding = mobileProfile.compact
+      ? Math.max(6, Math.round(Math.min(shellWidth, shellHeight) * 0.012))
+      : Math.round(this.getArtTuningValue("shellFramePadding"));
+    const mainViewportRadius = mobileProfile.compact
+      ? Math.max(22, Math.min(30, Math.round(Math.min(shellWidth, shellHeight) * 0.045)))
+      : Math.round(this.getArtTuningValue("mainViewportRadius"));
     const mainViewportAlpha = Math.round(this.getArtTuningValue("mainViewportAlpha"));
     const shellFrameWidth = Math.max(0, shellWidth - appShellPadding * 2);
     const shellFrameHeight = Math.max(0, shellHeight - appShellPadding * 2);
@@ -2647,23 +3174,33 @@ export class MainController extends ScreenController {
     // 主视口拆成两层：
     // - MainViewportHost：整块布局坐标承载层，顶栏 / 底栏 / 中区都按它定位。
     // - MainViewport：真正可见的 stage 底板，只覆盖左卡 + 中心 + 右卡这条中部区域。
-    const edgeInset = Math.max(12, Math.round(Math.min(viewportWidth, viewportHeight) * 0.018));
-    const hostGap = Math.max(8, Math.round(viewportWidth * 0.01));
+    const edgeInset = mobileProfile.compact
+      ? Math.max(6, Math.round(Math.min(viewportWidth, viewportHeight) * 0.01))
+      : Math.max(12, Math.round(Math.min(viewportWidth, viewportHeight) * 0.018));
+    const hostGap = mobileProfile.compact
+      ? Math.max(4, Math.round(viewportWidth * 0.004))
+      : Math.max(8, Math.round(viewportWidth * 0.01));
     const baseTopBarHeight = Math.max(
-      72,
-      Math.min(104, Math.round(viewportHeight * this.getArtTuningValue("topBarHeightRatio")))
+      mobileProfile.compact ? 54 : 72,
+      Math.min(
+        mobileProfile.compact ? 66 : 104,
+        Math.round(viewportHeight * this.getArtTuningValue("topBarHeightRatio") * mobileProfile.chromeScale)
+      )
     );
     const topBarHeight = Math.max(42, Math.round(baseTopBarHeight * this.getArtTuningValue("topBarHeightScale")));
     const baseBottomDockHeight = Math.max(
-      112,
-      Math.min(136, Math.round(viewportHeight * this.getArtTuningValue("bottomDockHeightRatio")))
+      mobileProfile.compact ? 86 : 112,
+      Math.min(
+        mobileProfile.compact ? 100 : 136,
+        Math.round(viewportHeight * this.getArtTuningValue("bottomDockHeightRatio") * mobileProfile.chromeScale)
+      )
     );
     const bottomDockHeight = Math.max(
       64,
       Math.round(baseBottomDockHeight * this.getArtTuningValue("bottomDockHeightScale"))
     );
-    const mainAreaTop = viewportHeight / 2 - edgeInset - topBarHeight - hostGap * 1.35;
-    const mainAreaBottom = -viewportHeight / 2 + edgeInset + bottomDockHeight + hostGap * 1.45;
+    const mainAreaTop = viewportHeight / 2 - edgeInset - topBarHeight - hostGap * (mobileProfile.compact ? 0.55 : 1.35);
+    const mainAreaBottom = -viewportHeight / 2 + edgeInset + bottomDockHeight + hostGap * (mobileProfile.compact ? 0.38 : 1.45);
     const stageWidth = Math.max(1, viewportWidth - edgeInset * 2);
     const stageHeight = Math.max(1, mainAreaTop - mainAreaBottom);
     const stageY = Math.round((mainAreaTop + mainAreaBottom) / 2);
@@ -2679,9 +3216,9 @@ export class MainController extends ScreenController {
         width: shellFrameWidth,
         height: shellFrameHeight,
         style: "shell",
-        borderColor: new Color(255, 255, 255, 186),
+        borderColor: new Color(255, 255, 255, mobileProfile.compact ? 82 : 186),
         radius: mainViewportRadius + 2,
-        lineWidth: 4,
+        lineWidth: mobileProfile.compact ? 1 : 4,
       })
       : shell;
 
@@ -2746,11 +3283,16 @@ export class MainController extends ScreenController {
         y: stageY,
         width: stageWidth,
         height: stageHeight,
-        color: new Color(235, 207, 180, mainViewportAlpha),
-        innerColor: new Color(255, 246, 237, Math.max(0, Math.round(mainViewportAlpha * 0.96))),
+        color: new Color(235, 207, 180, mobileProfile.compact ? Math.min(mainViewportAlpha, 138) : mainViewportAlpha),
+        innerColor: new Color(
+          255,
+          246,
+          237,
+          mobileProfile.compact ? Math.min(218, Math.round(mainViewportAlpha * 0.84)) : Math.max(0, Math.round(mainViewportAlpha * 0.96))
+        ),
         radius: mainViewportRadius,
-        borderThickness: 2,
-        innerRadius: Math.max(0, mainViewportRadius - 2),
+        borderThickness: mobileProfile.compact ? 1 : 2,
+        innerRadius: Math.max(0, mainViewportRadius - (mobileProfile.compact ? 1 : 2)),
       })
       : new Node("StageArea");
     if (!this.showMainViewportLayer) {
@@ -2761,7 +3303,7 @@ export class MainController extends ScreenController {
     }
 
     renderMainStageBase(this.createMainStageRendererContext(), stageArea, stageWidth, stageHeight, {
-      borderThickness: 2,
+      borderThickness: mobileProfile.compact ? 1 : 2,
       radius: mainViewportRadius,
     });
 
@@ -2811,28 +3353,39 @@ export class MainController extends ScreenController {
     stageHeight: number,
     stageY: number
   ): void {
+    const mobileProfile = this.resolveMobileMainLayoutProfile(viewportWidth, viewportHeight);
     const hostLayer = new Node("PrimaryLayoutHostLayer");
     hostLayer.setParent(viewport);
     const hostLayerTransform = hostLayer.getComponent(UITransform) ?? hostLayer.addComponent(UITransform);
     hostLayerTransform.setContentSize(viewportWidth, viewportHeight);
 
-    const edgeInset = Math.max(12, Math.round(Math.min(viewportWidth, viewportHeight) * 0.018));
-    const hostGap = Math.max(8, Math.round(viewportWidth * 0.01));
+    const edgeInset = mobileProfile.compact
+      ? Math.max(5, Math.round(Math.min(viewportWidth, viewportHeight) * 0.008))
+      : Math.max(8, Math.round(Math.min(viewportWidth, viewportHeight) * 0.018 * mobileProfile.stageInsetScale));
+    const hostGap = mobileProfile.compact
+      ? Math.max(4, Math.round(viewportWidth * 0.004))
+      : Math.max(6, Math.round(viewportWidth * 0.01 * mobileProfile.stageInsetScale));
     const baseTopBarWidth = Math.max(360, viewportWidth - edgeInset * 2);
     const baseTopBarHeight = Math.max(
-      72,
-      Math.min(104, Math.round(viewportHeight * this.getArtTuningValue("topBarHeightRatio")))
+      mobileProfile.compact ? 50 : 72,
+      Math.min(
+        mobileProfile.compact ? 66 : 104,
+        Math.round(viewportHeight * this.getArtTuningValue("topBarHeightRatio") * mobileProfile.chromeScale)
+      )
     );
     const topBarWidth = Math.max(180, Math.round(baseTopBarWidth * this.getArtTuningValue("topBarWidthScale")));
     const topBarHeight = Math.max(42, Math.round(baseTopBarHeight * this.getArtTuningValue("topBarHeightScale")));
     const baseBottomDockWidth = Math.max(420, viewportWidth - edgeInset * 2);
     const baseBottomDockHeight = Math.max(
-      112,
-      Math.min(136, Math.round(viewportHeight * this.getArtTuningValue("bottomDockHeightRatio")))
+      mobileProfile.compact ? 82 : 112,
+      Math.min(
+        mobileProfile.compact ? 98 : 136,
+        Math.round(viewportHeight * this.getArtTuningValue("bottomDockHeightRatio") * mobileProfile.chromeScale)
+      )
     );
     const bottomDockWidth = Math.max(
       220,
-      Math.round(baseBottomDockWidth * this.getArtTuningValue("bottomDockWidthScale"))
+      Math.round(baseBottomDockWidth * this.getArtTuningValue("bottomDockWidthScale") * (mobileProfile.compact ? 0.88 : 1))
     );
     const bottomDockHeight = Math.max(
       64,
@@ -2840,7 +3393,7 @@ export class MainController extends ScreenController {
     );
     const stageInset = Math.max(
       8,
-      Math.round(Math.min(stageWidth, stageHeight) * this.getArtTuningValue("sideCardStageInsetRatio"))
+      Math.round(Math.min(stageWidth, stageHeight) * this.getArtTuningValue("sideCardStageInsetRatio") * mobileProfile.stageInsetScale)
     );
     const stageContentWidth = Math.max(1, stageWidth - stageInset * 2);
     const stageContentHeight = Math.max(1, stageHeight - stageInset * 2);
@@ -2851,17 +3404,17 @@ export class MainController extends ScreenController {
       Math.round(hostGap * this.getArtTuningValue("sideCardVerticalGuardRatio"))
     );
     const baseSideHostHeight = Math.max(
-      220,
+      mobileProfile.compact ? 112 : 220,
       Math.min(
         stageContentHeight - verticalGuard,
-        Math.round(stageContentHeight * this.getArtTuningValue("sideCardBaseHeightRatio"))
+        Math.round(stageContentHeight * this.getArtTuningValue("sideCardBaseHeightRatio") * mobileProfile.sideCardScale)
       )
     );
     const baseSideHostWidth = Math.max(
-      176,
+      mobileProfile.compact ? 132 : 176,
       Math.min(
-        320,
-        Math.round((stageContentWidth - hostGap * 2) * this.getArtTuningValue("sideCardBaseWidthRatio"))
+        mobileProfile.compact ? 178 : 320,
+        Math.round((stageContentWidth - hostGap * 2) * this.getArtTuningValue("sideCardBaseWidthRatio") * mobileProfile.sideCardScale)
       )
     );
     const leftCardWidth = Math.max(
@@ -2881,7 +3434,7 @@ export class MainController extends ScreenController {
       );
     };
     const leftCardHeight = Math.max(
-      120,
+      mobileProfile.compact ? 108 : 120,
       Math.min(maxSideCardHeight, resolveSideCardHeight(this.getArtTuningValue("leftCardHeightScale")))
     );
     const rightCardWidth = Math.max(
@@ -2889,8 +3442,11 @@ export class MainController extends ScreenController {
       Math.min(stageContentWidth - hostGap, Math.round(baseSideHostWidth * this.getArtTuningValue("rightCardWidthScale")))
     );
     const rightCardHeight = Math.max(
-      120,
-      Math.min(maxSideCardHeight, resolveSideCardHeight(this.getArtTuningValue("rightCardHeightScale")))
+      mobileProfile.compact ? 84 : 120,
+      Math.min(
+        mobileProfile.compact ? Math.min(maxSideCardHeight, 118) : maxSideCardHeight,
+        resolveSideCardHeight(this.getArtTuningValue("rightCardHeightScale"))
+      )
     );
     const baseSideHostY = Math.round(stageY);
     const offsetUnitX = viewportWidth * 0.5;
@@ -2924,10 +3480,19 @@ export class MainController extends ScreenController {
       rightCardWidth / 2 +
       this.getArtTuningValue("rightCardOffsetXRatio") * offsetUnitX;
     const rightCardRawY = baseSideHostY + this.getArtTuningValue("rightCardOffsetYRatio") * offsetUnitY;
-    const leftCardX = clamp(leftCardRawX, leftCardMinX, leftCardMaxX);
-    const leftCardY = clamp(leftCardRawY, leftCardMinY, leftCardMaxY);
-    const rightCardX = clamp(rightCardRawX, rightCardMinX, rightCardMaxX);
-    const rightCardY = clamp(rightCardRawY, rightCardMinY, rightCardMaxY);
+    const compactTopCardY = stageOuterTop - Math.max(leftCardHeight, rightCardHeight) / 2 - Math.round(stageHeight * 0.035);
+    const leftCardX = mobileProfile.compact
+      ? leftCardMinX
+      : clamp(leftCardRawX, leftCardMinX, leftCardMaxX);
+    const leftCardY = mobileProfile.compact
+      ? clamp(compactTopCardY, leftCardMinY, leftCardMaxY)
+      : clamp(leftCardRawY, leftCardMinY, leftCardMaxY);
+    const rightCardX = mobileProfile.compact
+      ? rightCardMaxX
+      : clamp(rightCardRawX, rightCardMinX, rightCardMaxX);
+    const rightCardY = mobileProfile.compact
+      ? clamp(compactTopCardY, rightCardMinY, rightCardMaxY)
+      : clamp(rightCardRawY, rightCardMinY, rightCardMaxY);
     const bottomDockX = Math.round(this.getArtTuningValue("bottomDockOffsetXRatio") * offsetUnitX);
     const bottomDockY =
       -viewportHeight / 2 +
@@ -2941,10 +3506,11 @@ export class MainController extends ScreenController {
       y: leftCardY,
       width: leftCardWidth,
       height: leftCardHeight,
-      radius: 24,
+      radius: mobileProfile.compact ? 18 : 24,
       title: "成长概览",
       subtitle: "今日陪伴",
       side: "left",
+      summary: mobileProfile.compact,
     });
 
     this.renderTopBarStructure(hostLayer, {
@@ -2960,10 +3526,11 @@ export class MainController extends ScreenController {
       y: rightCardY,
       width: rightCardWidth,
       height: rightCardHeight,
-      radius: 24,
+      radius: mobileProfile.compact ? 18 : 24,
       title: "陪伴记录",
       subtitle: "轻量提醒",
       side: "right",
+      summary: mobileProfile.compact,
     });
 
     this.renderActiveTabPlaceholder(hostLayer, {
@@ -3990,21 +4557,34 @@ export class MainController extends ScreenController {
       height: number;
     }
   ): void {
-    const radius = Math.round(Math.min(options.height * 0.32, 28));
-    const bottomDockShellAlpha = Math.round(this.getArtTuningValue("bottomDockShellAlpha"));
-    const bottomDockInnerAlpha = Math.round(this.getArtTuningValue("bottomDockInnerAlpha"));
+    const visible = view.getVisibleSize();
+    const mobileProfile = this.resolveMobileMainLayoutProfile(
+      visible.width || FALLBACK_VIEWPORT.width,
+      visible.height || FALLBACK_VIEWPORT.height
+    );
+    const radius = mobileProfile.compact ? Math.round(Math.min(options.height * 0.46, 30)) : Math.round(Math.min(options.height * 0.32, 28));
+    const bottomDockShellAlpha = mobileProfile.compact
+      ? Math.min(190, Math.round(this.getArtTuningValue("bottomDockShellAlpha")))
+      : Math.round(this.getArtTuningValue("bottomDockShellAlpha"));
+    const bottomDockInnerAlpha = mobileProfile.compact
+      ? Math.min(132, Math.round(this.getArtTuningValue("bottomDockInnerAlpha")))
+      : Math.round(this.getArtTuningValue("bottomDockInnerAlpha"));
     const bottomDockGradientTopAlpha = Math.round(this.getArtTuningValue("bottomDockGradientTopAlpha"));
     const bottomDockGradientBottomAlpha = Math.round(this.getArtTuningValue("bottomDockGradientBottomAlpha"));
     const tileGapRatio = this.getArtTuningValue("bottomDockTileGapRatio");
-    const iconWidth = Math.round(this.getArtTuningValue("bottomDockIconWidth"));
-    const iconHeight = Math.round(this.getArtTuningValue("bottomDockIconHeight"));
+    const iconWidth = mobileProfile.compact
+      ? Math.max(44, Math.min(56, Math.round(options.height * 0.52)))
+      : Math.round(this.getArtTuningValue("bottomDockIconWidth"));
+    const iconHeight = mobileProfile.compact
+      ? Math.max(44, Math.min(56, Math.round(options.height * 0.52)))
+      : Math.round(this.getArtTuningValue("bottomDockIconHeight"));
     const iconRadius = Math.min(
       Math.round(Math.min(iconWidth, iconHeight) * this.getArtTuningValue("bottomDockIconRadiusRatio")),
       Math.round(Math.min(iconWidth, iconHeight) / 2)
     );
-    const iconCenterY = Math.round(iconHeight * 0.42);
-    const iconBorderWidth = Math.max(0, this.getArtTuningValue("bottomDockIconBorderWidth"));
-    const iconBorderAlpha = Math.round(this.getArtTuningValue("bottomDockIconBorderAlpha"));
+    const iconCenterY = mobileProfile.compact ? Math.round(options.height * 0.16) : Math.round(iconHeight * 0.42);
+    const iconBorderWidth = mobileProfile.compact ? 0 : Math.max(0, this.getArtTuningValue("bottomDockIconBorderWidth"));
+    const iconBorderAlpha = mobileProfile.compact ? 0 : Math.round(this.getArtTuningValue("bottomDockIconBorderAlpha"));
     const iconOffsetX = Math.round(this.getArtTuningValue("bottomDockIconOffsetX"));
     const iconOffsetY = Math.round(this.getArtTuningValue("bottomDockIconOffsetY"));
     const iconGlossWidthRatio = this.getArtTuningValue("bottomDockIconGlossWidthRatio");
@@ -4016,18 +4596,20 @@ export class MainController extends ScreenController {
     const tileGroupWidthScale = resolveTileSizeScale("bottomDockTileGroupWidthScale");
     const tileWidthScale = resolveTileSizeScale("bottomDockTileWidthScale");
     const tileHeightScale = resolveTileSizeScale("bottomDockTileHeightScale");
-    const tileBorderWidth = Math.max(0, this.getArtTuningValue("bottomDockTileBorderWidth"));
-    const tileBorderAlpha = Math.round(this.getArtTuningValue("bottomDockTileBorderAlpha"));
-    const tileInnerAlpha = Math.round(this.getArtTuningValue("bottomDockTileInnerAlpha"));
+    const tileBorderWidth = mobileProfile.compact ? 0 : Math.max(0, this.getArtTuningValue("bottomDockTileBorderWidth"));
+    const tileBorderAlpha = mobileProfile.compact ? 0 : Math.round(this.getArtTuningValue("bottomDockTileBorderAlpha"));
+    const tileInnerAlpha = mobileProfile.compact ? 0 : Math.round(this.getArtTuningValue("bottomDockTileInnerAlpha"));
     const bottomDockTextOffsetX = Math.round(this.getArtTuningValue("bottomDockTextOffsetX"));
     const bottomDockTextOffsetY = Math.round(this.getArtTuningValue("bottomDockTextOffsetY"));
     const bottomDockTextAlpha = Math.round(this.getArtTuningValue("bottomDockTextAlpha"));
-    const bottomDockTextFontSize = Math.round(this.getArtTuningValue("bottomDockTextFontSize"));
+    const bottomDockTextFontSize = mobileProfile.compact
+      ? Math.max(20, Math.min(24, Math.round(options.height * 0.22)))
+      : Math.round(this.getArtTuningValue("bottomDockTextFontSize"));
     const bottomDockTextColor = new Color(
-      Math.round(this.getArtTuningValue("bottomDockTextColorR")),
-      Math.round(this.getArtTuningValue("bottomDockTextColorG")),
-      Math.round(this.getArtTuningValue("bottomDockTextColorB")),
-      bottomDockTextAlpha
+      mobileProfile.compact ? 104 : Math.round(this.getArtTuningValue("bottomDockTextColorR")),
+      mobileProfile.compact ? 62 : Math.round(this.getArtTuningValue("bottomDockTextColorG")),
+      mobileProfile.compact ? 38 : Math.round(this.getArtTuningValue("bottomDockTextColorB")),
+      mobileProfile.compact ? 244 : bottomDockTextAlpha
     );
     const bottomDockBorderWidth = Math.max(0, this.getArtTuningValue("bottomDockBorderWidth"));
     const bottomDockBorderAlpha = Math.round(this.getArtTuningValue("bottomDockBorderAlpha"));
@@ -4036,10 +4618,12 @@ export class MainController extends ScreenController {
     const bottomDockVisualHeight = Math.round(options.height + bottomDockBorderOutset * 2);
     const bottomDockVisualRadius = Math.round(radius + bottomDockBorderOutset);
     const bottomDockShadowAlpha = Math.round(this.getArtTuningValue("bottomDockShadowAlpha"));
-    const bottomDockShadowSpread = Math.max(
-      10,
-      Math.round(Math.min(options.width, options.height) * this.getArtTuningValue("bottomDockShadowSpreadRatio"))
-    );
+    const bottomDockShadowSpread = mobileProfile.compact
+      ? Math.max(8, Math.round(options.height * 0.18))
+      : Math.max(
+        10,
+        Math.round(Math.min(options.width, options.height) * this.getArtTuningValue("bottomDockShadowSpreadRatio"))
+      );
 
     this.ensureBottomDockShadowAssetsForLayout({
       bottomDockWidth: bottomDockVisualWidth,
@@ -4207,16 +4791,19 @@ export class MainController extends ScreenController {
         glyphOffsetYKey: "bottomDockCareGlyphOffsetY" as ArtTuningKey,
       },
     ];
-    const paddingX = Math.max(12, Math.round(options.width * 0.012));
-    const gap = Math.max(12, Math.round(options.width * tileGapRatio));
+    const paddingX = Math.max(mobileProfile.compact ? 8 : 12, Math.round(options.width * (mobileProfile.compact ? 0.008 : 0.012)));
+    const gap = Math.max(
+      mobileProfile.compact ? 8 : 12,
+      Math.round(options.width * tileGapRatio * mobileProfile.stageInsetScale)
+    );
     const baseGroupWidth = options.width - paddingX * 2;
     const groupWidth = Math.max(items.length * 42 + gap * (items.length - 1), baseGroupWidth * tileGroupWidthScale);
     const trackTileWidth = (groupWidth - gap * (items.length - 1)) / items.length;
-    const tileWidth = Math.max(42, Math.round(trackTileWidth * tileWidthScale));
-    const baseScaledTileHeight = (options.height - 28) * tileHeightScale;
+    const tileWidth = Math.max(38, Math.round(trackTileWidth * tileWidthScale * (mobileProfile.compact ? 0.88 : 1)));
+    const baseScaledTileHeight = (options.height - (mobileProfile.compact ? 8 : 28)) * tileHeightScale;
     const groupLeft = -groupWidth / 2;
     items.forEach((item, index) => {
-      const tileHeight = Math.max(42, Math.round(baseScaledTileHeight));
+      const tileHeight = Math.max(mobileProfile.compact ? 64 : 42, Math.round(baseScaledTileHeight));
       const x = groupLeft + trackTileWidth / 2 + index * (trackTileWidth + gap);
       const tile = RuntimeUI.createCard(dock, {
         name: `BottomDock${item.name}Tile`,
@@ -4226,9 +4813,9 @@ export class MainController extends ScreenController {
         height: tileHeight,
         color: new Color(235, 207, 180, tileBorderAlpha),
         innerColor: new Color(255, 251, 245, tileInnerAlpha),
-        radius: 24,
+        radius: mobileProfile.compact ? 18 : 24,
         borderThickness: tileBorderWidth,
-        innerRadius: Math.max(0, 24 - tileBorderWidth),
+        innerRadius: Math.max(0, (mobileProfile.compact ? 18 : 24) - tileBorderWidth),
       });
       const iconClip = RuntimeUI.createRoundedClip(tile, {
         name: `BottomDock${item.name}IconBg`,
@@ -4307,7 +4894,7 @@ export class MainController extends ScreenController {
         name: `BottomDock${item.name}Text`,
         text: item.text,
         x: bottomDockTextOffsetX,
-        y: -30 + bottomDockTextOffsetY,
+        y: (mobileProfile.compact ? -Math.round(options.height * 0.28) : -30) + bottomDockTextOffsetY,
         width: tileWidth - 12,
         height: 24,
         fontSize: bottomDockTextFontSize,
@@ -4320,7 +4907,7 @@ export class MainController extends ScreenController {
         width: tileWidth,
         height: tileHeight,
         color: new Color(255, 255, 255, 0),
-        radius: 24,
+        radius: mobileProfile.compact ? 18 : 24,
       });
       const actionButton = hitArea.addComponent(Button);
       actionButton.transition = Button.Transition.NONE;
@@ -4399,6 +4986,7 @@ export class MainController extends ScreenController {
       title: string;
       subtitle: string;
       side: "left" | "right";
+      summary?: boolean;
     }
   ): void {
     const card = RuntimeUI.createCard(parent, {
@@ -4414,12 +5002,244 @@ export class MainController extends ScreenController {
       innerRadius: Math.max(0, Math.round(options.radius * 1.08) - 2),
     });
 
+    if (options.name === "PhoneLeftStatus") {
+      this.renderPhoneLeftStatusContent(card, options);
+      return;
+    }
+
+    if (options.summary) {
+      if (options.side === "left") {
+        this.renderLeftStatusSummaryCardContent(card, options);
+        return;
+      }
+
+      this.renderRightLogSummaryCardContent(card, options);
+      return;
+    }
+
     if (options.side === "left") {
       this.renderLeftStatusCardContent(card, options);
       return;
     }
 
     this.renderRightLogCardContent(card, options);
+  }
+
+  private renderPhoneLeftStatusContent(
+    card: Node,
+    options: {
+      name: string;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.createMainViewModel();
+    const cardWidth = options.width;
+    const cardHeight = options.height;
+    const topY = cardHeight / 2;
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}PhoneName`,
+      text: viewModel.petName,
+      x: 0,
+      y: Math.round(topY - cardHeight * 0.11),
+      width: Math.round(cardWidth * 0.82),
+      height: 34,
+      fontSize: Math.max(22, Math.min(30, Math.round(cardWidth * 0.13))),
+      color: new Color(104, 61, 36, 244),
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}PhoneLevel`,
+      text: viewModel.levelText,
+      x: 0,
+      y: Math.round(topY - cardHeight * 0.22),
+      width: Math.round(cardWidth * 0.78),
+      height: 24,
+      fontSize: Math.max(14, Math.min(18, Math.round(cardWidth * 0.075))),
+      color: new Color(151, 105, 76, 210),
+    });
+
+    const rows = [
+      { name: "Satiety", label: "饱腹", value: viewModel.satiety, note: this.resolvePhoneStatusNote("satiety", viewModel.satiety), color: new Color(236, 96, 132, 232) },
+      { name: "Stamina", label: "体力", value: viewModel.stamina, note: this.resolvePhoneStatusNote("stamina", viewModel.stamina), color: new Color(110, 201, 74, 232) },
+      { name: "Mood", label: "心情", value: viewModel.mood, note: this.resolvePhoneStatusNote("mood", viewModel.mood), color: new Color(236, 96, 132, 232) },
+    ];
+    const rowGap = Math.max(56, Math.round(cardHeight * 0.18));
+    const rowStartY = Math.round(topY - cardHeight * 0.4);
+    const barWidth = Math.round(cardWidth * 0.58);
+    const barHeight = Math.max(10, Math.round(cardHeight * 0.035));
+    rows.forEach((row, index) => {
+      const y = rowStartY - index * rowGap;
+      const value = row.value ?? 0;
+      RuntimeUI.createLabel(card, {
+        name: `${options.name}${row.name}PhoneLabel`,
+        text: row.label,
+        x: Math.round(-cardWidth * 0.23),
+        y: y + Math.round(rowGap * 0.24),
+        width: Math.round(cardWidth * 0.34),
+        height: 24,
+        fontSize: Math.max(16, Math.min(21, Math.round(cardWidth * 0.09))),
+        color: new Color(104, 61, 36, 236),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      RuntimeUI.createLabel(card, {
+        name: `${options.name}${row.name}PhoneNote`,
+        text: row.note,
+        x: Math.round(cardWidth * 0.21),
+        y: y + Math.round(rowGap * 0.24),
+        width: Math.round(cardWidth * 0.38),
+        height: 22,
+        fontSize: Math.max(12, Math.min(16, Math.round(cardWidth * 0.066))),
+        color: new Color(151, 105, 76, 184),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      RuntimeUI.createBox(card, {
+        name: `${options.name}${row.name}PhoneBarBg`,
+        x: Math.round(cardWidth * 0.04),
+        y: y - Math.round(rowGap * 0.2),
+        width: barWidth,
+        height: barHeight,
+        color: new Color(255, 255, 255, 220),
+        radius: Math.round(barHeight / 2),
+      });
+      RuntimeUI.createBox(card, {
+        name: `${options.name}${row.name}PhoneBarFill`,
+        x: Math.round(cardWidth * 0.04 - barWidth / 2 + (barWidth * value) / 200),
+        y: y - Math.round(rowGap * 0.2),
+        width: Math.max(1, Math.round((barWidth * value) / 100)),
+        height: Math.max(1, barHeight - 2),
+        color: row.color,
+        radius: Math.round((barHeight - 2) / 2),
+      });
+    });
+  }
+
+  private resolvePhoneStatusNote(kind: "satiety" | "stamina" | "mood", value: number | null): string {
+    if (value === null) {
+      return "待同步";
+    }
+    if (kind === "satiety") {
+      return value < 35 ? "有点饿" : value < 70 ? "刚刚好" : "吃得饱";
+    }
+    if (kind === "stamina") {
+      return value < 35 ? "想休息" : value < 70 ? "还不错" : "精神很好";
+    }
+    return value < 35 ? "要安慰" : value < 70 ? "心情平稳" : "心情不错";
+  }
+
+  private renderLeftStatusSummaryCardContent(
+    card: Node,
+    options: {
+      name: string;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.createMainViewModel();
+    const cardWidth = options.width;
+    const cardHeight = options.height;
+    const topY = cardHeight / 2;
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}SummaryName`,
+      text: viewModel.petName,
+      x: 0,
+      y: Math.round(topY - cardHeight * 0.11),
+      width: Math.round(cardWidth * 0.82),
+      height: 30,
+      fontSize: Math.max(16, Math.min(22, Math.round(cardWidth * 0.115))),
+      color: new Color(126, 68, 32, 240),
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}SummaryLevel`,
+      text: viewModel.levelText,
+      x: 0,
+      y: Math.round(topY - cardHeight * 0.24),
+      width: Math.round(cardWidth * 0.74),
+      height: 24,
+      fontSize: Math.max(13, Math.min(18, Math.round(cardWidth * 0.078))),
+      color: new Color(151, 105, 76, 214),
+    });
+
+    const rows = [
+      { name: "Satiety", label: "饱", value: viewModel.satiety, color: new Color(255, 129, 153, 235) },
+      { name: "Stamina", label: "体", value: viewModel.stamina, color: new Color(124, 211, 64, 235) },
+      { name: "Mood", label: "心", value: viewModel.mood, color: new Color(255, 113, 139, 235) },
+    ];
+    const rowGap = Math.max(34, Math.round(cardHeight * 0.16));
+    const rowStartY = Math.round(topY - cardHeight * 0.42);
+    const barWidth = Math.round(cardWidth * 0.48);
+    const barHeight = Math.max(8, Math.round(cardHeight * 0.035));
+    rows.forEach((row, index) => {
+      const y = rowStartY - index * rowGap;
+      const value = row.value ?? 0;
+      RuntimeUI.createLabel(card, {
+        name: `${options.name}${row.name}SummaryLabel`,
+        text: row.label,
+        x: Math.round(-cardWidth * 0.28),
+        y,
+        width: 28,
+        height: 24,
+        fontSize: Math.max(14, Math.min(20, Math.round(cardWidth * 0.085))),
+        color: new Color(126, 68, 32, 226),
+      });
+      RuntimeUI.createBox(card, {
+        name: `${options.name}${row.name}SummaryBarBg`,
+        x: Math.round(cardWidth * 0.08),
+        y,
+        width: barWidth,
+        height: barHeight,
+        color: new Color(255, 255, 255, 218),
+        radius: Math.round(barHeight / 2),
+      });
+      RuntimeUI.createBox(card, {
+        name: `${options.name}${row.name}SummaryBarFill`,
+        x: Math.round(cardWidth * 0.08 - barWidth / 2 + (barWidth * value) / 200),
+        y,
+        width: Math.max(1, Math.round((barWidth * value) / 100)),
+        height: Math.max(1, barHeight - 2),
+        color: row.color,
+        radius: Math.round((barHeight - 2) / 2),
+      });
+    });
+  }
+
+  private renderRightLogSummaryCardContent(
+    card: Node,
+    options: {
+      name: string;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.createMainViewModel();
+    const cardWidth = options.width;
+    const cardHeight = options.height;
+    const topY = cardHeight / 2;
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}SummaryTitle`,
+      text: viewModel.displayStatus,
+      x: 0,
+      y: Math.round(topY - cardHeight * 0.26),
+      width: Math.round(cardWidth * 0.82),
+      height: 30,
+      fontSize: Math.max(18, Math.min(24, Math.round(cardWidth * 0.13))),
+      color: new Color(126, 68, 32, 236),
+    });
+
+    ["今日口粮已送达", "轻点宠物陪它互动"].forEach((text, index) => {
+      const label = RuntimeUI.createLabel(card, {
+        name: `${options.name}SummaryHint${index + 1}`,
+        text,
+        x: 0,
+        y: Math.round(topY - cardHeight * (0.55 + index * 0.22)),
+        width: Math.round(cardWidth * 0.78),
+        height: 24,
+        fontSize: Math.max(13, Math.min(18, Math.round(cardWidth * 0.088))),
+        color: new Color(126, 68, 32, index === 0 ? 218 : 172),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      label.enableWrapText = false;
+      label.overflow = Label.Overflow.CLAMP;
+    });
   }
 
   private renderLeftStatusCardContent(
@@ -5073,6 +5893,135 @@ export class MainController extends ScreenController {
     return `当前宠物：${viewModel.petName}\n状态来自 appState`;
   }
 
+  private renderPhoneRightTimelineContent(
+    card: Node,
+    options: {
+      name: string;
+      width: number;
+      height: number;
+    }
+  ): void {
+    const viewModel = this.createMainViewModel();
+    const cardWidth = options.width;
+    const cardHeight = options.height;
+    const topY = cardHeight / 2;
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}TimelineTitle`,
+      text: "互动时间线",
+      x: 0,
+      y: Math.round(topY - cardHeight * 0.09),
+      width: Math.round(cardWidth * 0.78),
+      height: 30,
+      fontSize: Math.max(20, Math.min(28, Math.round(cardWidth * 0.12))),
+      color: new Color(104, 61, 36, 244),
+    });
+
+    const entries = this.interactionEntries.slice(0, 3);
+    const lineX = Math.round(-cardWidth * 0.35);
+    const entryTop = Math.round(topY - cardHeight * 0.22);
+    const entryGap = Math.max(62, Math.round(cardHeight * 0.17));
+    RuntimeUI.createBox(card, {
+      name: `${options.name}TimelineRail`,
+      x: lineX,
+      y: Math.round(entryTop - entryGap),
+      width: 3,
+      height: Math.round(entryGap * Math.max(1, entries.length - 1) + 10),
+      color: new Color(222, 174, 120, 120),
+      radius: 2,
+    });
+
+    entries.forEach((entry, index) => {
+      const y = entryTop - index * entryGap;
+      RuntimeUI.createBox(card, {
+        name: `${options.name}TimelineDot${index + 1}`,
+        x: lineX,
+        y,
+        width: 12,
+        height: 12,
+        color: index === 0 ? new Color(245, 154, 42, 238) : new Color(222, 174, 120, 190),
+        radius: 6,
+      });
+      RuntimeUI.createLabel(card, {
+        name: `${options.name}TimelineTime${index + 1}`,
+        text: this.formatInteractionTime(entry.createdAt),
+        x: Math.round(-cardWidth * 0.21),
+        y: y + 15,
+        width: Math.round(cardWidth * 0.24),
+        height: 22,
+        fontSize: Math.max(13, Math.min(17, Math.round(cardWidth * 0.075))),
+        color: new Color(138, 91, 55, 214),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      const titleLabel = RuntimeUI.createLabel(card, {
+        name: `${options.name}TimelineEvent${index + 1}`,
+        text: entry.title,
+        x: Math.round(cardWidth * 0.14),
+        y: y + 15,
+        width: Math.round(cardWidth * 0.52),
+        height: 22,
+        fontSize: Math.max(15, Math.min(20, Math.round(cardWidth * 0.088))),
+        color: new Color(104, 61, 36, 236),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      titleLabel.enableWrapText = false;
+      titleLabel.overflow = Label.Overflow.CLAMP;
+      const resultLabel = RuntimeUI.createLabel(card, {
+        name: `${options.name}TimelineResult${index + 1}`,
+        text: entry.detail,
+        x: Math.round(cardWidth * 0.14),
+        y: y - 13,
+        width: Math.round(cardWidth * 0.52),
+        height: 24,
+        fontSize: Math.max(12, Math.min(16, Math.round(cardWidth * 0.066))),
+        color: new Color(151, 105, 76, 184),
+        horizontalAlign: HorizontalTextAlignment.LEFT,
+      });
+      resultLabel.enableWrapText = false;
+      resultLabel.overflow = Label.Overflow.CLAMP;
+    });
+
+    const statusWidth = Math.round(cardWidth * 0.8);
+    const statusHeight = Math.max(64, Math.round(cardHeight * 0.15));
+    const statusY = Math.round(-cardHeight / 2 + statusHeight * 0.78);
+    RuntimeUI.createCard(card, {
+      name: `${options.name}TimelineStatusCard`,
+      x: 0,
+      y: statusY,
+      width: statusWidth,
+      height: statusHeight,
+      color: new Color(255, 244, 210, 184),
+      innerColor: new Color(255, 255, 255, 96),
+      radius: Math.round(statusHeight * 0.26),
+      borderThickness: 1,
+      innerRadius: Math.max(0, Math.round(statusHeight * 0.26) - 1),
+    });
+    RuntimeUI.createLabel(card, {
+      name: `${options.name}TimelineStatusTitle`,
+      text: this.backendFeedBlocked ? "同步提醒" : viewModel.displayStatus,
+      x: Math.round(statusWidth * 0.08),
+      y: statusY + Math.round(statusHeight * 0.2),
+      width: Math.round(statusWidth * 0.62),
+      height: 24,
+      fontSize: Math.max(15, Math.min(20, Math.round(cardWidth * 0.086))),
+      color: new Color(104, 61, 36, 236),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    const statusBody = RuntimeUI.createLabel(card, {
+      name: `${options.name}TimelineStatusBody`,
+      text: this.resolveRightLogTipBody(viewModel),
+      x: Math.round(statusWidth * 0.08),
+      y: statusY - Math.round(statusHeight * 0.2),
+      width: Math.round(statusWidth * 0.62),
+      height: Math.round(statusHeight * 0.44),
+      fontSize: Math.max(11, Math.min(15, Math.round(cardWidth * 0.064))),
+      color: new Color(151, 105, 76, 190),
+      horizontalAlign: HorizontalTextAlignment.LEFT,
+    });
+    statusBody.lineHeight = Math.round(statusBody.fontSize * 1.26);
+    statusBody.enableWrapText = true;
+    statusBody.overflow = Label.Overflow.CLAMP;
+  }
+
   private renderRightLogCardContent(
     card: Node,
     options: {
@@ -5081,6 +6030,11 @@ export class MainController extends ScreenController {
       height: number;
     }
   ): void {
+    if (options.name === "PhoneRightStatus") {
+      this.renderPhoneRightTimelineContent(card, options);
+      return;
+    }
+
     const viewModel = this.createMainViewModel();
     const cardWidth = options.width;
     const cardHeight = options.height;

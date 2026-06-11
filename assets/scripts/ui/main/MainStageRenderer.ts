@@ -656,10 +656,10 @@ function renderPetLifeOverlay(ctx: MainStageRendererContext, clip: Node, options
     return;
   }
 
-  const bubbleWidth = Math.max(210, Math.min(330, Math.round(options.safeZoneWidth * 0.86)));
+  const bubbleWidth = Math.max(210, Math.min(320, Math.round(options.safeZoneWidth * 0.78)));
   const bubbleHeight = 68;
-  const bubbleX = Math.round(petCenterX + options.safeZoneWidth * 0.02);
-  const bubbleY = Math.round(petCenterY + options.safeZoneHeight * 0.45);
+  const bubbleX = Math.round(petCenterX + options.safeZoneWidth * 0.34);
+  const bubbleY = Math.round(petCenterY + options.safeZoneHeight * 0.58);
   RuntimeUI.createCard(clip, {
     name: "PetLifeBubble",
     x: bubbleX,
@@ -675,7 +675,7 @@ function renderPetLifeOverlay(ctx: MainStageRendererContext, clip: Node, options
   });
   RuntimeUI.createBox(clip, {
     name: "PetLifeBubbleTail",
-    x: bubbleX - Math.round(bubbleWidth * 0.25),
+    x: bubbleX - Math.round(bubbleWidth * 0.38),
     y: bubbleY - Math.round(bubbleHeight * 0.44),
     width: 24,
     height: 14,
