@@ -1,10 +1,12 @@
-# PLAN.md
+# Client Local Backlog
 
-## Today
+This file is not the current task source.
 
-Main home stability and experience closeout.
+Buddy 当前任务唯一执行源是 root `../PLAN.md`。本文件仅保留客户端历史任务、局部 backlog 或归档信息，不得声明当前执行任务。
 
-## Goal
+## Archived Item: Main home stability and experience closeout
+
+### Goal
 
 Close the remaining Main home tasks in one scoped client pass:
 
@@ -14,7 +16,7 @@ Close the remaining Main home tasks in one scoped client pass:
 4. Keep DevLog visible in dev/staging, hide it by default in prod, and allow diagnostics override.
 5. Run TypeScript validation and prepare a clean client commit without Cocos settings noise or `.tmp/`.
 
-## Allowed Files
+### Previously Allowed Files
 
 - `PLAN.md`
 - `docs/main-art-replacement-inventory.md`
@@ -24,18 +26,7 @@ Close the remaining Main home tasks in one scoped client pass:
 - `assets/scripts/ui/main/MainLifeFeedback.ts`
 - `assets/scripts/ui/main/MainPetAnimator.ts`
 
-## Out Of Scope
-
-- Backend code.
-- Hot update implementation internals.
-- WSL sync script changes.
-- Cocos settings noise:
-  - `settings/v2/packages/cocos-service.json`
-  - `settings/v2/packages/information.json`
-- `.tmp/`
-- New art assets that do not currently exist.
-
-## Progress
+### Archived Progress
 
 - [x] State refresh and scope lock.
 - [x] `idleShow` animator event and light idle bubble.
@@ -47,23 +38,7 @@ Close the remaining Main home tasks in one scoped client pass:
 - [ ] Review diff.
 - [ ] Commit allowed files only.
 
-## Validation
-
-```powershell
-bunx tsc --noEmit --ignoreDeprecations 6.0
-git diff --stat
-git status -sb
-```
-
-Manual phone validation after Cocos build/hot update:
-
-- Staging still shows Login/Main DevLog.
-- Prod manifest build hides DevLog unless diagnostics override is enabled.
-- Main home waits on pet stage and eventually shows idle feedback.
-- Idle feedback does not overwrite high-priority return/offline bubbles.
-- Core actions still reset idle timing and keep tap-lock behavior.
-
-## Remaining Risk
+### Remaining Risk
 
 - Phone validation still depends on a fresh Cocos build and hot update upload.
 - UI skin replacement is intentionally blocked until panel/bubble/dock/button art assets are supplied.
