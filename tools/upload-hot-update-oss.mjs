@@ -36,6 +36,7 @@ const sourceDir = path.resolve(options.dir ?? ".tmp/hot-update-test");
 const bucket = options.bucket ?? envConfig.bucket;
 const prefix = normalizePrefix(options.prefix ?? envConfig.prefix);
 const ossutil = resolveOssutil(options.ossutil);
+const ossutilConfig = resolveOssutilConfig(options["ossutil-config"]);
 const dryRun = Boolean(options["dry-run"]);
 
 if (!fs.existsSync(sourceDir)) {
@@ -71,11 +72,21 @@ console.log(`Hot update upload target: oss://${bucket}/${prefix}`);
 console.log(`Source directory: ${sourceDir}`);
 console.log(`Environment: ${env}`);
 console.log(`Files: ${files.length}`);
+if (ossutilConfig) {
+  console.log(`OSS config: ${ossutilConfig}`);
+}
 
 for (const filePath of files) {
   const relativePath = toOssPath(path.relative(sourceDir, filePath));
   const target = `oss://${bucket}/${prefix}${relativePath}`;
-  const commandArgs = ["cp", filePath, target, "--force", "--update"];
+  const commandArgs = [
+    ...(ossutilConfig ? ["-c", ossutilConfig] : []),
+    "cp",
+    filePath,
+    target,
+    "--force",
+    "--update",
+  ];
 
   if (dryRun) {
     console.log(`[dry-run] ${ossutil} ${commandArgs.map(quoteArg).join(" ")}`);
@@ -138,8 +149,27 @@ function resolveOssutil(input) {
   return "ossutil";
 }
 
+function resolveOssutilConfig(input) {
+  const candidates = [
+    input,
+    process.env.OSSUTIL_CONFIG_FILE,
+    path.resolve("tools", "ossutilconfig.local"),
+    path.resolve("..", ".tools", "ossutil", "ossutilconfig"),
+    path.join(process.env.USERPROFILE ?? "", ".ossutilconfig"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (fs.existsSync(resolved)) {
+      return resolved;
+    }
+  }
+
+  return null;
+}
+
 function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
 }
 
 function collectFiles(rootDir) {

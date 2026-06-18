@@ -13,6 +13,7 @@
     "hot-update:url:staging": "node tools/set-hot-update-url.mjs staging",
     "hot-update:url:prod": "node tools/set-hot-update-url.mjs prod",
     "hot-update:manifest": "node tools/generate-hot-update-manifest.mjs",
-    "hot-update:upload": "node tools/upload-hot-update-oss.mjs"
+    "hot-update:upload": "node tools/upload-hot-update-oss.mjs",
+    "hot-update:publish": "node tools/publish-hot-update.mjs"
   }
 }

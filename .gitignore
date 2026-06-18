@@ -10,6 +10,12 @@ local/
 build/
 profiles/
 native
+.tmp/
+
+# Local tool credentials
+tools/ossutilconfig.local
+../.tools/ossutil/*config*
+../.tools/ossutil/**/*config*
 #//////////////////////////
 # NPM
 #//////////////////////////

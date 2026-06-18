@@ -1,0 +1,4 @@
+[Credentials]
+endpoint=oss-cn-shanghai.aliyuncs.com
+accessKeyID=YOUR_ACCESS_KEY_ID
+accessKeySecret=YOUR_ACCESS_KEY_SECRET
