@@ -459,7 +459,8 @@ class ApiClient {
 
   async uploadHomeworkImage(file: File | Blob): Promise<ApiResponse<HomeworkUploadResult>> {
     const formData = new FormData();
-    formData.append("file", file);
+    const fileName = "name" in file && file.name ? file.name : "homework-image.jpg";
+    formData.append("file", file, fileName);
     return this.request<HomeworkUploadResult>("/homeworks/uploads", {
       method: "POST",
       body: formData,

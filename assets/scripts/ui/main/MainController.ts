@@ -23,6 +23,7 @@ import { storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
 import { chatService } from "../../services/ChatService";
+import { homeworkImagePickerService } from "../../services/HomeworkImagePickerService";
 import { homeworkService } from "../../services/HomeworkService";
 import { parentService } from "../../services/ParentService";
 import { petService } from "../../services/PetService";
@@ -4073,6 +4074,10 @@ export class MainController extends ScreenController {
       return;
     }
 
+    devActionLogger.info("main.homework.picker.start");
+    this.appendMainInteraction("选择作业图片", "正在打开手机相册...");
+    this.render();
+
     const file = await this.pickHomeworkImageFile();
     if (!file) {
       devActionLogger.warn("main.homework.uploadCancelled");
@@ -4145,45 +4150,13 @@ export class MainController extends ScreenController {
     this.homeworkCenterCoordinator.syncCurrentDraft(noteInput.string);
   }
 
-  private pickHomeworkImageFile(): Promise<File | null> {
-    if (typeof document === "undefined" || !document.body) {
-      this.appendMainInteraction("图片上传不可用", "当前运行环境暂不支持选择本地图片。");
+  private async pickHomeworkImageFile(): Promise<File | Blob | null> {
+    const result = await homeworkImagePickerService.pickImage();
+    if (!result.success && result.message) {
+      this.appendMainInteraction(result.title ?? "图片选择失败", result.message);
       this.render();
-      return Promise.resolve(null);
     }
-
-    return new Promise((resolve) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.style.display = "none";
-
-      let settled = false;
-      const cleanup = (): void => {
-        if (input.parentElement) {
-          input.parentElement.removeChild(input);
-        }
-        window.removeEventListener("focus", handleFocus);
-      };
-      const settle = (file: File | null): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        resolve(file);
-      };
-      const handleFocus = (): void => {
-        window.setTimeout(() => settle(input.files?.[0] ?? null), 250);
-      };
-
-      input.addEventListener("change", () => settle(input.files?.[0] ?? null), {
-        once: true,
-      });
-      window.addEventListener("focus", handleFocus, { once: true });
-      document.body.appendChild(input);
-      input.click();
-    });
+    return result.file ?? null;
   }
 
   private renderTopBarStructure(

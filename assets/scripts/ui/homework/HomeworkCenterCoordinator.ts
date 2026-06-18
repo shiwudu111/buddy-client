@@ -163,7 +163,7 @@ export class HomeworkCenterCoordinator {
     };
   }
 
-  async uploadCurrentImage(file: File): Promise<HomeworkUploadFeedback> {
+  async uploadCurrentImage(file: File | Blob): Promise<HomeworkUploadFeedback> {
     if (this.uploading) {
       return {
         success: false,
@@ -189,7 +189,7 @@ export class HomeworkCenterCoordinator {
       if (result.success && imageUrl) {
         this.uploadedImages[this.selectedSubject] = {
           url: imageUrl,
-          fileName: file.name || "作业图片",
+          fileName: "name" in file && file.name ? file.name : "作业图片",
         };
         return {
           success: true,

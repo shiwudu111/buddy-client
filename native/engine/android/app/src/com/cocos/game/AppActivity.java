@@ -24,22 +24,37 @@ THE SOFTWARE.
 ****************************************************************************/
 package com.cocos.game;
 
+import android.Manifest;
 import android.os.Bundle;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.net.Uri;
+import android.provider.OpenableColumns;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.content.res.Configuration;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.cocos.service.SDKWrapper;
 import com.cocos.lib.CocosActivity;
 
+import org.json.JSONObject;
+
 public class AppActivity extends CocosActivity {
+    private static final int REQUEST_HOMEWORK_IMAGE_PICKER = 7301;
+    private static final int REQUEST_MICROPHONE_PERMISSION = 7302;
     private static AppActivity currentActivity;
+    private static volatile String homeworkImagePickerResult = "";
+    private static volatile String microphonePermissionResult = "{\"status\":\"unknown\"}";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,6 +97,97 @@ public class AppActivity extends CocosActivity {
         copyTextToClipboard(text);
     }
 
+    public static boolean startHomeworkImagePicker() {
+        if (currentActivity == null) {
+            return false;
+        }
+
+        homeworkImagePickerResult = "{\"status\":\"pending\"}";
+        currentActivity.runOnUiThread(() -> {
+            try {
+                Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                intent.setType("image/*");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                currentActivity.startActivityForResult(intent, REQUEST_HOMEWORK_IMAGE_PICKER);
+            } catch (Exception pickError) {
+                try {
+                    Intent fallback = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    fallback.addCategory(Intent.CATEGORY_OPENABLE);
+                    fallback.setType("image/*");
+                    fallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    currentActivity.startActivityForResult(fallback, REQUEST_HOMEWORK_IMAGE_PICKER);
+                } catch (Exception openDocumentError) {
+                    try {
+                        Intent contentFallback = new Intent(Intent.ACTION_GET_CONTENT);
+                        contentFallback.addCategory(Intent.CATEGORY_OPENABLE);
+                        contentFallback.setType("image/*");
+                        contentFallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        currentActivity.startActivityForResult(
+                            Intent.createChooser(contentFallback, "Select homework image"),
+                            REQUEST_HOMEWORK_IMAGE_PICKER
+                        );
+                    } catch (Exception contentError) {
+                        homeworkImagePickerResult = buildHomeworkImagePickerError("相册无法打开");
+                    }
+                }
+            }
+        });
+        return true;
+    }
+
+    public static String getHomeworkImagePickerResult() {
+        return homeworkImagePickerResult == null ? "" : homeworkImagePickerResult;
+    }
+
+    public static String getNativePermissionStatus(String permissionName) {
+        if (currentActivity == null) {
+            return buildNativePermissionResult("unavailable", "原生环境不可用");
+        }
+        if ("microphone".equals(permissionName)) {
+            return currentActivity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                ? buildNativePermissionResult("granted", "")
+                : buildNativePermissionResult("denied", "麦克风权限未授权");
+        }
+        if ("photoLibrary".equals(permissionName)) {
+            return buildNativePermissionResult("granted", "");
+        }
+        return buildNativePermissionResult("unknown", "未知权限");
+    }
+
+    public static String requestNativePermission(String permissionName) {
+        if (currentActivity == null) {
+            return buildNativePermissionResult("unavailable", "原生环境不可用");
+        }
+        if ("microphone".equals(permissionName)) {
+            if (currentActivity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                microphonePermissionResult = buildNativePermissionResult("granted", "");
+                return microphonePermissionResult;
+            }
+            microphonePermissionResult = buildNativePermissionResult("unknown", "等待麦克风授权");
+            currentActivity.runOnUiThread(() ->
+                currentActivity.requestPermissions(
+                    new String[] { Manifest.permission.RECORD_AUDIO },
+                    REQUEST_MICROPHONE_PERMISSION
+                )
+            );
+            return microphonePermissionResult;
+        }
+        if ("photoLibrary".equals(permissionName)) {
+            return buildNativePermissionResult("granted", "");
+        }
+        return buildNativePermissionResult("unknown", "未知权限");
+    }
+
+    public static String getNativePermissionRequestResult(String permissionName) {
+        if ("microphone".equals(permissionName)) {
+            return microphonePermissionResult == null ? buildNativePermissionResult("unknown", "等待麦克风授权") : microphonePermissionResult;
+        }
+        if ("photoLibrary".equals(permissionName)) {
+            return buildNativePermissionResult("granted", "");
+        }
+        return buildNativePermissionResult("unknown", "未知权限");
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -111,6 +217,99 @@ public class AppActivity extends CocosActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         SDKWrapper.shared().onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_HOMEWORK_IMAGE_PICKER) {
+            handleHomeworkImagePickerResult(resultCode, data);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_MICROPHONE_PERMISSION) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            microphonePermissionResult = granted
+                ? buildNativePermissionResult("granted", "")
+                : buildNativePermissionResult("denied", "麦克风权限被拒绝");
+        }
+    }
+
+    private void handleHomeworkImagePickerResult(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            homeworkImagePickerResult = "{\"status\":\"cancelled\"}";
+            return;
+        }
+
+        Uri uri = data.getData();
+        try {
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (Exception ignored) {
+        }
+
+        try (InputStream inputStream = getContentResolver().openInputStream(uri);
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            if (inputStream == null) {
+                homeworkImagePickerResult = buildHomeworkImagePickerError("图片无法读取");
+                return;
+            }
+
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, read);
+            }
+
+            String mimeType = getContentResolver().getType(uri);
+            if (mimeType == null || mimeType.trim().isEmpty()) {
+                mimeType = "image/jpeg";
+            }
+
+            JSONObject payload = new JSONObject();
+            payload.put("status", "success");
+            payload.put("fileName", resolveDisplayName(uri));
+            payload.put("mimeType", mimeType);
+            payload.put("base64", Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP));
+            homeworkImagePickerResult = payload.toString();
+        } catch (Exception error) {
+            homeworkImagePickerResult = buildHomeworkImagePickerError("图片读取失败");
+        }
+    }
+
+    private String resolveDisplayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (nameIndex >= 0) {
+                    String displayName = cursor.getString(nameIndex);
+                    if (displayName != null && !displayName.trim().isEmpty()) {
+                        return displayName;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "homework-image.jpg";
+    }
+
+    private static String buildHomeworkImagePickerError(String message) {
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("status", "error");
+            payload.put("message", message);
+            return payload.toString();
+        } catch (Exception ignored) {
+            return "{\"status\":\"error\",\"message\":\"图片选择失败\"}";
+        }
+    }
+
+    private static String buildNativePermissionResult(String status, String message) {
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("status", status);
+            payload.put("message", message);
+            return payload.toString();
+        } catch (Exception ignored) {
+            return "{\"status\":\"error\",\"message\":\"权限结果异常\"}";
+        }
     }
 
     @Override
