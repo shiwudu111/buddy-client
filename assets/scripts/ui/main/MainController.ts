@@ -144,6 +144,7 @@ const DEBUG_TOGGLE_HEIGHT = 34;
 // 调试面板中按钮之间的垂直间距。
 // 控制开关之间的呼吸感。
 const DEBUG_TOGGLE_GAP = 8;
+const DEV_LOG_TOP_OFFSET = 64;
 
 const PET_BUBBLE_DURATION_MS = 4000;
 const PET_VISUAL_FEED_DURATION_MS = 1800;
@@ -968,6 +969,7 @@ export class MainController extends ScreenController {
       },
       reset: () => this.resetArtTuning(),
       openReferencePage: () => this.openReferencePage(),
+      returnToLogin: () => this.returnToLogin(),
     };
   }
 
@@ -1571,7 +1573,7 @@ export class MainController extends ScreenController {
 
   private renderDevLogEntry(root: Node, layout: MainLayout): void {
     const left = -layout.viewportWidth / 2 + 24;
-    const top = layout.viewportHeight / 2 - 24;
+    const top = layout.viewportHeight / 2 - 24 - DEV_LOG_TOP_OFFSET;
     const buttonWidth = 74;
     const buttonHeight = 30;
     const panelWidth = Math.max(320, Math.min(620, layout.viewportWidth - 48));
@@ -2144,6 +2146,11 @@ export class MainController extends ScreenController {
   }
 
   private handleParentLogout(): void {
+    this.returnToLogin();
+  }
+
+  public returnToLogin(): void {
+    devActionLogger.info("main.returnToLogin");
     authService.logout();
     sceneRouter.goToLogin();
   }

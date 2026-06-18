@@ -248,6 +248,7 @@ export type ArtDebugBridge = {
   setValue: (key: string, value: number) => void;
   reset: () => void;
   openReferencePage: () => void;
+  returnToLogin: () => void;
 };
 
 export type ArtDebugHostWindow = Window &

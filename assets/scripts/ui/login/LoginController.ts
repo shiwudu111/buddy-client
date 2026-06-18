@@ -37,6 +37,8 @@ import { resolveLoginSceneRefs } from "./LoginSceneRefs";
 import { LOGIN_THEME, themeColor } from "./LoginViewConfig";
 import { LoginViewOrchestrator, type LoginViewNodes } from "./LoginViewOrchestrator";
 
+const DEV_LOG_BUTTON_VERTICAL_OFFSET = 64;
+
 // 文件整体作用：
 // 这是整个登录页的总控制器。
 // 它会把登录流程、账号选择弹层、输入框内容、状态提示、场景跳转全部串起来。
@@ -1151,10 +1153,18 @@ export class LoginController extends Component {
   private positionDevLogEntry(): void {
     const visibleSize = view.getVisibleSize();
     this.devLogButton?.node.setPosition(
-      new Vec3(visibleSize.width / 2 - 92, -visibleSize.height / 2 + 138, 0)
+      new Vec3(
+        visibleSize.width / 2 - 92,
+        -visibleSize.height / 2 + 138 - DEV_LOG_BUTTON_VERTICAL_OFFSET,
+        0
+      )
     );
     this.devLogPanel?.setPosition(
-      new Vec3(visibleSize.width / 2 - 410, -visibleSize.height / 2 + 338, 0)
+      new Vec3(
+        visibleSize.width / 2 - 410,
+        -visibleSize.height / 2 + 338 - DEV_LOG_BUTTON_VERTICAL_OFFSET,
+        0
+      )
     );
     this.devLogButton?.node.setSiblingIndex(9999);
     this.devLogPanel?.setSiblingIndex(9999);
