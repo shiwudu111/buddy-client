@@ -23,6 +23,9 @@ type NativePickerPayload = {
   fileName?: string;
   mimeType?: string;
   base64?: string;
+  compressionApplied?: boolean;
+  originalSize?: number;
+  compressedSize?: number;
   message?: string;
 };
 
@@ -265,6 +268,14 @@ class HomeworkImagePickerService {
     const bytes = this.decodeBase64ToBytes(payload.base64 ?? "");
     const mimeType = payload.mimeType || "image/jpeg";
     const fileName = payload.fileName || "homework-image.jpg";
+    devActionLogger.info("homework.imagePicker.native.compression", {
+      applied: Boolean(payload.compressionApplied),
+      originalSize: payload.originalSize ?? bytes.byteLength,
+      compressedSize: payload.compressedSize ?? bytes.byteLength,
+      finalSize: bytes.byteLength,
+      mimeType,
+      fileName,
+    });
     return {
       source: "android-native",
       fileName,

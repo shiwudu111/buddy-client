@@ -33,6 +33,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.provider.MediaStore;
@@ -54,6 +56,9 @@ public class AppActivity extends CocosActivity {
     private static final int REQUEST_HOMEWORK_IMAGE_PICKER = 7301;
     private static final int REQUEST_MICROPHONE_PERMISSION = 7302;
     private static final int REQUEST_PHOTO_LIBRARY_PERMISSION = 7303;
+    private static final int HOMEWORK_IMAGE_COMPRESS_ABOVE_BYTES = 2 * 1024 * 1024;
+    private static final int HOMEWORK_IMAGE_MAX_EDGE = 1600;
+    private static final int HOMEWORK_IMAGE_JPEG_QUALITY = 82;
     private static AppActivity currentActivity;
     private static volatile String homeworkImagePickerResult = "";
     private static volatile String microphonePermissionResult = "{\"status\":\"unknown\"}";
@@ -288,20 +293,92 @@ public class AppActivity extends CocosActivity {
                 outputStream.write(buffer, 0, read);
             }
 
+            byte[] imageBytes = outputStream.toByteArray();
             String mimeType = getContentResolver().getType(uri);
             if (mimeType == null || mimeType.trim().isEmpty()) {
+                mimeType = "image/jpeg";
+            }
+            byte[] uploadBytes = compressHomeworkImageIfUseful(imageBytes);
+            if (uploadBytes != imageBytes) {
                 mimeType = "image/jpeg";
             }
 
             JSONObject payload = new JSONObject();
             payload.put("status", "success");
-            payload.put("fileName", resolveDisplayName(uri));
+            payload.put("fileName", uploadBytes == imageBytes ? resolveDisplayName(uri) : toJpegFileName(resolveDisplayName(uri)));
             payload.put("mimeType", mimeType);
-            payload.put("base64", Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP));
+            payload.put("compressionApplied", uploadBytes != imageBytes);
+            payload.put("originalSize", imageBytes.length);
+            payload.put("compressedSize", uploadBytes.length);
+            payload.put("base64", Base64.encodeToString(uploadBytes, Base64.NO_WRAP));
             homeworkImagePickerResult = payload.toString();
         } catch (Exception error) {
             homeworkImagePickerResult = buildHomeworkImagePickerError("图片读取失败");
         }
+    }
+
+    private byte[] compressHomeworkImageIfUseful(byte[] originalBytes) {
+        if (originalBytes == null || originalBytes.length < HOMEWORK_IMAGE_COMPRESS_ABOVE_BYTES) {
+            return originalBytes;
+        }
+
+        try {
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.length, bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                return originalBytes;
+            }
+
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = calculateHomeworkImageSampleSize(bounds.outWidth, bounds.outHeight);
+            Bitmap bitmap = BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.length, options);
+            if (bitmap == null) {
+                return originalBytes;
+            }
+
+            Bitmap scaled = scaleHomeworkImageIfNeeded(bitmap);
+            ByteArrayOutputStream compressedOutput = new ByteArrayOutputStream();
+            scaled.compress(Bitmap.CompressFormat.JPEG, HOMEWORK_IMAGE_JPEG_QUALITY, compressedOutput);
+            byte[] compressedBytes = compressedOutput.toByteArray();
+
+            if (scaled != bitmap) {
+                scaled.recycle();
+            }
+            bitmap.recycle();
+
+            return compressedBytes.length > 0 && compressedBytes.length < originalBytes.length
+                ? compressedBytes
+                : originalBytes;
+        } catch (Exception ignored) {
+            return originalBytes;
+        }
+    }
+
+    private static int calculateHomeworkImageSampleSize(int width, int height) {
+        int sampleSize = 1;
+        while (Math.max(width / sampleSize, height / sampleSize) > HOMEWORK_IMAGE_MAX_EDGE * 2) {
+            sampleSize *= 2;
+        }
+        return sampleSize;
+    }
+
+    private static Bitmap scaleHomeworkImageIfNeeded(Bitmap bitmap) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int longestEdge = Math.max(width, height);
+        if (longestEdge <= HOMEWORK_IMAGE_MAX_EDGE) {
+            return bitmap;
+        }
+        float scale = (float) HOMEWORK_IMAGE_MAX_EDGE / (float) longestEdge;
+        int targetWidth = Math.max(1, Math.round(width * scale));
+        int targetHeight = Math.max(1, Math.round(height * scale));
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true);
+    }
+
+    private static String toJpegFileName(String fileName) {
+        String safeName = fileName == null || fileName.trim().isEmpty() ? "homework-image" : fileName.trim();
+        return safeName.replaceFirst("(?i)\\.(png|jpe?g|webp|heic|heif)$", "") + ".jpg";
     }
 
     private String resolveDisplayName(Uri uri) {
