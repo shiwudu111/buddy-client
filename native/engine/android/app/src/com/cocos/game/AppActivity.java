@@ -26,6 +26,7 @@ package com.cocos.game;
 
 import android.Manifest;
 import android.os.Bundle;
+import android.os.Build;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -52,9 +53,11 @@ import org.json.JSONObject;
 public class AppActivity extends CocosActivity {
     private static final int REQUEST_HOMEWORK_IMAGE_PICKER = 7301;
     private static final int REQUEST_MICROPHONE_PERMISSION = 7302;
+    private static final int REQUEST_PHOTO_LIBRARY_PERMISSION = 7303;
     private static AppActivity currentActivity;
     private static volatile String homeworkImagePickerResult = "";
     private static volatile String microphonePermissionResult = "{\"status\":\"unknown\"}";
+    private static volatile String photoLibraryPermissionResult = "{\"status\":\"unknown\"}";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -149,7 +152,10 @@ public class AppActivity extends CocosActivity {
                 : buildNativePermissionResult("denied", "麦克风权限未授权");
         }
         if ("photoLibrary".equals(permissionName)) {
-            return buildNativePermissionResult("granted", "");
+            String permission = getPhotoLibraryPermissionName();
+            return currentActivity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+                ? buildNativePermissionResult("granted", "")
+                : buildNativePermissionResult("denied", "相册权限未授权");
         }
         return buildNativePermissionResult("unknown", "未知权限");
     }
@@ -173,7 +179,19 @@ public class AppActivity extends CocosActivity {
             return microphonePermissionResult;
         }
         if ("photoLibrary".equals(permissionName)) {
-            return buildNativePermissionResult("granted", "");
+            String permission = getPhotoLibraryPermissionName();
+            if (currentActivity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+                photoLibraryPermissionResult = buildNativePermissionResult("granted", "");
+                return photoLibraryPermissionResult;
+            }
+            photoLibraryPermissionResult = buildNativePermissionResult("unknown", "等待相册授权");
+            currentActivity.runOnUiThread(() ->
+                currentActivity.requestPermissions(
+                    new String[] { permission },
+                    REQUEST_PHOTO_LIBRARY_PERMISSION
+                )
+            );
+            return photoLibraryPermissionResult;
         }
         return buildNativePermissionResult("unknown", "未知权限");
     }
@@ -183,7 +201,7 @@ public class AppActivity extends CocosActivity {
             return microphonePermissionResult == null ? buildNativePermissionResult("unknown", "等待麦克风授权") : microphonePermissionResult;
         }
         if ("photoLibrary".equals(permissionName)) {
-            return buildNativePermissionResult("granted", "");
+            return photoLibraryPermissionResult == null ? buildNativePermissionResult("unknown", "等待相册授权") : photoLibraryPermissionResult;
         }
         return buildNativePermissionResult("unknown", "未知权限");
     }
@@ -230,7 +248,19 @@ public class AppActivity extends CocosActivity {
             microphonePermissionResult = granted
                 ? buildNativePermissionResult("granted", "")
                 : buildNativePermissionResult("denied", "麦克风权限被拒绝");
+        } else if (requestCode == REQUEST_PHOTO_LIBRARY_PERMISSION) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            photoLibraryPermissionResult = granted
+                ? buildNativePermissionResult("granted", "")
+                : buildNativePermissionResult("denied", "相册权限被拒绝");
         }
+    }
+
+    private static String getPhotoLibraryPermissionName() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return Manifest.permission.READ_MEDIA_IMAGES;
+        }
+        return Manifest.permission.READ_EXTERNAL_STORAGE;
     }
 
     private void handleHomeworkImagePickerResult(int resultCode, Intent data) {

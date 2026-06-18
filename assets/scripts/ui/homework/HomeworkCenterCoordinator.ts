@@ -8,6 +8,7 @@ import {
   homeworkService,
   type HomeworkSubmitServiceResponse,
 } from "../../services/HomeworkService";
+import type { PickedHomeworkImage } from "../../services/HomeworkImagePickerService";
 import type {
   HomeworkQualityLevel,
   HomeworkRewardItem,
@@ -164,7 +165,7 @@ export class HomeworkCenterCoordinator {
     };
   }
 
-  async uploadCurrentImage(file: File | Blob): Promise<HomeworkUploadFeedback> {
+  async uploadCurrentImage(image: PickedHomeworkImage): Promise<HomeworkUploadFeedback> {
     if (this.uploading) {
       return {
         success: false,
@@ -185,12 +186,12 @@ export class HomeworkCenterCoordinator {
     this.rewardFeedback = null;
 
     try {
-      const result = await homeworkService.uploadImage(file);
+      const result = await homeworkService.uploadImage(image);
       const imageUrl = result.data?.url?.trim() || result.data?.imageUrl?.trim();
       if (result.success && imageUrl) {
         this.uploadedImages[this.selectedSubject] = {
           url: imageUrl,
-          fileName: "name" in file && file.name ? file.name : "作业图片",
+          fileName: image.fileName || "作业图片",
         };
         return {
           success: true,

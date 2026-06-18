@@ -4,14 +4,18 @@ import { nativeCapabilityService } from "./NativeCapabilityService";
 
 export type HomeworkImagePickerResult = {
   success: boolean;
-  file?: HomeworkImageFile | null;
+  image?: PickedHomeworkImage | null;
   title?: string;
   message?: string;
 };
 
-export type HomeworkImageFile = (File | Blob) & {
-  name?: string;
-  __buddyBytes?: Uint8Array;
+export type PickedHomeworkImage = {
+  source: "web" | "android-native";
+  fileName: string;
+  mimeType: string;
+  size: number;
+  file?: File | Blob;
+  bytes?: Uint8Array;
 };
 
 type NativePickerPayload = {
@@ -60,7 +64,18 @@ class HomeworkImagePickerService {
         }
         settled = true;
         cleanup();
-        resolve({ success: Boolean(file), file });
+        resolve({
+          success: Boolean(file),
+          image: file
+            ? {
+                source: "web",
+                fileName: file.name || "homework-image.jpg",
+                mimeType: file.type || "image/jpeg",
+                size: file.size,
+                file,
+              }
+            : null,
+        });
       };
       const handleFocus = (): void => {
         window.setTimeout(() => settle(input.files?.[0] ?? null), 250);
@@ -83,6 +98,11 @@ class HomeworkImagePickerService {
         title: "图片上传不可用",
         message: "当前原生环境未提供相册选择桥。",
       };
+    }
+
+    const permission = await this.ensurePhotoLibraryPermission();
+    if (!permission.success) {
+      return permission;
     }
 
     try {
@@ -110,7 +130,7 @@ class HomeworkImagePickerService {
     const payload = await this.waitForNativeResult();
     if (!payload || payload.status === "cancelled") {
       devActionLogger.warn("homework.imagePicker.native.cancelled");
-      return { success: false, file: null };
+      return { success: false, image: null };
     }
     if (payload.status === "error") {
       return {
@@ -130,7 +150,7 @@ class HomeworkImagePickerService {
     try {
       return {
         success: true,
-        file: this.createImageFile(payload),
+        image: this.createImage(payload),
       };
     } catch (error) {
       devActionLogger.warn("homework.imagePicker.native.decodeFailed", this.stringifyError(error));
@@ -185,30 +205,73 @@ class HomeworkImagePickerService {
     });
   }
 
-  private createImageFile(payload: NativePickerPayload): HomeworkImageFile {
+  private async ensurePhotoLibraryPermission(): Promise<HomeworkImagePickerResult> {
+    const status = nativeCapabilityService.getPermissionStatus("photoLibrary");
+    devActionLogger.info("homework.imagePicker.permission.status", status.status);
+    if (status.status === "granted") {
+      return { success: true };
+    }
+
+    const requested = nativeCapabilityService.requestPermission("photoLibrary");
+    devActionLogger.info("homework.imagePicker.permission.request", requested.status);
+    if (requested.status === "granted") {
+      return { success: true };
+    }
+    if (requested.status === "denied") {
+      return {
+        success: false,
+        title: "相册权限未开启",
+        message: "需要允许访问相册后，才能选择作业图片。",
+      };
+    }
+
+    const result = await this.waitForPermissionResult();
+    if (result === "granted") {
+      return { success: true };
+    }
+    return {
+      success: false,
+      title: "相册权限未开启",
+      message: "需要允许访问相册后，才能选择作业图片。",
+    };
+  }
+
+  private waitForPermissionResult(): Promise<string> {
+    const startedAt = Date.now();
+    const timeoutMs = 30000;
+    const pollIntervalMs = 250;
+
+    return new Promise((resolve) => {
+      const poll = (): void => {
+        const result = nativeCapabilityService.getPermissionRequestResult("photoLibrary");
+        if (result.status === "granted" || result.status === "denied") {
+          devActionLogger.info("homework.imagePicker.permission.result", result.status);
+          resolve(result.status);
+          return;
+        }
+        if (Date.now() - startedAt >= timeoutMs) {
+          devActionLogger.warn("homework.imagePicker.permission.timeout");
+          resolve("unknown");
+          return;
+        }
+        window.setTimeout(poll, pollIntervalMs);
+      };
+
+      poll();
+    });
+  }
+
+  private createImage(payload: NativePickerPayload): PickedHomeworkImage {
     const bytes = this.decodeBase64ToBytes(payload.base64 ?? "");
     const mimeType = payload.mimeType || "image/jpeg";
     const fileName = payload.fileName || "homework-image.jpg";
-    const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-
-    if (typeof File !== "undefined") {
-      return this.attachNativeBytes(new File([arrayBuffer], fileName, { type: mimeType }), bytes);
-    }
-    const blob = new Blob([arrayBuffer], { type: mimeType }) as Blob & { name?: string };
-    blob.name = fileName;
-    return this.attachNativeBytes(blob, bytes);
-  }
-
-  private attachNativeBytes<T extends HomeworkImageFile>(file: T, bytes: Uint8Array): T {
-    try {
-      Object.defineProperty(file, "__buddyBytes", {
-        value: bytes,
-        enumerable: false,
-      });
-    } catch {
-      file.__buddyBytes = bytes;
-    }
-    return file;
+    return {
+      source: "android-native",
+      fileName,
+      mimeType,
+      size: bytes.byteLength,
+      bytes,
+    };
   }
 
   private decodeBase64ToBytes(base64: string): Uint8Array {

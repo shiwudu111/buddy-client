@@ -23,7 +23,10 @@ import { storage } from "../../core/storage";
 import { sceneRouter } from "../../navigation/SceneRouter";
 import { authService } from "../../services/AuthService";
 import { chatService } from "../../services/ChatService";
-import { homeworkImagePickerService } from "../../services/HomeworkImagePickerService";
+import {
+  homeworkImagePickerService,
+  type PickedHomeworkImage,
+} from "../../services/HomeworkImagePickerService";
 import { homeworkService } from "../../services/HomeworkService";
 import { parentService } from "../../services/ParentService";
 import { petService } from "../../services/PetService";
@@ -4078,14 +4081,14 @@ export class MainController extends ScreenController {
     this.appendMainInteraction("选择作业图片", "正在打开手机相册...");
     this.render();
 
-    const file = await this.pickHomeworkImageFile();
-    if (!file) {
+    const image = await this.pickHomeworkImageFile();
+    if (!image) {
       devActionLogger.warn("main.homework.uploadCancelled");
       return;
     }
 
     devActionLogger.info("main.homework.upload.start");
-    const uploadTask = this.homeworkCenterCoordinator.uploadCurrentImage(file);
+    const uploadTask = this.homeworkCenterCoordinator.uploadCurrentImage(image);
     this.render();
     const feedback = await uploadTask;
     devActionLogger.info(feedback.success ? "main.homework.upload.success" : "main.homework.upload.failure", feedback.message);
@@ -4150,13 +4153,13 @@ export class MainController extends ScreenController {
     this.homeworkCenterCoordinator.syncCurrentDraft(noteInput.string);
   }
 
-  private async pickHomeworkImageFile(): Promise<File | Blob | null> {
+  private async pickHomeworkImageFile(): Promise<PickedHomeworkImage | null> {
     const result = await homeworkImagePickerService.pickImage();
     if (!result.success && result.message) {
       this.appendMainInteraction(result.title ?? "图片选择失败", result.message);
       this.render();
     }
-    return result.file ?? null;
+    return result.image ?? null;
   }
 
   private renderTopBarStructure(

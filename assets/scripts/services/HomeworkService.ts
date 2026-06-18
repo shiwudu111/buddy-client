@@ -1,6 +1,8 @@
 import { appState } from "../app/AppState";
 import { devActionLogger } from "../core/DevActionLogger";
 import { apiClient } from "../network/ApiClient";
+import { homeworkImageUploadService } from "./HomeworkImageUploadService";
+import type { PickedHomeworkImage } from "./HomeworkImagePickerService";
 import { petService } from "./PetService";
 import type {
   ApiResponse,
@@ -20,12 +22,13 @@ export type HomeworkSubmitServiceResponse = ApiResponse<HomeworkSubmitResultPayl
 };
 
 class HomeworkService {
-  async uploadImage(file: File | Blob): Promise<ApiResponse<HomeworkUploadResult>> {
+  async uploadImage(image: PickedHomeworkImage): Promise<ApiResponse<HomeworkUploadResult>> {
     devActionLogger.info("homework.upload.request", {
-      size: "size" in file ? file.size : undefined,
-      type: "type" in file ? file.type : undefined,
+      source: image.source,
+      size: image.size,
+      type: image.mimeType,
     });
-    return apiClient.uploadHomeworkImage(file);
+    return homeworkImageUploadService.upload(image);
   }
 
   async submit(input: HomeworkSubmitPayload): Promise<HomeworkSubmitServiceResponse> {

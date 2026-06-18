@@ -52,10 +52,6 @@ class NativeCapabilityService {
     if (!this.isNative()) {
       return { status: "unavailable", message: "当前环境不是原生应用。" };
     }
-    if (permission === "photoLibrary") {
-      return { status: "granted" };
-    }
-
     const raw = this.callString(
       "getNativePermissionStatus",
       "(Ljava/lang/String;)Ljava/lang/String;",
@@ -68,10 +64,6 @@ class NativeCapabilityService {
     if (!this.isNative()) {
       return { status: "unavailable", message: "当前环境不是原生应用。" };
     }
-    if (permission === "photoLibrary") {
-      return { status: "granted" };
-    }
-
     const raw = this.callString(
       "requestNativePermission",
       "(Ljava/lang/String;)Ljava/lang/String;",
@@ -84,10 +76,6 @@ class NativeCapabilityService {
     if (!this.isNative()) {
       return { status: "unavailable", message: "当前环境不是原生应用。" };
     }
-    if (permission === "photoLibrary") {
-      return { status: "granted" };
-    }
-
     const raw = this.callString(
       "getNativePermissionRequestResult",
       "(Ljava/lang/String;)Ljava/lang/String;",
