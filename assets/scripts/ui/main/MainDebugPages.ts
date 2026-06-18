@@ -225,7 +225,6 @@ export const ART_DEBUG_PAGE_HTML = `<!DOCTYPE html>
     <section class="toolbar">
       <button id="refreshButton">同步当前值</button>
       <button id="referenceButton">打开参考页</button>
-      <button id="returnLoginButton">返回登录</button>
       <button id="resetButton" class="primary">恢复默认</button>
     </section>
     <div class="status" id="status">正在连接主界面…</div>
@@ -459,17 +458,6 @@ export const ART_DEBUG_PAGE_HTML = `<!DOCTYPE html>
         if (bridge) {
           bridge.openReferencePage();
         }
-      });
-
-      document.getElementById("returnLoginButton").addEventListener("click", function () {
-        var bridge = getBridge();
-        if (!bridge || !bridge.returnToLogin) {
-          setStatus("主界面连接已断开，无法返回登录。", "#c55b38");
-          return;
-        }
-
-        bridge.returnToLogin();
-        setStatus("已发起返回登录。");
       });
 
       document.getElementById("resetButton").addEventListener("click", function () {

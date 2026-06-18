@@ -969,7 +969,6 @@ export class MainController extends ScreenController {
       },
       reset: () => this.resetArtTuning(),
       openReferencePage: () => this.openReferencePage(),
-      returnToLogin: () => this.returnToLogin(),
     };
   }
 
@@ -4522,6 +4521,36 @@ export class MainController extends ScreenController {
     const statusWidth = Math.max(118, Math.min(144, Math.round(options.width * statusWidthRatio)));
     const statusHeight = Math.max(48, Math.min(56, Math.round(options.height * 0.58)));
     const statusX = options.width / 2 - brandInsetX - statusWidth / 2;
+    const logoutWidth = Math.max(66, Math.min(76, Math.round(options.width * 0.06)));
+    const logoutGap = 10;
+    const logoutX = Math.round(statusX - statusWidth / 2 - logoutGap - logoutWidth / 2);
+    const logoutShell = RuntimeUI.createCard(topBar, {
+      name: "TopBarLogoutShell",
+      x: logoutX,
+      y: 0,
+      width: logoutWidth,
+      height: statusHeight,
+      color: new Color(255, 248, 239, 228),
+      innerColor: new Color(255, 255, 255, 184),
+      borderColor: new Color(229, 184, 142, 220),
+      radius: Math.round(statusHeight / 2),
+      borderThickness: 1,
+      innerRadius: Math.round(statusHeight / 2) - 1,
+    });
+    RuntimeUI.createLabel(logoutShell, {
+      name: "TopBarLogoutText",
+      text: "退出",
+      x: 0,
+      y: 0,
+      width: logoutWidth - 12,
+      height: statusHeight - 12,
+      fontSize: Math.max(13, Math.min(16, Math.round(options.height * 0.18))),
+      color: new Color(126, 82, 54, 244),
+    });
+    const logoutButton = logoutShell.addComponent(Button);
+    logoutButton.transition = Button.Transition.NONE;
+    logoutShell.on(Button.EventType.CLICK, this.returnToLogin, this);
+
     const statusShell = RuntimeUI.createCard(topBar, {
       name: "TopBarStatusShell",
       x: Math.round(statusX),
