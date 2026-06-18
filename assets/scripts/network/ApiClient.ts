@@ -40,6 +40,13 @@ type ApiTransportResponse = {
 };
 
 const DASHBOARD_REQUEST_TIMEOUT_MS = 8000;
+const HOMEWORK_UPLOAD_TIMEOUT_MS = 15000;
+const UTF8_ENCODER = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+
+type HomeworkUploadFile = (File | Blob) & {
+  name?: string;
+  __buddyBytes?: Uint8Array;
+};
 
 function isFormDataRequestBody(body: BodyInit | null | undefined): boolean {
   if (!body || typeof FormData === "undefined") {
@@ -298,6 +305,114 @@ class ApiClient {
       }
     });
   }
+
+  private requestWithXhr<T>(
+    path: string,
+    options: RequestOptions & { body?: XMLHttpRequestBodyInit | null } = {}
+  ): Promise<ApiResponse<T>> {
+    const method = options.method ?? "GET";
+    const url = `${getApiBaseUrl()}${path}`;
+    const startedAt = Date.now();
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string> | undefined),
+    };
+    if (!options.skipAuth && this.token) {
+      headers.Authorization = `Bearer ${this.token}`;
+    }
+
+    devActionLogger.info("api.xhr.request.start", `${method} ${path}`);
+
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = HOMEWORK_UPLOAD_TIMEOUT_MS;
+      xhr.open(method, url, true);
+      for (const [key, value] of Object.entries(headers)) {
+        xhr.setRequestHeader(key, value);
+      }
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState !== 4) {
+          return;
+        }
+        const raw = xhr.responseText ?? "";
+        devActionLogger.info(
+          xhr.status >= 200 && xhr.status < 300 ? "api.xhr.request.ok" : "api.xhr.request.fail",
+          `${method} ${path} status=${xhr.status} ${Date.now() - startedAt}ms`
+        );
+        resolve(this.parseApiResponse<T>(raw, xhr.status));
+      };
+
+      xhr.onerror = () => {
+        devActionLogger.error("api.xhr.request.error", `${method} ${path} status=${xhr.status}`);
+        resolve({
+          success: false,
+          message: `网络请求失败：${xhr.status || "XHR error"}`,
+          statusCode: xhr.status || undefined,
+        });
+      };
+
+      xhr.ontimeout = () => {
+        devActionLogger.error(
+          "api.xhr.request.timeout",
+          `${method} ${path} timeout=${HOMEWORK_UPLOAD_TIMEOUT_MS}ms`
+        );
+        resolve({
+          success: false,
+          message: "图片上传超时，请重新选择后再试。",
+        });
+      };
+
+      try {
+        xhr.send(options.body ?? null);
+      } catch (error) {
+        devActionLogger.error(
+          "api.xhr.request.sendError",
+          error instanceof Error ? error.message : String(error)
+        );
+        resolve({
+          success: false,
+          message: error instanceof Error ? error.message : "图片上传发送失败。",
+        });
+      }
+    });
+  }
+
+  private parseApiResponse<T>(raw: string, status: number): ApiResponse<T> {
+    const ok = status >= 200 && status < 300;
+    let payload: ApiResponse<T> = { success: ok };
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as ApiResponse<T> | T;
+        payload =
+          parsed && typeof parsed === "object" && "success" in parsed
+            ? (parsed as ApiResponse<T>)
+            : { success: ok, data: parsed as T };
+      } catch {
+        payload = {
+          success: ok,
+          message: ok ? undefined : `HTTP ${status}`,
+        };
+      }
+    }
+
+    if (!ok) {
+      if (status === 401) {
+        this.clearToken();
+      }
+      return {
+        success: false,
+        message: payload.message ?? `HTTP ${status}`,
+        code: payload.code,
+        data: payload.data,
+        statusCode: status,
+      };
+    }
+
+    return {
+      ...payload,
+      statusCode: status,
+    };
+  }
   async register(input: {
     username: string;
     password: string;
@@ -458,12 +573,65 @@ class ApiClient {
   }
 
   async uploadHomeworkImage(file: File | Blob): Promise<ApiResponse<HomeworkUploadResult>> {
-    const formData = new FormData();
-    const fileName = "name" in file && file.name ? file.name : "homework-image.jpg";
-    formData.append("file", file, fileName);
-    return this.request<HomeworkUploadResult>("/homeworks/uploads", {
+    const uploadFile = file as HomeworkUploadFile;
+    const fileName = uploadFile.name || "homework-image.jpg";
+    try {
+      const formData = new FormData();
+      formData.append("file", file, fileName);
+      return await this.request<HomeworkUploadResult>("/homeworks/uploads", {
+        method: "POST",
+        body: formData,
+      });
+    } catch (error) {
+      devActionLogger.warn(
+        "api.homeworkUpload.formData.failed",
+        error instanceof Error ? error.message : String(error)
+      );
+      if (!uploadFile.__buddyBytes) {
+        throw error;
+      }
+      return this.uploadHomeworkImageMultipart(uploadFile, uploadFile.__buddyBytes, fileName);
+    }
+  }
+
+  private async uploadHomeworkImageMultipart(
+    file: HomeworkUploadFile,
+    bytes: Uint8Array,
+    fileName: string
+  ): Promise<ApiResponse<HomeworkUploadResult>> {
+    if (!UTF8_ENCODER) {
+      return {
+        success: false,
+        message: "当前环境不支持图片上传编码。",
+      };
+    }
+
+    const boundary = `----BuddyHomework${Date.now().toString(16)}`;
+    const mimeType = file.type || "image/jpeg";
+    const safeFileName = fileName.replace(/"/g, "_");
+    const head = UTF8_ENCODER.encode(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="${safeFileName}"\r\n` +
+        `Content-Type: ${mimeType}\r\n\r\n`
+    );
+    const tail = UTF8_ENCODER.encode(`\r\n--${boundary}--\r\n`);
+    const body = new Uint8Array(head.byteLength + bytes.byteLength + tail.byteLength);
+    body.set(head, 0);
+    body.set(bytes, head.byteLength);
+    body.set(tail, head.byteLength + bytes.byteLength);
+
+    devActionLogger.info("api.homeworkUpload.multipart.start", {
+      fileName: safeFileName,
+      mimeType,
+      size: bytes.byteLength,
+    });
+
+    return this.requestWithXhr<HomeworkUploadResult>("/homeworks/uploads", {
       method: "POST",
-      body: formData,
+      body: body.buffer,
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
     });
   }
 

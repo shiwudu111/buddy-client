@@ -4,9 +4,14 @@ import { nativeCapabilityService } from "./NativeCapabilityService";
 
 export type HomeworkImagePickerResult = {
   success: boolean;
-  file?: File | Blob | null;
+  file?: HomeworkImageFile | null;
   title?: string;
   message?: string;
+};
+
+export type HomeworkImageFile = (File | Blob) & {
+  name?: string;
+  __buddyBytes?: Uint8Array;
 };
 
 type NativePickerPayload = {
@@ -180,18 +185,30 @@ class HomeworkImagePickerService {
     });
   }
 
-  private createImageFile(payload: NativePickerPayload): File | Blob {
+  private createImageFile(payload: NativePickerPayload): HomeworkImageFile {
     const bytes = this.decodeBase64ToBytes(payload.base64 ?? "");
     const mimeType = payload.mimeType || "image/jpeg";
     const fileName = payload.fileName || "homework-image.jpg";
     const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 
     if (typeof File !== "undefined") {
-      return new File([arrayBuffer], fileName, { type: mimeType });
+      return this.attachNativeBytes(new File([arrayBuffer], fileName, { type: mimeType }), bytes);
     }
     const blob = new Blob([arrayBuffer], { type: mimeType }) as Blob & { name?: string };
     blob.name = fileName;
-    return blob;
+    return this.attachNativeBytes(blob, bytes);
+  }
+
+  private attachNativeBytes<T extends HomeworkImageFile>(file: T, bytes: Uint8Array): T {
+    try {
+      Object.defineProperty(file, "__buddyBytes", {
+        value: bytes,
+        enumerable: false,
+      });
+    } catch {
+      file.__buddyBytes = bytes;
+    }
+    return file;
   }
 
   private decodeBase64ToBytes(base64: string): Uint8Array {

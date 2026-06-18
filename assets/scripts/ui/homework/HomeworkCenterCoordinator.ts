@@ -1,4 +1,5 @@
 import { appState } from "../../app/AppState";
+import { devActionLogger } from "../../core/DevActionLogger";
 import {
   HOMEWORK_SUBJECT_LABELS as BASE_HOMEWORK_SUBJECT_LABELS,
   HOMEWORK_SUBJECTS as BASE_HOMEWORK_SUBJECTS,
@@ -203,7 +204,11 @@ export class HomeworkCenterCoordinator {
         success: false,
         message: this.uploadError,
       };
-    } catch {
+    } catch (error) {
+      devActionLogger.warn(
+        "homework.upload.unhandledError",
+        error instanceof Error ? error.message : String(error)
+      );
       this.uploadedImages[this.selectedSubject] = null;
       this.uploadError = "图片上传失败，请重新选择。";
       return {
