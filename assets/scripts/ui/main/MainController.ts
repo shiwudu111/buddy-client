@@ -145,6 +145,8 @@ const DEBUG_TOGGLE_HEIGHT = 34;
 // 控制开关之间的呼吸感。
 const DEBUG_TOGGLE_GAP = 8;
 const DEV_LOG_TOP_OFFSET = 64;
+const DEV_LOG_PANEL_TOP_GAP = 18;
+const DEV_LOG_PANEL_PADDING = 24;
 
 const PET_BUBBLE_DURATION_MS = 4000;
 const PET_VISUAL_FEED_DURATION_MS = 1800;
@@ -1576,7 +1578,7 @@ export class MainController extends ScreenController {
     const buttonWidth = 74;
     const buttonHeight = 30;
     const panelWidth = Math.max(320, Math.min(620, layout.viewportWidth - 48));
-    const panelHeight = Math.max(180, Math.min(300, layout.viewportHeight - 120));
+    const panelHeight = Math.max(170, Math.min(280, layout.viewportHeight - 160));
 
     const { node, button } = RuntimeUI.createButton(root, {
       name: "DevActionLogEntry",
@@ -1611,13 +1613,13 @@ export class MainController extends ScreenController {
       name: "DevActionLogPanel",
       text: devActionLogger.formatRecent(36),
       x: left + panelWidth / 2,
-      y: top - buttonHeight - 12 - panelHeight / 2,
+      y: top - buttonHeight - DEV_LOG_PANEL_TOP_GAP - panelHeight / 2,
       width: panelWidth,
       height: panelHeight,
       fontSize: 14,
       color: new Color(232, 246, 255, 255),
       backgroundColor: new Color(8, 15, 24, 238),
-      padding: 14,
+      padding: DEV_LOG_PANEL_PADDING,
       radius: 8,
       elastic: false,
       startAtTop: true,
